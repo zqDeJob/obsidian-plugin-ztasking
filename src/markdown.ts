@@ -1,0 +1,85 @@
+import {
+	TYPE_DIR,
+	isStatus,
+	isType,
+	type Task,
+	type TaskLog,
+	type TaskStatus,
+	type TaskType,
+} from "./model";
+
+function parseFrontmatter(content: string): { fields: Record<string, string>; body: string } {
+	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+	if (!match) return { fields: {}, body: content };
+	const fields: Record<string, string> = {};
+	for (const line of (match[1] ?? "").split(/\r?\n/)) {
+		const kv = line.match(/^(\w+):\s*(.*)$/);
+		if (kv?.[1]) fields[kv[1]] = (kv[2] ?? "").trim();
+	}
+	return { fields, body: content.slice(match[0].length) };
+}
+
+function typeFromPath(path: string, fallback: TaskType): TaskType {
+	if (path.includes(`/${TYPE_DIR.temp}/`) || path.endsWith(`/${TYPE_DIR.temp}`)) return "temp";
+	if (path.includes(`/${TYPE_DIR.long}/`)) return "long";
+	return fallback;
+}
+
+function parseLogs(progressBody: string): TaskLog[] {
+	const logs: TaskLog[] = [];
+	const re = /^### (?:\[\[)?(\d{4}-\d{2}-\d{2})(?:\]\])?\s*$/gm;
+	const matches = [...progressBody.matchAll(re)];
+	for (let i = 0; i < matches.length; i++) {
+		const cur = matches[i];
+		const next = matches[i + 1];
+		const date = cur?.[1];
+		if (!cur || !date || cur.index === undefined) continue;
+		const start = cur.index + cur[0].length;
+		const end = next?.index ?? progressBody.length;
+		logs.push({ date, text: progressBody.slice(start, end).trim() });
+	}
+	return logs;
+}
+
+export function parseTaskMarkdown(path: string, content: string): Task {
+	const { fields, body } = parseFrontmatter(content);
+	const type = typeFromPath(path, isType(fields.type ?? "") ? fields.type as TaskType : "long");
+	const status: TaskStatus = isStatus(fields.status ?? "") ? fields.status as TaskStatus : "todo";
+	const parts = body.split(/^## 进展\s*$/m);
+	const desc = (parts[0] ?? "").trim();
+	const logs = parseLogs(parts[1] ?? "");
+	const file = path.split("/").pop() ?? path;
+	return {
+		id: path,
+		path,
+		title: file.replace(/\.md$/i, ""),
+		type,
+		status,
+		start: fields.start || "",
+		end: fields.end || "",
+		desc,
+		logs,
+	};
+}
+
+export function serializeTaskMarkdown(task: Task): string {
+	const logs = [...task.logs].sort((a, b) => b.date.localeCompare(a.date));
+	const logBlock = logs.length
+		? logs.map((l) => `### [[${l.date}]]\n${l.text}`).join("\n\n")
+		: "";
+	return [
+		"---",
+		`type: ${task.type}`,
+		`status: ${task.status}`,
+		`start: ${task.start}`,
+		`end: ${task.end}`,
+		"---",
+		"",
+		task.desc.trim(),
+		"",
+		"## 进展",
+		"",
+		logBlock,
+		"",
+	].join("\n");
+}

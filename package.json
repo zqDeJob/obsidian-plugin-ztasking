@@ -1,0 +1,21 @@
+{
+	"name": "z-tasking",
+	"version": "0.1.0",
+	"description": "Long-term and ad-hoc task board with daily logs, calendar, and Gantt for Obsidian.",
+	"main": "main.js",
+	"type": "module",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"test": "node --experimental-strip-types --test src/sidebar.test.ts src/report.test.ts src/desc.test.ts",
+		"version": "node version-bump.mjs && git add manifest.json versions.json"
+	},
+	"keywords": ["obsidian", "plugin", "task"],
+	"license": "MIT",
+	"devDependencies": {
+		"@types/node": "^22.15.17",
+		"esbuild": "0.25.5",
+		"obsidian": "latest",
+		"typescript": "^5.8.3"
+	}
+}

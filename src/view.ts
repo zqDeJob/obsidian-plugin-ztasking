@@ -265,13 +265,24 @@ export class ZTaskingView extends ItemView {
 		this.contentEl.querySelectorAll(".ztk-tabs button").forEach((b) =>
 			b.classList.toggle("on", (b as HTMLElement).dataset.view === tabView));
 		for (const v of VIEWS) {
-			this.contentEl.querySelector(`#ztk-view-${v}`)?.classList.toggle("on", v === view);
+			const page = this.contentEl.querySelector(`#ztk-view-${v}`);
+			if (!page) continue;
+			page.classList.toggle("on", v === view);
 		}
 		this.syncPeriodVisibility();
-		if (view === "gantt" || view === "cal" || view === "report") {
-			this.mdGen += 1;
-			void this.paintMarkdown(this.mdGen);
+		this.syncPeriodControls();
+		this.mdGen += 1;
+		const gen = this.mdGen;
+		// 切页必须重绘目标区：详情页会清空工作台右侧，不重绘就会一直空白
+		if (view === "board" || view === "detail") this.renderDetail();
+		if (view === "list") {
+			this.renderFilters();
+			this.renderCatalog();
 		}
+		if (view === "cal") this.renderCalendar();
+		if (view === "gantt") this.renderGantt();
+		if (view === "report") this.renderReport();
+		void this.paintMarkdown(gen);
 	}
 
 	private logsInPeriod() {
@@ -674,7 +685,9 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private async paintMarkdown(gen: number): Promise<void> {
+		if (gen !== this.mdGen) return;
 		this.mdRoot.unload();
+		if (gen !== this.mdGen) return;
 		this.mdRoot = new Component();
 		this.mdRoot.load();
 		const boxes: HTMLElement[] = [];
@@ -780,10 +793,7 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private renderDetail(): void {
-		const boardEl = this.$("#ztk-view-board .ztk-detail");
-		const soloEl = this.$("#ztk-view-detail .ztk-detail");
 		const el = this.activeDetail();
-		(el === boardEl ? soloEl : boardEl).innerHTML = "";
 		const t = this.tasks().find((x) => x.id === this.selectedId);
 		if (!t) {
 			el.innerHTML = `<div class="ztk-empty">选一条任务，在这里写今天的进展</div>`;
@@ -817,7 +827,8 @@ export class ZTaskingView extends ItemView {
 				${logs.map((l) => this.logRowHtml(l.date, l.text, t.path)).join("") || `<p class="ztk-muted">还没有进展，从上面记第一笔。</p>`}
 			</div>
 		`;
-		(this.$("#ztk-task-status") as HTMLSelectElement).value = t.status;
+		const statusEl = el.querySelector("#ztk-task-status") as HTMLSelectElement | null;
+		if (statusEl) statusEl.value = t.status;
 	}
 
 	private logRowHtml(date: string, text: string, path: string): string {
@@ -889,9 +900,11 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private ganttUnits(range: { start: Date; end: Date }) {
-		const days = daysBetween(range.start, range.end) + 1;
+		const days = Math.max(1, daysBetween(range.start, range.end) + 1);
 		const scale = ganttScaleForDays(days);
-		return buildGanttUnits(fmt(range.start), fmt(range.end), scale);
+		const units = buildGanttUnits(fmt(range.start), fmt(range.end), scale);
+		if (units.length) return units;
+		return [{ start: new Date(range.start), end: new Date(range.end), label: String(range.start.getDate()) }];
 	}
 
 	private renderGantt(): void {

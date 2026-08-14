@@ -3,221 +3,138 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <title>Z-Tasking · 任务台原型</title>
+  <title>Z-Tasking · 任务台原型</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #ffffff;
-      --panel: #ffffff;
-      --raised: #f4f4f4;
-      --ink: #1a1a1a;
-      --muted: #6b6b6b;
-      --line: #e6e6e6;
-      --teal: #2f6f68;
-      --teal-soft: #e7f2f0;
-      --copper: #c46b3a;
-      --gold: #8a6d1f;
-      --todo: #6b6b6b;
-      --doing: #2f6f68;
-      --done: #8a6d1f;
+      --bg: #ffffff; --raised: #f4f4f4; --ink: #1a1a1a; --muted: #6b6b6b;
+      --line: #e6e6e6; --teal: #2f6f68; --teal-soft: #e7f2f0;
+      --copper: #c46b3a; --gold: #8a6d1f;
       --font: "Noto Sans SC", "PingFang SC", sans-serif;
       --mono: "IBM Plex Mono", ui-monospace, monospace;
       --display: "Syne", "Noto Sans SC", sans-serif;
     }
-
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; }
-    body {
-      font-family: var(--font);
-      background: #ffffff;
-      color: var(--ink);
-    }
-
-    .obsidian {
-      width: 100vw;
-      height: 100vh;
-      display: grid;
-      grid-template-columns: 48px 1fr;
-      background: #ffffff;
-      overflow: hidden;
-    }
-
+    body { font-family: var(--font); background: #fff; color: var(--ink); user-select: text; }
+    button, .chip { user-select: none; cursor: pointer; }
+    .obsidian { width: 100vw; height: 100vh; display: grid; grid-template-columns: 48px 1fr; overflow: hidden; }
     .ribbon {
-      background: #f7f7f7;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 10px 0;
-      gap: 8px;
-      border-right: 1px solid var(--line);
+      background: #f7f7f7; display: flex; flex-direction: column; align-items: center;
+      padding: 10px 0; gap: 8px; border-right: 1px solid var(--line);
     }
     .ribbon button {
-      width: 32px; height: 32px;
-      border: 0; background: transparent; color: var(--muted);
-      border-radius: 6px; cursor: pointer; font-size: 15px;
+      width: 32px; height: 32px; border: 0; background: transparent; color: var(--muted);
+      border-radius: 6px; font-size: 15px;
     }
-    .ribbon button.active {
-      background: #ffffff;
-      color: var(--teal);
-      box-shadow: inset 2px 0 0 var(--teal);
-    }
-
-    .app {
-      display: grid;
-      grid-template-rows: auto 1fr;
-      min-width: 0;
-      min-height: 0;
-      background: #ffffff;
-    }
-
+    .ribbon button.active { background: #fff; color: var(--teal); box-shadow: inset 2px 0 0 var(--teal); }
+    .app { display: grid; grid-template-rows: auto 1fr; min-width: 0; min-height: 0; }
     header {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 12px 18px;
-      border-bottom: 1px solid var(--line);
-      background: #ffffff;
+      display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+      border-bottom: 1px solid var(--line); background: #fff; flex-wrap: wrap;
     }
-    .brand {
-      font-family: var(--display);
-      font-weight: 800;
-      letter-spacing: .04em;
-      font-size: 18px;
-    }
-    .brand span { color: var(--teal); margin-left: 8px; font-size: 13px; letter-spacing: 0; font-family: var(--font); font-weight: 500; }
-    .tabs { display: flex; gap: 4px; margin-left: 8px; }
-    .tabs button, .period button, .chip, .btn, .ghost {
-      font-family: inherit; cursor: pointer;
-    }
-    .tabs button {
-      background: transparent; border: 0; color: var(--muted);
-      padding: 6px 12px; border-radius: 6px; font-size: 13px;
-    }
+    .brand { font-family: var(--display); font-weight: 800; letter-spacing: .04em; font-size: 16px; }
+    .brand span { color: var(--teal); margin-left: 8px; font-size: 12px; font-family: var(--font); font-weight: 500; letter-spacing: 0; }
+    .tabs { display: flex; gap: 4px; }
+    .tabs button, .period button, .chip, .btn, .ghost { font-family: inherit; }
+    .tabs button { background: transparent; border: 0; color: var(--muted); padding: 6px 12px; border-radius: 6px; font-size: 13px; }
     .tabs button.on { background: var(--raised); color: var(--ink); }
     .spacer { flex: 1; }
-    .period { display: flex; background: #ffffff; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .period {
+      display: flex; align-items: center; background: #fff; border: 1px solid var(--line);
+      border-radius: 8px; overflow: hidden; flex-wrap: nowrap;
+    }
     .period.is-hidden { display: none; }
-    .period button {
-      border: 0; background: transparent; color: var(--muted);
-      padding: 6px 12px; font-size: 12px;
-    }
+    .period button { border: 0; background: transparent; color: var(--muted); padding: 6px 12px; font-size: 12px; }
     .period button.on { background: var(--teal); color: #fff; }
-    .btn {
-      border: 0; background: var(--teal); color: #fff;
-      font-weight: 600; padding: 8px 14px; border-radius: 8px; font-size: 13px;
+    .period-sep { font-size: 12px; color: var(--muted); padding: 0 6px 0 10px; border-left: 1px solid var(--line); white-space: nowrap; }
+    .period-tilde { font-size: 12px; color: var(--muted); padding: 0 2px; }
+    .period input[type="date"] {
+      width: auto; min-width: 8.5em; border: 0; border-radius: 0; padding: 4px 6px;
+      font-size: 12px; background: transparent; color: var(--ink);
     }
-    .btn-danger {
-      border: 0; background: #c45c4a; color: #fff;
-      font-weight: 600; padding: 8px 14px; border-radius: 8px; font-size: 13px;
-    }
-    .ghost {
-      background: #ffffff; border: 1px solid var(--line); color: var(--ink);
-      padding: 7px 12px; border-radius: 8px; font-size: 13px;
-    }
+    .btn { border: 0; background: var(--teal); color: #fff; font-weight: 600; padding: 7px 12px; border-radius: 8px; font-size: 13px; }
+    .btn-danger { border: 0; background: #d32f2f; color: #fff; font-weight: 600; padding: 4px 10px; border-radius: 8px; font-size: 12px; }
+    .ghost { background: #fff; border: 1px solid var(--line); color: var(--ink); padding: 7px 12px; border-radius: 8px; font-size: 13px; }
+    main { min-height: 0; overflow: hidden; }
+    .view { height: 100%; display: none !important; min-height: 0; }
+    .view.on { display: grid !important; }
 
-    main { min-height: 0; overflow: hidden; background: #ffffff; }
-    .view { height: 100%; display: none; background: #ffffff; }
-    .view.on { display: grid; }
-
-    #view-board { grid-template-columns: 340px 1fr; }
-    .list-pane, .detail-pane, .gantt-pane, .cal-grid, .day-pane {
-      min-height: 0; overflow: auto; background: #ffffff;
-    }
+    #view-board { grid-template-columns: 320px 1fr; }
+    .list-pane, .detail-pane, .gantt-pane, .cal-grid, .day-pane { min-height: 0; overflow: auto; }
     .list-pane { border-right: 1px solid var(--line); }
-    .filters {
+    .filters, .catalog-bar {
       display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
       padding: 12px 14px; border-bottom: 1px solid var(--line);
     }
-    .chip {
-      border: 1px solid var(--line); background: #ffffff; color: var(--muted);
-      border-radius: 999px; padding: 4px 10px; font-size: 12px;
-    }
+    .chip { border: 1px solid var(--line); background: #fff; color: var(--muted); border-radius: 999px; padding: 4px 10px; font-size: 12px; }
     .chip.on { color: var(--teal); border-color: var(--teal); background: var(--teal-soft); }
-    .filters select, .status-box select {
-      width: auto; min-width: 108px;
-    }
-    .group-title {
-      padding: 8px 16px 4px; color: var(--muted); font-size: 11px;
-      letter-spacing: .12em;
-    }
+    .filters select, .catalog-bar select, .status-box select { width: auto; min-width: 7.5em; }
+    .catalog-bar .search { flex: 1; min-width: 160px; }
+    .group-title { padding: 8px 16px 4px; color: var(--muted); font-size: 11px; letter-spacing: .08em; }
+    .more { display: block; margin: 6px 10px 12px; width: calc(100% - 20px); }
     .task {
-      display: grid; grid-template-columns: 4px 1fr auto;
-      gap: 10px; margin: 6px 10px; padding: 10px 12px;
-      background: #ffffff; border: 1px solid var(--line); border-radius: 10px;
-      cursor: pointer;
+      display: grid; grid-template-columns: 4px 1fr auto; gap: 10px;
+      margin: 6px 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
     }
-    .task:hover { border-color: #cfcfcf; }
     .task.sel { border-color: var(--teal); background: var(--teal-soft); }
     .rail { border-radius: 4px; }
     .rail.long { background: var(--teal); }
     .rail.temp { background: var(--copper); }
+    .rail-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+    .rail-dot.long { background: var(--teal); }
+    .rail-dot.temp { background: var(--copper); }
     .task h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
     .meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .st {
-      font-size: 11px; padding: 2px 6px; border-radius: 4px;
-      font-family: var(--mono); background: var(--raised);
-    }
-    .st.todo { color: var(--todo); }
-    .st.doing { color: var(--doing); background: var(--teal-soft); }
-    .st.done { color: var(--done); background: #f4efe2; }
+    .st { font-size: 11px; padding: 2px 6px; border-radius: 4px; font-family: var(--mono); background: var(--raised); }
+    .st.doing { color: var(--teal); background: var(--teal-soft); }
+    .st.done { color: var(--gold); background: #f4efe2; }
     .need { width: 8px; height: 8px; border-radius: 50%; background: var(--copper); margin-top: 6px; }
 
-    .detail-pane { padding: 18px 22px 32px; }
+    .detail-pane { padding: 16px 20px 28px; }
     .detail-head { display: flex; align-items: flex-start; gap: 16px; }
-    .detail-head h1 { flex: 1; margin: 6px 0 10px; font-size: 24px; }
-    .status-box {
-      margin-top: 4px;
-      display: grid;
-      gap: 6px;
-      min-width: 120px;
-    }
+    .detail-head h1 { flex: 1; margin: 6px 0 10px; font-size: 22px; }
+    .status-box { margin-top: 4px; display: grid; gap: 6px; min-width: 120px; }
     .status-box label { font-size: 12px; color: var(--muted); }
-    .detail-empty { color: var(--muted); display: grid; place-items: center; height: 100%; }
-    .kicker { font-family: var(--mono); font-size: 11px; color: var(--teal); letter-spacing: .08em; }
+    .kicker { font-size: 11px; color: var(--teal); }
     .desc {
-      color: #333; line-height: 1.7; font-size: 14px;
-      border-left: 2px solid var(--teal); padding-left: 12px; margin: 12px 0 20px;
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start;
+      color: #333; line-height: 1.7; border-left: 2px solid var(--teal); padding-left: 12px; margin: 12px 0 18px;
     }
-    .composer {
-      background: var(--raised); border: 1px solid var(--line); border-radius: 12px;
-      padding: 12px;
-    }
+    .desc-body { min-width: 0; white-space: pre-wrap; }
+    .desc-edit { min-height: 88px; }
+    .composer { background: var(--raised); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
     .composer label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
     textarea, input, select {
-      width: 100%; font-family: inherit; color: var(--ink);
-      background: #ffffff; border: 1px solid var(--line); border-radius: 8px;
-      padding: 8px 10px; font-size: 13px;
+      width: 100%; font-family: inherit; color: var(--ink); background: #fff;
+      border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 13px;
     }
-    select {
-      height: auto; min-height: 32px; line-height: 1.5;
-      padding: 2px 28px 2px 10px;
-    }
+    select { height: auto; min-height: 32px; line-height: 1.5; padding: 2px 28px 2px 10px; }
     textarea { min-height: 72px; resize: vertical; }
     .composer-row { display: flex; justify-content: flex-end; margin-top: 8px; }
-    .timeline { margin-top: 22px; }
     .log {
-      display: grid; grid-template-columns: 92px 1fr auto;
-      gap: 12px; padding: 10px 0; border-bottom: 1px dashed var(--line);
-      align-items: start;
+      display: grid; grid-template-columns: 92px 1fr auto; gap: 12px;
+      padding: 10px 0; border-bottom: 1px dashed var(--line); align-items: start;
     }
     .log time { font-family: var(--mono); font-size: 12px; color: var(--muted); padding-top: 4px; }
-    .log p { margin: 0; font-size: 14px; line-height: 1.6; }
-    .log-body { min-width: 0; }
-    .log-edit { min-height: 64px; }
+    .log-body { min-width: 0; white-space: pre-wrap; line-height: 1.65; }
     .log-actions { display: flex; gap: 8px; flex-shrink: 0; }
-    .log-actions button { padding: 4px 10px; font-size: 12px; }
+    .log-actions .ghost, .log-actions .btn, .log-actions .btn-danger { padding: 4px 10px; font-size: 12px; }
+    .muted { color: var(--muted); }
+    .empty { color: var(--muted); display: grid; place-items: center; height: 100%; padding: 20px; }
+
+    #view-list { grid-template-rows: auto 1fr; }
+    #view-list table tr { cursor: pointer; }
+    #view-list table tr:hover { background: var(--teal-soft); }
 
     #view-cal { grid-template-columns: 1.4fr .8fr; }
     .cal-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
     .weekdays, .days { display: grid; grid-template-columns: repeat(7, 1fr); }
     .weekdays { padding: 6px 10px 0; color: var(--muted); font-size: 12px; text-align: center; }
     .days { padding: 8px 10px 16px; gap: 6px; }
-    .day {
-      min-height: 92px; border: 1px solid var(--line); border-radius: 8px;
-      padding: 6px 8px; background: #ffffff; cursor: pointer;
-    }
+    .day { min-height: 92px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; cursor: pointer; }
     .day.out { opacity: .35; }
     .day.today { border-color: var(--teal); }
     .day.sel { background: var(--teal-soft); border-color: var(--teal); }
@@ -225,41 +142,51 @@
     .day-item { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
     .day-pane { border-left: 1px solid var(--line); padding: 16px; }
     .day-pane h2 { margin: 0 0 12px; font-size: 16px; }
+    .day-log {
+      display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px dashed var(--line);
+    }
+    .day-log .ghost { justify-self: start; max-width: 100%; white-space: normal; text-align: left; height: auto; line-height: 1.4; }
 
-    #view-gantt { grid-template-rows: auto 1fr auto; }
-    .gantt-toolbar { padding: 10px 16px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line); }
-    .gantt-pane { overflow: auto; }
+    #view-gantt { grid-template-rows: auto minmax(0, 1fr) auto; }
+    .gantt-hint { padding: 8px 16px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line); }
+    .gantt-pane { overflow: auto; min-height: 120px; }
     .gantt { display: grid; grid-template-columns: 200px 1fr; min-width: 720px; }
     .gantt-head { height: 36px; display: flex; align-items: flex-end; font-family: var(--mono); font-size: 10px; color: var(--muted); border-bottom: 1px solid var(--line); }
     .gantt-row, .gantt-track { height: 44px; border-bottom: 1px solid var(--line); }
     .gantt-row { display: flex; align-items: center; padding: 0 12px; font-size: 13px; cursor: pointer; }
     .gantt-row.sel { background: var(--teal-soft); }
     .gantt-track { position: relative; }
-    .bar {
-      position: absolute; top: 12px; height: 20px; border-radius: 4px;
-      background: var(--teal-soft); border: 1px solid var(--teal);
-    }
+    .bar { position: absolute; top: 12px; height: 20px; border-radius: 4px; background: var(--teal-soft); border: 1px solid var(--teal); }
     .bar.temp { border-style: dashed; border-color: var(--copper); background: #f8eee8; }
     .bar.todo { opacity: .45; }
     .bar.done { border-color: var(--gold); background: #f4efe2; }
     .tick { position: absolute; top: -4px; width: 3px; height: 28px; background: var(--ink); border-radius: 1px; }
     .today-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--copper); pointer-events: none; }
     .col { flex: 1; text-align: center; min-width: 28px; }
-    .gantt-logs { border-top: 1px solid var(--line); padding: 10px 16px 14px; max-height: 180px; overflow: auto; background: #ffffff; }
+    .gantt-logs { border-top: 1px solid var(--line); padding: 10px 16px 14px; max-height: 180px; overflow: auto; }
 
     #view-report { padding: 14px; overflow: auto; align-content: start; gap: 12px; grid-template-columns: 1.2fr .8fr; }
-    .card { background: #ffffff; border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    .today-card { grid-column: 1 / -1; }
+    .today-item { display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px dashed var(--line); }
+    .today-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .today-item:last-child { border-bottom: 0; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
     .card h2 { margin: 0 0 10px; font-size: 14px; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
     th { color: var(--muted); font-weight: 500; }
     .heat { display: grid; grid-template-columns: repeat(auto-fill, 14px); gap: 4px; }
     .heat i { width: 14px; height: 14px; border-radius: 3px; background: #f0f0f0; display: block; }
     .heat i.l1 { background: #cfe3df; }
     .heat i.l2 { background: #7eb8ae; }
     .heat i.l3 { background: #2f6f68; }
+    .toast {
+      position: fixed; right: 16px; bottom: 16px; background: var(--ink); color: #fff;
+      padding: 8px 12px; border-radius: 8px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s;
+    }
+    .toast.on { opacity: 1; }
 
-    dialog { border: 1px solid var(--line); background: #ffffff; color: var(--ink); border-radius: 14px; padding: 0; width: min(480px, 92vw); }
+    dialog { border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 14px; padding: 0; width: min(480px, 92vw); }
     dialog::backdrop { background: rgba(0,0,0,.35); }
     .modal { padding: 18px; }
     .modal h2 { margin: 0 0 14px; }
@@ -277,7 +204,7 @@
     <nav class="ribbon" aria-label="Obsidian 侧边栏">
       <button title="文件">⌘</button>
       <button title="搜索">⌕</button>
-      <button class="active" title="Tasking 任务台">☰</button>
+      <button class="active" title="Z-Tasking 任务台">☰</button>
       <button title="日记">日</button>
     </nav>
     <section class="app">
@@ -285,20 +212,24 @@
         <div class="brand">Z-TASKING<span>任务台</span></div>
         <div class="tabs" id="tabs">
           <button data-view="board" class="on">工作台</button>
+          <button data-view="list">列表</button>
           <button data-view="cal">日历</button>
           <button data-view="gantt">甘特图</button>
           <button data-view="report">汇总</button>
         </div>
         <div class="spacer"></div>
         <div class="period" id="period">
-          <button data-p="week" class="on">周</button>
-          <button data-p="month">月</button>
-          <button data-p="quarter">季</button>
-          <button data-p="year">年</button>
+          <button data-p="week" class="on" type="button">周</button>
+          <button data-p="month" type="button">月</button>
+          <button data-p="quarter" type="button">季</button>
+          <button data-p="year" type="button">年</button>
+          <span class="period-sep">自定</span>
+          <input type="date" id="rangeStart" aria-label="开始日期" />
+          <span class="period-tilde">~</span>
+          <input type="date" id="rangeEnd" aria-label="结束日期" />
         </div>
         <button class="btn" id="newBtn">新建任务</button>
       </header>
-
       <main>
         <div class="view on" id="view-board">
           <aside class="list-pane">
@@ -307,7 +238,10 @@
           </aside>
           <article class="detail-pane" id="detail"></article>
         </div>
-
+        <div class="view" id="view-list">
+          <div class="catalog-bar" id="catalogBar"></div>
+          <div id="catalogBody" style="overflow:auto;padding:0 14px 14px"></div>
+        </div>
         <div class="view" id="view-cal">
           <div class="cal-grid">
             <div class="cal-toolbar">
@@ -321,16 +255,12 @@
           </div>
           <aside class="day-pane" id="dayPane"></aside>
         </div>
-
         <div class="view" id="view-gantt">
-          <div class="gantt-toolbar" id="ganttHint"></div>
+          <div class="gantt-hint" id="ganttHint"></div>
           <div class="gantt-pane" id="gantt"></div>
           <div class="gantt-logs" id="ganttLogs"></div>
         </div>
-
-        <div class="view" id="view-report">
-          <div class="report-grid" id="report"></div>
-        </div>
+        <div class="view" id="view-report"></div>
       </main>
     </section>
   </div>
@@ -339,8 +269,8 @@
     <form class="modal" id="newForm">
       <h2>新建任务</h2>
       <div class="form">
-        <input name="title" required placeholder="任务标题，例如：Tasking 插件" />
-        <textarea name="desc" placeholder="说明：这件长期事项要达成什么"></textarea>
+        <input name="title" required placeholder="任务标题" />
+        <textarea name="desc" placeholder="说明：这件事项要达成什么"></textarea>
         <div class="two">
           <select name="type">
             <option value="long">长期任务</option>
@@ -358,112 +288,264 @@
         </div>
       </div>
       <div class="modal-actions">
-        <button type="button" class="ghost" id="cancelNew">取消</button>
+        <button type="button" class="ghost" id="cancelBtn">取消</button>
         <button class="btn" type="submit">创建</button>
       </div>
     </form>
   </dialog>
+  <div class="toast" id="toast"></div>
 
   <script>
-    const TODAY = "2026-08-13";
     const STATUS = { todo: "未开始", doing: "进行中", done: "已完结" };
     const TYPE = { long: "长期", temp: "临时" };
+    const SIDEBAR_LIMIT = 5;
+    const SHORTCUTS = ["week", "month", "quarter", "year"];
+    const $ = (s) => document.querySelector(s);
+    const pad = (n) => String(n).padStart(2, "0");
+    const parse = (d) => new Date(d + "T00:00:00");
+    const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+    const daysBetween = (a, b) => Math.round((b - a) / 86400000);
+    const TODAY = fmt(new Date());
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 
+    let view = "board";
     let period = "week";
+    let rangeStart = "";
+    let rangeEnd = "";
     let typeFilter = "all";
     let statusFilter = "all";
-    let selectedId = "t1";
-    let view = "board";
-    let calCursor = new Date(2026, 7, 1);
+    let query = "";
+    let selectedId = "mock-long-1";
+    let calCursor = new Date();
     let selectedDay = TODAY;
-    let ganttTaskId = "t1";
+    let ganttTaskId = "mock-long-1";
     let editingLogDate = null;
+    let editingDesc = false;
 
+    // —— Mock 数据：虚构演示用，与真实 vault 无关 ——
     let tasks = [
       {
-        id: "t1", type: "long", status: "doing",
-        title: "Tasking 长期任务插件",
-        start: "2026-08-10", end: "2026-09-30",
-        desc: "在 Obsidian 里跟踪会持续几周到几个月的事项：新建、每日记进展、日历回看、甘特跨度。",
+        id: "mock-long-1", type: "long", status: "doing", title: "示例：知识库整理",
+        start: "2026-07-01", end: "2026-09-30",
+        desc: "把零散笔记归类、修断链，并统一命名规范。\n\n支持 **Markdown** 与列表。",
         logs: [
-          { date: "2026-08-11", text: "对比 Tasks / TaskNotes / Work Log，确认没有现成插件。" },
-          { date: "2026-08-12", text: "决定自建。信息架构：工作台、日历、甘特、汇总。" },
-          { date: "2026-08-13", text: "先用 HTML 原型把交互定下来。" }
-        ]
+          { date: TODAY, text: "- 清理孤立附件\n- 补全本周目录索引" },
+          { date: "2026-08-10", text: "- 合并重复「会议纪要」模板" },
+          { date: "2026-07-28", text: "- 约定：`年/月/日` 目录结构" },
+        ],
       },
       {
-        id: "t2", type: "long", status: "doing",
-        title: "Cursor 培养工程固化",
+        id: "mock-long-2", type: "long", status: "doing", title: "示例：阅读计划",
         start: "2026-06-01", end: "2026-12-31",
-        desc: "把常用工作流收成 Skill / Rule / 手册。",
+        desc: "每月读完 2 本非虚构类，并写一页札记。",
         logs: [
-          { date: "2026-08-04", text: "补了一轮 CAPABILITIES 与用户手册同步。" },
-          { date: "2026-08-11", text: "梳理 z-ones-bug 与 push 前自测门禁。" }
-        ]
+          { date: "2026-08-05", text: "- 《深度工作》第 3–5 章\n- 提炼：时间块 + 关机仪式" },
+          { date: "2026-07-15", text: "- 选书清单定稿（12 本）" },
+        ],
       },
       {
-        id: "t3", type: "long", status: "todo",
-        title: "liveSpace 知识库治理",
-        start: "2026-09-01", end: "2026-10-15",
-        desc: "按目录规范整理库，修断链、清孤立附件。",
-        logs: []
+        id: "mock-long-3", type: "long", status: "todo", title: "示例：健身打卡",
+        start: "2026-08-01", end: "2026-10-31",
+        desc: "每周力量训练 3 次，有氧 2 次。尚未开始第一周。",
+        logs: [],
       },
       {
-        id: "t4", type: "long", status: "done",
-        title: "Q2 绩效材料整理",
-        start: "2026-06-20", end: "2026-07-05",
-        desc: "按四维指标整理工作内容、评分说明和不足。",
+        id: "mock-long-4", type: "long", status: "doing", title: "示例：个人站点改版",
+        start: "2026-07-20", end: "2026-09-15",
+        desc: "首页一屏定调：品牌名 > 一句介绍 > 一个 CTA。",
         logs: [
-          { date: "2026-06-28", text: "完成工作内容归档。" },
-          { date: "2026-07-03", text: "提交评分说明。" }
-        ]
+          { date: TODAY, text: "- 定字体配对与主色\n- 草图：全幅 hero，无卡片堆叠" },
+          { date: "2026-08-08", text: "- 去掉首屏统计条与徽章" },
+        ],
       },
       {
-        id: "t5", type: "temp", status: "doing",
-        title: "修缺陷 #155325",
+        id: "mock-temp-1", type: "temp", status: "done", title: "示例：周末大扫除",
+        start: "2026-08-09", end: "2026-08-10",
+        desc: "厨房 + 阳台，半天搞定。",
+        logs: [{ date: "2026-08-10", text: "- 完成；下次记得先清空水槽" }],
+      },
+      {
+        id: "mock-temp-2", type: "temp", status: "done", title: "示例：给护照延期拍照",
+        start: "2026-07-18", end: "2026-07-18",
+        desc: "白底证件照，导出 413×531。",
+        logs: [{ date: "2026-07-18", text: "- 已拍并上传网办" }],
+      },
+      {
+        id: "mock-temp-3", type: "temp", status: "doing", title: "示例：订会议室投影",
         start: "2026-08-12", end: "2026-08-15",
-        desc: "按 ONES 单修前端展示问题，提 MR。",
-        logs: [{ date: "2026-08-12", text: "复现并定位到布局区块未翻译。" }]
+        desc: "下周四分享会，确认 HDMI / 无线投屏。",
+        logs: [{ date: TODAY, text: "- 行政回复：可用 B201，需自带转接头" }],
       },
       {
-        id: "t6", type: "temp", status: "todo",
-        title: "写本周周报",
-        start: "2026-08-14", end: "2026-08-14",
-        desc: "根据日记汇总本周产出。",
-        logs: []
+        id: "mock-temp-4", type: "temp", status: "done", title: "示例：修自行车刹车",
+        start: "2026-07-22", end: "2026-07-22",
+        desc: "前刹异响，换来令片。",
+        logs: [{ date: "2026-07-22", text: "- 修好；线管也顺带调了" }],
       },
       {
-        id: "t7", type: "temp", status: "done",
-        title: "插件方案调研",
-        start: "2026-08-13", end: "2026-08-13",
-        desc: "确认社区插件缺口后给出自建建议。",
-        logs: [{ date: "2026-08-13", text: "完成调研并选择自建。" }]
-      }
+        id: "mock-temp-5", type: "temp", status: "todo", title: "示例：寄回快递纸箱",
+        start: "2026-08-14", end: "2026-08-16",
+        desc: "楼下驿站回收，记得带会员码。",
+        logs: [],
+      },
+      {
+        id: "mock-temp-6", type: "temp", status: "done", title: "示例：牙医复诊",
+        start: "2026-07-30", end: "2026-07-30",
+        desc: "洗牙 + 复查补牙。",
+        logs: [{ date: "2026-07-30", text: "- 完成；下次 6 个月后再约" }],
+      },
+      {
+        id: "mock-temp-7", type: "temp", status: "done", title: "示例：备份相册到移动硬盘",
+        start: "2026-08-02", end: "2026-08-03",
+        desc: "只拷贝 Raw + 精修 JPG。",
+        logs: [{ date: "2026-08-03", text: "- 约 120GB，校验 hash 通过" }],
+      },
     ];
 
-    const $ = (s) => document.querySelector(s);
-    function pad(n) { return String(n).padStart(2, "0"); }
-    function parse(d) { return new Date(d + "T00:00:00"); }
-    function fmt(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
-    function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
-    function daysBetween(a, b) { return Math.round((b - a) / 86400000); }
+    function toast(msg) {
+      const el = $("#toast");
+      el.textContent = msg;
+      el.classList.add("on");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => el.classList.remove("on"), 1600);
+    }
 
-    function periodRange() {
-      const t = parse(TODAY);
-      if (period === "week") {
+    async function copyText(text) {
+      const value = String(text || "").replace(/^\s+|\s+$/g, "");
+      if (!value) return false;
+      try {
+        await navigator.clipboard.writeText(value);
+        return true;
+      } catch {
+        const ta = document.createElement("textarea");
+        ta.value = value;
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand("copy");
+        ta.remove();
+        return ok;
+      }
+    }
+
+    function normalizeDateRange(startStr, endStr) {
+      let start = parse(startStr);
+      let end = parse(endStr);
+      if (Number.isNaN(+start) || Number.isNaN(+end)) {
+        start = parse(TODAY);
+        end = parse(TODAY);
+      }
+      if (start > end) { const t = start; start = end; end = t; }
+      return { start, end, startStr: fmt(start), endStr: fmt(end), label: "自定", preset: "custom" };
+    }
+
+    function resolvePeriodRange(preset, todayStr = TODAY) {
+      const t = parse(todayStr);
+      if (preset === "week") {
         const day = (t.getDay() + 6) % 7;
         const start = addDays(t, -day);
-        return { start, end: addDays(start, 6), label: "本周" };
+        const end = addDays(start, 6);
+        return { start, end, startStr: fmt(start), endStr: fmt(end), label: "本周", preset };
       }
-      if (period === "month") return { start: new Date(t.getFullYear(), t.getMonth(), 1), end: new Date(t.getFullYear(), t.getMonth() + 1, 0), label: "本月" };
-      if (period === "quarter") {
+      if (preset === "month") {
+        const start = new Date(t.getFullYear(), t.getMonth(), 1);
+        const end = new Date(t.getFullYear(), t.getMonth() + 1, 0);
+        return { start, end, startStr: fmt(start), endStr: fmt(end), label: "本月", preset };
+      }
+      if (preset === "quarter") {
         const q = Math.floor(t.getMonth() / 3) * 3;
-        return { start: new Date(t.getFullYear(), q, 1), end: new Date(t.getFullYear(), q + 3, 0), label: "本季" };
+        const start = new Date(t.getFullYear(), q, 1);
+        const end = new Date(t.getFullYear(), q + 3, 0);
+        return { start, end, startStr: fmt(start), endStr: fmt(end), label: "本季", preset };
       }
-      return { start: new Date(t.getFullYear(), 0, 1), end: new Date(t.getFullYear(), 11, 31), label: "今年" };
+      const start = new Date(t.getFullYear(), 0, 1);
+      const end = new Date(t.getFullYear(), 11, 31);
+      return { start, end, startStr: fmt(start), endStr: fmt(end), label: "今年", preset };
+    }
+
+    function matchPeriodPreset(startStr, endStr) {
+      const custom = normalizeDateRange(startStr, endStr);
+      for (const p of SHORTCUTS) {
+        const r = resolvePeriodRange(p);
+        if (r.startStr === custom.startStr && r.endStr === custom.endStr) return p;
+      }
+      return "custom";
+    }
+
+    function ganttScaleForDays(days) {
+      if (days <= 31) return "day";
+      if (days <= 120) return "week";
+      return "month";
+    }
+
+    function buildGanttUnits(startStr, endStr, scale) {
+      const range = normalizeDateRange(startStr, endStr);
+      const units = [];
+      if (scale === "day") {
+        for (let d = new Date(range.start); d <= range.end; d = addDays(d, 1)) {
+          units.push({ start: new Date(d), end: new Date(d), label: String(d.getDate()) });
+        }
+        return units;
+      }
+      if (scale === "week") {
+        let d = new Date(range.start);
+        d = addDays(d, -((d.getDay() + 6) % 7));
+        while (d <= range.end) {
+          units.push({ start: new Date(d), end: addDays(d, 6), label: `${d.getMonth() + 1}/${d.getDate()}` });
+          d = addDays(d, 7);
+        }
+        return units;
+      }
+      let cursor = new Date(range.start.getFullYear(), range.start.getMonth(), 1);
+      while (cursor <= range.end) {
+        units.push({
+          start: new Date(cursor),
+          end: new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0),
+          label: `${cursor.getMonth() + 1}月`,
+        });
+        cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+      }
+      return units;
+    }
+
+    function periodRange() {
+      const r = normalizeDateRange(rangeStart || TODAY, rangeEnd || TODAY);
+      const preset = matchPeriodPreset(r.startStr, r.endStr);
+      if (preset !== "custom") {
+        const named = resolvePeriodRange(preset);
+        return { ...r, label: named.label, preset };
+      }
+      return { ...r, label: "自定", preset: "custom" };
+    }
+
+    function applyPeriodShortcut(preset) {
+      const r = resolvePeriodRange(preset);
+      period = preset;
+      rangeStart = r.startStr;
+      rangeEnd = r.endStr;
+      syncPeriodControls();
+    }
+
+    function applyCustomRangeFromInputs() {
+      const r = normalizeDateRange($("#rangeStart").value || rangeStart || TODAY, $("#rangeEnd").value || rangeEnd || TODAY);
+      rangeStart = r.startStr;
+      rangeEnd = r.endStr;
+      period = matchPeriodPreset(r.startStr, r.endStr);
+      syncPeriodControls();
+    }
+
+    function syncPeriodControls() {
+      [...$("#period").querySelectorAll("button[data-p]")].forEach((b) => b.classList.toggle("on", b.dataset.p === period));
+      $("#rangeStart").value = rangeStart;
+      $("#rangeEnd").value = rangeEnd;
+    }
+
+    function syncPeriodVisibility() {
+      $("#period").classList.toggle("is-hidden", view === "board" || view === "list" || view === "cal");
     }
 
     function inRange(date, range) {
+      if (!date) return false;
       const d = parse(date);
       return d >= range.start && d <= range.end;
     }
@@ -475,6 +557,24 @@
       );
     }
 
+    function catalogFiltered() {
+      const q = query.trim().toLowerCase();
+      return filtered().filter((t) => !q || t.title.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q));
+    }
+
+    function sidebarTasks(type) {
+      const rank = (t) => {
+        if (t.status === "doing" && !t.logs.some((l) => l.date === TODAY)) return 1;
+        if (t.status === "doing") return 2;
+        if (t.status === "todo") return 3;
+        return 4;
+      };
+      return filtered()
+        .filter((t) => t.type === type)
+        .sort((a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title, "zh"))
+        .slice(0, SIDEBAR_LIMIT);
+    }
+
     function logsInPeriod() {
       const r = periodRange();
       return tasks.flatMap((t) => t.logs.filter((l) => inRange(l.date, r)).map((l) => ({ ...l, task: t })));
@@ -484,58 +584,126 @@
       return tasks.flatMap((t) => t.logs.filter((l) => l.date === day).map((l) => ({ ...l, task: t })));
     }
 
-    function syncPeriod() {
-      $("#period").classList.toggle("is-hidden", view === "board" || view === "cal");
-    }
-
-    function renderFilters() {
-      $("#filters").innerHTML = `
+    function filterBarHtml(extra = "") {
+      return `
         <button class="chip ${typeFilter === "all" ? "on" : ""}" data-k="all">全部</button>
         <button class="chip ${typeFilter === "long" ? "on" : ""}" data-k="long">长期</button>
         <button class="chip ${typeFilter === "temp" ? "on" : ""}" data-k="temp">临时</button>
-        <select id="statusFilter">
+        <select class="status-filter">
           <option value="all">全部状态</option>
           <option value="todo">未开始</option>
           <option value="doing">进行中</option>
           <option value="done">已完结</option>
         </select>
+        ${extra}
       `;
-      $("#statusFilter").value = statusFilter;
+    }
+
+    function renderFilters() {
+      $("#filters").innerHTML = filterBarHtml();
+      $("#catalogBar").innerHTML = filterBarHtml(
+        `<input class="search" type="search" placeholder="搜索标题或说明" value="${esc(query)}" />
+         <span class="muted">${catalogFiltered().length} / ${tasks.length}</span>`
+      );
+      document.querySelectorAll(".status-filter").forEach((el) => { el.value = statusFilter; });
     }
 
     function renderList() {
       $("#taskList").innerHTML = ["long", "temp"].map((key) => {
-        const items = filtered().filter((t) => t.type === key);
-        if (!items.length) return "";
-        return `<div class="group-title">${TYPE[key]}任务 · ${items.length}</div>` + items.map((t) => {
+        const all = filtered().filter((t) => t.type === key);
+        const items = sidebarTasks(key);
+        if (!all.length) return "";
+        const hidden = all.length - items.length;
+        const cards = items.map((t) => {
           const need = t.status === "doing" && !t.logs.some((l) => l.date === TODAY);
           return `<div class="task ${t.id === selectedId ? "sel" : ""}" data-id="${t.id}">
             <div class="rail ${t.type}"></div>
             <div>
-              <h3>${t.title}</h3>
+              <h3>${esc(t.title)}</h3>
               <div class="meta">
                 <span class="st ${t.status}">${STATUS[t.status]}</span>
-                <span>${t.start} → ${t.end}</span>
+                <span>${esc(t.start)} → ${esc(t.end)}</span>
                 <span>${t.logs.length} 笔</span>
               </div>
             </div>
             ${need ? `<div class="need" title="今天还没记"></div>` : ""}
           </div>`;
         }).join("");
-      }).join("") || `<p style="padding:20px;color:var(--muted)">没有符合筛选的任务</p>`;
+        const more = hidden
+          ? `<button class="ghost more" data-act="open-list" type="button">还有 ${hidden} 条${TYPE[key]}，打开列表</button>`
+          : "";
+        return `<div class="group-title">${TYPE[key]}任务 · ${all.length}</div>${cards}${more}`;
+      }).join("") || `<p class="empty">还没有任务</p>`;
+    }
+
+    function renderCatalog() {
+      const items = catalogFiltered();
+      $("#catalogBody").innerHTML = `<table>
+        <thead><tr><th>标题</th><th>类型</th><th>状态</th><th>周期</th><th>进展</th></tr></thead>
+        <tbody>
+          ${items.map((t) => `<tr data-act="goto-task" data-id="${t.id}">
+            <td><span class="rail-dot ${t.type}"></span>${esc(t.title)}</td>
+            <td>${TYPE[t.type]}</td>
+            <td><span class="st ${t.status}">${STATUS[t.status]}</span></td>
+            <td>${esc(t.start)} → ${esc(t.end)}</td>
+            <td>${t.logs.length} 笔</td>
+          </tr>`).join("") || `<tr><td colspan="5">没有匹配的任务</td></tr>`}
+        </tbody>
+      </table>`;
+    }
+
+    function descBlockHtml(t) {
+      if (editingDesc) {
+        return `<div class="desc">
+          <textarea class="desc-edit" id="descText">${esc(t.desc)}</textarea>
+          <div class="log-actions">
+            <button class="btn" data-act="save-desc" type="button">保存</button>
+            <button class="ghost" data-act="cancel-desc" type="button">取消</button>
+          </div>
+        </div>`;
+      }
+      return `<div class="desc">
+        <div class="desc-body">${t.desc.trim() ? esc(t.desc) : `<span class="muted">还没有说明</span>`}</div>
+        <div class="log-actions">
+          <button class="ghost" data-act="copy-desc" type="button">复制</button>
+          <button class="ghost" data-act="edit-desc" type="button">编辑</button>
+        </div>
+      </div>`;
+    }
+
+    function logRowHtml(l) {
+      if (editingLogDate === l.date) {
+        return `<div class="log" data-date="${esc(l.date)}">
+          <time>${esc(l.date)}</time>
+          <div class="log-body"><textarea class="log-edit">${esc(l.text)}</textarea></div>
+          <div class="log-actions">
+            <button class="btn" data-act="save-log" type="button">保存</button>
+            <button class="ghost" data-act="cancel-log" type="button">取消</button>
+          </div>
+        </div>`;
+      }
+      return `<div class="log" data-date="${esc(l.date)}">
+        <time>${esc(l.date)}</time>
+        <div class="log-body">${esc(l.text)}</div>
+        <div class="log-actions">
+          <button class="ghost" data-act="copy-log" type="button">复制</button>
+          <button class="ghost" data-act="edit-log" type="button">编辑</button>
+          <button class="btn-danger" data-act="del-log" type="button">删除</button>
+        </div>
+      </div>`;
     }
 
     function renderDetail() {
       const t = tasks.find((x) => x.id === selectedId);
       if (!t) {
-        $("#detail").innerHTML = `<div class="detail-empty">选一条任务，在这里写今天的进展</div>`;
+        $("#detail").innerHTML = `<div class="empty">选一条任务，在这里写今天的进展</div>`;
         return;
       }
       const logs = [...t.logs].sort((a, b) => b.date.localeCompare(a.date));
       $("#detail").innerHTML = `
-        <div class="kicker">${TYPE[t.type]} · ${t.start} → ${t.end}</div>
+        <div class="kicker">${TYPE[t.type]} · ${esc(t.start)} → ${esc(t.end)}</div>
         <div class="detail-head">
-          <h1>${t.title}</h1>
+          <h1>${esc(t.title)}</h1>
           <div class="status-box">
             <label>状态</label>
             <select id="taskStatus">
@@ -546,80 +714,15 @@
           </div>
         </div>
         <div class="meta"><span>${t.logs.length} 条进展</span></div>
-        <p class="desc">${t.desc || "还没有说明"}</p>
+        ${descBlockHtml(t)}
         <div class="composer">
           <label>记今天 · ${TODAY}</label>
-          <textarea id="logText" placeholder="今天做了什么、卡在哪里、下一步是什么"></textarea>
-          <div class="composer-row">
-            <button class="btn" id="addLog">记一笔</button>
-          </div>
+          <textarea id="logText" placeholder="支持列表、加粗等 Markdown 文案"></textarea>
+          <div class="composer-row"><button class="btn" id="addLog" type="button">记一笔</button></div>
         </div>
-        <div class="timeline">
-          ${logs.map((l) => logRowHtml(l)).join("") || `<p style="color:var(--muted)">还没有进展，从上面记第一笔。</p>`}
-        </div>
+        <div>${logs.map(logRowHtml).join("") || `<p class="muted">还没有进展，从上面记第一笔。</p>`}</div>
       `;
       $("#taskStatus").value = t.status;
-      $("#taskStatus").onchange = () => {
-        t.status = $("#taskStatus").value;
-        renderList();
-        renderDetail();
-        renderGantt();
-        renderCalendar();
-      };
-      $("#addLog").onclick = () => {
-        const text = $("#logText").value.trim();
-        if (!text) return;
-        t.logs = t.logs.filter((l) => l.date !== TODAY);
-        t.logs.push({ date: TODAY, text });
-        if (t.status === "todo") t.status = "doing";
-        editingLogDate = null;
-        renderAll();
-      };
-      $("#detail").onclick = (e) => {
-        const btn = e.target.closest("[data-act]");
-        if (!btn) return;
-        const row = btn.closest(".log");
-        const date = row && row.dataset.date;
-        if (!date) return;
-        const act = btn.dataset.act;
-        if (act === "edit-log") { editingLogDate = date; renderDetail(); }
-        if (act === "cancel-log") { editingLogDate = null; renderDetail(); }
-        if (act === "save-log") {
-          const text = row.querySelector("textarea").value.trim();
-          if (!text) return;
-          const log = t.logs.find((l) => l.date === date);
-          if (log) log.text = text;
-          editingLogDate = null;
-          renderAll();
-        }
-        if (act === "del-log") {
-          if (!confirm("删除 " + date + " 这条进展？")) return;
-          t.logs = t.logs.filter((l) => l.date !== date);
-          if (editingLogDate === date) editingLogDate = null;
-          renderAll();
-        }
-      };
-    }
-
-    function logRowHtml(l) {
-      if (editingLogDate === l.date) {
-        return `<div class="log" data-date="${l.date}">
-          <time>${l.date}</time>
-          <div class="log-body"><textarea class="log-edit">${l.text}</textarea></div>
-          <div class="log-actions">
-            <button class="btn" data-act="save-log" type="button">保存</button>
-            <button class="ghost" data-act="cancel-log" type="button">取消</button>
-          </div>
-        </div>`;
-      }
-      return `<div class="log" data-date="${l.date}">
-        <time>${l.date}</time>
-        <div class="log-body"><p>${l.text}</p></div>
-        <div class="log-actions">
-          <button class="ghost" data-act="edit-log" type="button">编辑</button>
-          <button class="btn-danger" data-act="del-log" type="button">删除</button>
-        </div>
-      </div>`;
     }
 
     function renderCalendar() {
@@ -635,61 +738,49 @@
         const key = fmt(d);
         const logs = logsOn(key);
         const cls = ["day", d.getMonth() !== m ? "out" : "", key === TODAY ? "today" : "", key === selectedDay ? "sel" : ""].join(" ");
-        const items = logs.slice(0, 3).map((l) => `<div class="day-item">${l.task.title}</div>`).join("");
+        const items = logs.slice(0, 3).map((l) => `<div class="day-item">${esc(l.task.title)}</div>`).join("");
         const more = logs.length > 3 ? `<div class="day-item">+${logs.length - 3}</div>` : "";
         html += `<div class="${cls}" data-day="${key}"><div class="day-num">${d.getDate()}</div>${items}${more}</div>`;
       }
       $("#calDays").innerHTML = html;
       const dayLogs = logsOn(selectedDay);
       $("#dayPane").innerHTML = `<h2>${selectedDay}</h2>` + (dayLogs.length
-        ? dayLogs.map((l) => `<div class="log"><time>${l.task.title}</time><p>${l.text}</p></div>`).join("")
-        : `<p style="color:var(--muted)">这天还没有进展记录</p>`);
-    }
-
-    function ganttUnits(range) {
-      const units = [];
-      if (period === "week" || period === "month") {
-        for (let d = new Date(range.start); d <= range.end; d = addDays(d, 1)) {
-          units.push({ start: new Date(d), end: new Date(d), label: String(d.getDate()) });
-        }
-      } else if (period === "quarter") {
-        let d = new Date(range.start);
-        d = addDays(d, -((d.getDay() + 6) % 7));
-        while (d <= range.end) {
-          units.push({ start: new Date(d), end: addDays(d, 6), label: `${d.getMonth() + 1}/${d.getDate()}` });
-          d = addDays(d, 7);
-        }
-      } else {
-        for (let m = 0; m < 12; m++) {
-          units.push({ start: new Date(range.start.getFullYear(), m, 1), end: new Date(range.start.getFullYear(), m + 1, 0), label: `${m + 1}月` });
-        }
-      }
-      return units;
+        ? dayLogs.map((l) => `<div class="day-log">
+            <button class="ghost" data-act="goto-task" data-id="${l.task.id}" type="button">${esc(l.task.title)}</button>
+            <div class="log-body">${esc(l.text)}</div>
+          </div>`).join("")
+        : `<p class="muted">这天还没有进展记录</p>`);
     }
 
     function renderGantt() {
       const r = periodRange();
-      const units = ganttUnits(r);
-      const hint = { week: "按天看本周", month: "按天看本月", quarter: "按周看本季", year: "按月看今年" }[period];
-      $("#ganttHint").textContent = `${fmt(r.start)} 至 ${fmt(r.end)} · ${hint} · 竖线是有进展的日子`;
+      const days = Math.max(1, daysBetween(r.start, r.end) + 1);
+      const scale = ganttScaleForDays(days);
+      const units = buildGanttUnits(r.startStr, r.endStr, scale);
+      const scaleHint = { day: "按天", week: "按周", month: "按月" }[scale];
+      $("#ganttHint").textContent = `${r.startStr} 至 ${r.endStr} · ${r.label} · ${scaleHint}`;
       const today = parse(TODAY);
       const todayIdx = units.findIndex((u) => today >= u.start && today <= u.end);
-      const todayPct = todayIdx < 0 ? -1 : ((todayIdx + 0.5) / units.length) * 100;
+      const todayPct = todayIdx < 0 || !units.length ? -1 : ((todayIdx + 0.5) / units.length) * 100;
       const rows = filtered();
       $("#gantt").innerHTML = `<div class="gantt">
         <div>
           <div class="gantt-head"></div>
-          ${rows.map((t) => `<div class="gantt-row ${t.id === ganttTaskId ? "sel" : ""}" data-id="${t.id}">${t.title}</div>`).join("")}
+          ${rows.map((t) => `<div class="gantt-row ${t.id === ganttTaskId ? "sel" : ""}" data-gid="${t.id}">${esc(t.title)}</div>`).join("")}
         </div>
         <div style="position:relative">
           ${todayPct >= 0 ? `<div class="today-line" style="left:${todayPct}%"></div>` : ""}
           <div class="gantt-head">${units.map((u) => `<div class="col">${u.label}</div>`).join("")}</div>
           ${rows.map((t) => {
-            const ts = parse(t.start), te = parse(t.end);
-            const startIdx = units.findIndex((u) => te >= u.start && ts <= u.end);
+            const ts = parse(t.start || r.startStr);
+            const te = parse(t.end || r.endStr);
+            let startIdx = units.findIndex((u) => te >= u.start && ts <= u.end);
             let endIdx = startIdx;
-            for (let i = 0; i < units.length; i++) if (ts <= units[i].end && te >= units[i].start) endIdx = i;
-            if (startIdx < 0) return `<div class="gantt-track" data-id="${t.id}"></div>`;
+            for (let i = 0; i < units.length; i++) {
+              const u = units[i];
+              if (ts <= u.end && te >= u.start) endIdx = i;
+            }
+            if (startIdx < 0 || !units.length) return `<div class="gantt-track" data-gid="${t.id}"></div>`;
             const left = (startIdx / units.length) * 100;
             const width = Math.max(1.5, ((endIdx - startIdx + 1) / units.length) * 100);
             const ticks = t.logs.map((l) => {
@@ -697,136 +788,286 @@
               const i = units.findIndex((u) => d >= u.start && d <= u.end);
               if (i < 0) return "";
               const p = ((i - startIdx + 0.4) / Math.max(1, endIdx - startIdx + 1)) * 100;
-              return `<i class="tick" title="${l.date}: ${l.text}" style="left:${Math.min(96, Math.max(2, p))}%"></i>`;
+              return `<i class="tick" title="${esc(l.date)}: ${esc(l.text)}" style="left:${Math.min(96, Math.max(2, p))}%"></i>`;
             }).join("");
-            return `<div class="gantt-track" data-id="${t.id}"><div class="bar ${t.type} ${t.status}" style="left:${left}%;width:${width}%">${ticks}</div></div>`;
+            return `<div class="gantt-track" data-gid="${t.id}"><div class="bar ${t.type} ${t.status}" style="left:${left}%;width:${width}%">${ticks}</div></div>`;
           }).join("")}
         </div>
       </div>`;
       const focus = tasks.find((t) => t.id === ganttTaskId) || rows[0];
       const logs = focus ? focus.logs.filter((l) => inRange(l.date, r)).sort((a, b) => b.date.localeCompare(a.date)) : [];
       $("#ganttLogs").innerHTML = focus
-        ? `<strong>${focus.title} · ${r.label}做了什么</strong>${logs.map((l) => `<div class="log"><time>${l.date}</time><p>${l.text}</p></div>`).join("") || `<p style="color:var(--muted)">这个周期还没有进展</p>`}`
+        ? `<strong>${esc(focus.title)} · ${r.label}做了什么</strong>${logs.map((l) => `<div class="log"><time>${esc(l.date)}</time><div class="log-body">${esc(l.text)}</div></div>`).join("") || `<p class="muted">这个周期还没有进展</p>`}`
         : "";
     }
 
     function renderReport() {
       const r = periodRange();
+      const todayLogs = logsOn(TODAY);
       const logs = logsInPeriod().sort((a, b) => b.date.localeCompare(a.date));
       const byTask = {};
-      logs.forEach((l) => { byTask[l.task.title] = (byTask[l.task.title] || 0) + 1; });
+      for (const l of logs) byTask[l.task.title] = (byTask[l.task.title] || 0) + 1;
       const countByDay = {};
-      logs.forEach((l) => { countByDay[l.date] = (countByDay[l.date] || 0) + 1; });
-      let heat = "";
+      for (const l of logs) countByDay[l.date] = (countByDay[l.date] || 0) + 1;
       const heatDays = daysBetween(r.start, r.end) + 1;
+      let heat = "";
       for (let i = 0; i < Math.min(heatDays, 370); i++) {
         const d = fmt(addDays(r.start, i));
         const n = countByDay[d] || 0;
         heat += `<i class="${n >= 3 ? "l3" : n === 2 ? "l2" : n === 1 ? "l1" : ""}" title="${d} · ${n} 笔"></i>`;
       }
-      $("#report").innerHTML = `
+      const todayHtml = todayLogs.length
+        ? todayLogs.map((l) => `<div class="today-item">
+            <div class="today-head">
+              <button class="ghost" data-act="goto-task" data-id="${l.task.id}" type="button">${esc(l.task.title)}</button>
+              <button class="ghost" data-act="copy-text" data-text="${esc(l.text)}" type="button">复制</button>
+            </div>
+            <div class="log-body">${esc(l.text)}</div>
+          </div>`).join("")
+        : `<p class="muted">今天还没有记一笔</p>`;
+      $("#view-report").innerHTML = `
+        <div class="card today-card">
+          <h2>我的今天 · ${TODAY} · ${todayLogs.length} 笔</h2>
+          ${todayHtml}
+        </div>
         <div class="card">
           <h2>${r.label}进展明细</h2>
           <table>
             <thead><tr><th>日期</th><th>任务</th><th>做了什么</th></tr></thead>
-            <tbody>${logs.map((l) => `<tr><td>${l.date}</td><td>${l.task.title}</td><td>${l.text}</td></tr>`).join("") || `<tr><td colspan="3">这个周期还没有记录</td></tr>`}</tbody>
+            <tbody>${logs.map((l) => `<tr><td>${esc(l.date)}</td><td>${esc(l.task.title)}</td><td class="log-body">${esc(l.text)}</td></tr>`).join("") || `<tr><td colspan="3">这个周期还没有记录</td></tr>`}</tbody>
           </table>
         </div>
         <div>
           <div class="card" style="margin-bottom:12px"><h2>活跃分布</h2><div class="heat">${heat}</div></div>
-          <div class="card"><h2>按任务计数</h2><table>${Object.entries(byTask).map(([k, v]) => `<tr><td>${k}</td><td>${v} 笔</td></tr>`).join("") || "<tr><td>暂无</td></tr>"}</table></div>
+          <div class="card"><h2>按任务计数</h2><table>${Object.entries(byTask).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v} 笔</td></tr>`).join("") || "<tr><td>暂无</td></tr>"}</table></div>
         </div>
       `;
     }
 
+    function switchView(next) {
+      view = next;
+      const tabView = next === "detail" ? "list" : next;
+      [...$("#tabs").children].forEach((b) => b.classList.toggle("on", b.dataset.view === tabView));
+      ["board", "list", "cal", "gantt", "report"].forEach((v) => $("#view-" + v).classList.toggle("on", v === next));
+      syncPeriodVisibility();
+      syncPeriodControls();
+      if (next === "board") renderDetail();
+      if (next === "list") { renderFilters(); renderCatalog(); }
+      if (next === "cal") renderCalendar();
+      if (next === "gantt") renderGantt();
+      if (next === "report") renderReport();
+    }
+
     function renderAll() {
-      syncPeriod();
+      syncPeriodVisibility();
+      syncPeriodControls();
       renderFilters();
       renderList();
+      renderCatalog();
       renderDetail();
       renderCalendar();
       renderGantt();
       renderReport();
     }
 
+    function selectedTask() {
+      return tasks.find((t) => t.id === selectedId);
+    }
+
     $("#tabs").onclick = (e) => {
-      const btn = e.target.closest("button");
+      const btn = e.target.closest("button[data-view]");
       if (!btn) return;
-      view = btn.dataset.view;
-      [...$("#tabs").children].forEach((b) => b.classList.toggle("on", b === btn));
-      ["board", "cal", "gantt", "report"].forEach((v) => $("#view-" + v).classList.toggle("on", v === view));
-      syncPeriod();
+      switchView(btn.dataset.view);
     };
 
     $("#period").onclick = (e) => {
-      const btn = e.target.closest("button");
-      if (!btn) return;
-      period = btn.dataset.p;
-      [...$("#period").children].forEach((b) => b.classList.toggle("on", b === btn));
+      const btn = e.target.closest("button[data-p]");
+      if (!btn || !SHORTCUTS.includes(btn.dataset.p)) return;
+      applyPeriodShortcut(btn.dataset.p);
       renderGantt();
       renderReport();
     };
 
-    $("#filters").addEventListener("click", (e) => {
-      const btn = e.target.closest("button.chip");
-      if (!btn) return;
-      typeFilter = btn.dataset.k;
-      renderAll();
-    });
-    $("#filters").addEventListener("change", (e) => {
-      if (e.target.id !== "statusFilter") return;
-      statusFilter = e.target.value;
-      renderAll();
+    $("#rangeStart").onchange = $("#rangeEnd").onchange = () => {
+      applyCustomRangeFromInputs();
+      renderGantt();
+      renderReport();
+    };
+
+    document.addEventListener("click", async (e) => {
+      const selected = window.getSelection()?.toString() || "";
+      if (selected && !e.target.closest("button, a, textarea, input, select, [data-act]")) return;
+
+      const actEl = e.target.closest("[data-act]");
+      if (actEl?.dataset.act) {
+        const a = actEl.dataset.act;
+        if (a === "open-list") { switchView("list"); return; }
+        if (a === "goto-task" && actEl.dataset.id) {
+          selectedId = actEl.dataset.id;
+          editingDesc = false;
+          editingLogDate = null;
+          switchView("board");
+          renderList();
+          renderDetail();
+          return;
+        }
+        if (a === "copy-desc") {
+          const ok = await copyText(selectedTask()?.desc || "");
+          toast(ok ? "已复制说明" : "复制失败");
+          return;
+        }
+        if (a === "edit-desc") { editingDesc = true; renderDetail(); return; }
+        if (a === "cancel-desc") { editingDesc = false; renderDetail(); return; }
+        if (a === "save-desc") {
+          const t = selectedTask();
+          if (t) t.desc = ($("#descText")?.value || "").trim();
+          editingDesc = false;
+          renderDetail();
+          toast("已更新说明");
+          return;
+        }
+        if (a === "copy-log") {
+          const date = actEl.closest("[data-date]")?.dataset.date;
+          const text = selectedTask()?.logs.find((l) => l.date === date)?.text || "";
+          toast((await copyText(text)) ? "已复制进展" : "复制失败");
+          return;
+        }
+        if (a === "edit-log") {
+          editingLogDate = actEl.closest("[data-date]")?.dataset.date || null;
+          renderDetail();
+          return;
+        }
+        if (a === "cancel-log") { editingLogDate = null; renderDetail(); return; }
+        if (a === "save-log") {
+          const date = actEl.closest("[data-date]")?.dataset.date;
+          const t = selectedTask();
+          const box = actEl.closest(".log")?.querySelector("textarea");
+          const text = (box?.value || "").trim();
+          if (!text) { toast("进展内容不能为空"); return; }
+          if (t && date) {
+            const log = t.logs.find((l) => l.date === date);
+            if (log) log.text = text;
+          }
+          editingLogDate = null;
+          renderAll();
+          toast("已更新进展");
+          return;
+        }
+        if (a === "del-log") {
+          const date = actEl.closest("[data-date]")?.dataset.date;
+          const t = selectedTask();
+          if (!date || !t || !confirm(`删除 ${date} 这条进展？`)) return;
+          t.logs = t.logs.filter((l) => l.date !== date);
+          if (editingLogDate === date) editingLogDate = null;
+          renderAll();
+          toast("已删除进展");
+          return;
+        }
+        if (a === "copy-text") {
+          toast((await copyText(actEl.dataset.text || "")) ? "已复制" : "复制失败");
+          return;
+        }
+      }
+
+      const chip = e.target.closest(".chip[data-k]");
+      if (chip) {
+        typeFilter = chip.dataset.k;
+        renderAll();
+        return;
+      }
+
+      const taskEl = e.target.closest(".task[data-id]");
+      if (taskEl && view === "board") {
+        if (selectedId !== taskEl.dataset.id) {
+          editingDesc = false;
+          editingLogDate = null;
+        }
+        selectedId = taskEl.dataset.id;
+        renderList();
+        renderDetail();
+        return;
+      }
+
+      const day = e.target.closest(".day[data-day]");
+      if (day) {
+        selectedDay = day.dataset.day;
+        renderCalendar();
+        return;
+      }
+
+      const grow = e.target.closest("[data-gid]");
+      if (grow) {
+        ganttTaskId = grow.dataset.gid;
+        renderGantt();
+      }
     });
 
-    $("#taskList").addEventListener("click", (e) => {
-      const row = e.target.closest(".task");
-      if (!row) return;
-      if (selectedId !== row.dataset.id) editingLogDate = null;
-      selectedId = row.dataset.id;
-      renderAll();
+    document.addEventListener("change", (e) => {
+      if (e.target.classList.contains("status-filter")) {
+        statusFilter = e.target.value;
+        renderAll();
+      }
+      if (e.target.id === "taskStatus") {
+        const t = selectedTask();
+        if (t) t.status = e.target.value;
+        renderAll();
+      }
     });
 
-    $("#calDays").addEventListener("click", (e) => {
-      const day = e.target.closest(".day");
-      if (!day) return;
-      selectedDay = day.dataset.day;
-      renderCalendar();
+    document.addEventListener("input", (e) => {
+      if (e.target.classList.contains("search")) {
+        query = e.target.value;
+        renderCatalog();
+      }
     });
+
     $("#calPrev").onclick = () => { calCursor.setMonth(calCursor.getMonth() - 1); renderCalendar(); };
     $("#calNext").onclick = () => { calCursor.setMonth(calCursor.getMonth() + 1); renderCalendar(); };
-    $("#calToday").onclick = () => { calCursor = new Date(2026, 7, 13); selectedDay = TODAY; renderCalendar(); };
+    $("#calToday").onclick = () => { calCursor = new Date(); selectedDay = TODAY; renderCalendar(); };
 
-    $("#gantt").addEventListener("click", (e) => {
-      const row = e.target.closest("[data-id]");
-      if (!row) return;
-      ganttTaskId = row.dataset.id;
-      renderGantt();
+    document.addEventListener("click", (e) => {
+      if (e.target.id === "addLog") {
+        const t = selectedTask();
+        const text = ($("#logText")?.value || "").trim();
+        if (!t || !text) return;
+        t.logs = t.logs.filter((l) => l.date !== TODAY);
+        t.logs.push({ date: TODAY, text });
+        if (t.status === "todo") t.status = "doing";
+        renderAll();
+        toast("已写入今日进展");
+      }
     });
 
-    const modal = $("#modal");
     $("#newBtn").onclick = () => {
       const form = $("#newForm");
       form.start.value = TODAY;
-      form.end.value = "2026-08-27";
-      modal.showModal();
+      form.end.value = fmt(addDays(new Date(), 14));
+      $("#modal").showModal();
     };
-    $("#cancelNew").onclick = () => modal.close();
+    $("#cancelBtn").onclick = () => $("#modal").close();
     $("#newForm").onsubmit = (e) => {
       e.preventDefault();
       const f = e.target;
       const id = "t" + Date.now();
       tasks.unshift({
-        id, title: f.title.value.trim(), desc: f.desc.value.trim(),
-        type: f.type.value, status: f.status.value,
-        start: f.start.value, end: f.end.value, logs: []
+        id,
+        title: f.title.value.trim(),
+        desc: f.desc.value.trim(),
+        type: f.type.value,
+        status: f.status.value,
+        start: f.start.value,
+        end: f.end.value,
+        logs: [],
       });
       selectedId = id;
-      modal.close();
+      $("#modal").close();
       f.reset();
+      switchView("board");
       renderAll();
+      toast("已创建任务");
     };
 
+    applyPeriodShortcut("week");
     renderAll();
   </script>
 </body>

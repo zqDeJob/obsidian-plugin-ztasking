@@ -156,8 +156,8 @@
 }
 
 .ztk-main { min-height: 0; overflow: hidden; background: #ffffff; }
-.ztk-page { height: 100%; min-height: 0; display: none; background: #ffffff; }
-.ztk-page.on { display: grid; }
+.ztk-page { height: 100%; min-height: 0; display: none !important; background: #ffffff; }
+.ztk-page.on { display: grid !important; }
 
 #ztk-view-board {
 	grid-template-columns: 320px 1fr;
@@ -428,9 +428,9 @@
 .ztk-day-pane { border-left: 1px solid var(--ztk-line); padding: 16px; }
 .ztk-day-pane h2 { margin: 0 0 12px; font-size: 16px; }
 
-#ztk-view-gantt { grid-template-rows: auto 1fr auto; }
+#ztk-view-gantt { grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
 .ztk-gantt-hint { padding: 8px 16px; color: var(--ztk-muted); font-size: 12px; border-bottom: 1px solid var(--ztk-line); }
-.ztk-gantt-pane { overflow: auto; }
+.ztk-gantt-pane { overflow: auto; min-height: 120px; }
 .ztk-gantt { display: grid; grid-template-columns: 200px 1fr; min-width: 720px; }
 .ztk-gantt-head {
 	height: 36px;

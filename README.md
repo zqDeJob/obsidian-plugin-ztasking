@@ -76,10 +76,24 @@ npm run dev
 
 ## 发布到社区插件
 
-按 [官方流程](https://docs.obsidian.md/Plugins/Releasing/Submit+your+plugin)：
+按 [官方流程](https://docs.obsidian.md/Plugins/Releasing/Submit+your+plugin)。
 
-1. `npm run build`
-2. `manifest.json` 的 `id` 保持 `z-tasking`，且社区列表中未被占用
-3. GitHub Release 的 tag 与 `manifest.json` 的 `version` 一致（如 `0.1.0`）
-4. Release 附件上传 `main.js`、`manifest.json`、`styles.css`
-5. 向 `obsidianmd/obsidian-releases` 提交 PR，追加插件条目
+### 发新版本（GitHub Release）
+
+1. 把 `package.json` / `manifest.json` 的 `version` 改成新版本（可用 `npm version patch` 等，会同步 `versions.json`）
+2. push 到 `main` 后打 tag（**不要**加 `v` 前缀，且必须与 `manifest.json` 的 `version` 一致）：
+
+```bash
+git tag 0.2.0
+git push origin 0.2.0
+```
+
+3. GitHub Action [`.github/workflows/release.yml`](.github/workflows/release.yml) 会自动：`npm ci` → `npm run build` → 校验 tag === manifest version → 创建 Release，并上传 `main.js`、`manifest.json`、`styles.css`
+
+### 首次提交社区目录
+
+1. 仓库保持 public，且已有与 `manifest.json` version 匹配的 GitHub Release
+2. 在 [community.obsidian.md](https://community.obsidian.md) 登录，绑定 GitHub，**Plugins → New plugin** 提交本仓库
+3. 按自动审阅反馈修改；通过后约 24 小时内可在 Obsidian 社区插件里搜到
+
+后续版本只需打 tag 发 Release，无需再向 `obsidianmd/obsidian-releases` 提 PR。

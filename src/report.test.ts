@@ -23,6 +23,7 @@ test("我的今天列出今日任务标题和记一笔的 markdown 槽", () => {
 	assert.match(html, /我的今天/);
 	assert.match(html, /插件开发/);
 	assert.match(html, /data-act="goto-task"/);
+	assert.match(html, /data-act="copy-md"/);
 	assert.match(html, /data-src="z-tasking\/长期\/插件开发.md"/);
 	assert.match(html, /data-date="2026-08-13"/);
 	assert.match(html, /1 笔/);

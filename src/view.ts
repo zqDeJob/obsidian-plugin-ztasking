@@ -1,4 +1,4 @@
-import { Component, ItemView, MarkdownRenderer, Notice, type WorkspaceLeaf } from "obsidian";
+import { Component, ItemView, MarkdownRenderer, Menu, Notice, type WorkspaceLeaf } from "obsidian";
 import type ZTaskingPlugin from "./main";
 import {
 	STATUS_LABEL,
@@ -14,19 +14,31 @@ import {
 	type TaskStatus,
 	type TaskType,
 } from "./model";
+import { copyText } from "./clipboard";
 import { descBlockHtml } from "./desc";
+import {
+	buildGanttUnits,
+	ganttScaleForDays,
+	matchPeriodPreset,
+	normalizeDateRange,
+	resolvePeriodRange,
+	type PeriodPreset,
+	type PeriodRange,
+} from "./period";
 import { mdSlotHtml, reportLogRowHtml, todayDigestHtml } from "./report";
 import { pickSidebarTasks } from "./sidebar";
 
-type Period = "week" | "month" | "quarter" | "year";
 type BoardView = "board" | "list" | "detail" | "cal" | "gantt" | "report";
 const VIEWS: BoardView[] = ["board", "list", "detail", "cal", "gantt", "report"];
 const SIDEBAR_LIMIT = 5; // 长期、临时各自上限
+const PERIOD_SHORTCUTS = ["week", "month", "quarter", "year"] as const;
 
 export class ZTaskingView extends ItemView {
 	plugin: ZTaskingPlugin;
 	view: BoardView = "board";
-	period: Period = "week";
+	period: PeriodPreset = "week";
+	rangeStart = "";
+	rangeEnd = "";
 	typeFilter: "all" | TaskType = "all";
 	statusFilter: "all" | TaskStatus = "all";
 	query = "";
@@ -73,10 +85,14 @@ export class ZTaskingView extends ItemView {
 				</div>
 				<div class="ztk-spacer"></div>
 				<div class="ztk-period">
-					<button data-p="week" class="on">周</button>
-					<button data-p="month">月</button>
-					<button data-p="quarter">季</button>
-					<button data-p="year">年</button>
+					<button data-p="week" class="on" type="button">周</button>
+					<button data-p="month" type="button">月</button>
+					<button data-p="quarter" type="button">季</button>
+					<button data-p="year" type="button">年</button>
+					<span class="ztk-period-sep">自定</span>
+					<input type="date" class="ztk-range-start" aria-label="开始日期" />
+					<span class="ztk-period-tilde">~</span>
+					<input type="date" class="ztk-range-end" aria-label="结束日期" />
 				</div>
 				<button class="ztk-btn" data-act="new">新建任务</button>
 			</header>
@@ -145,6 +161,7 @@ export class ZTaskingView extends ItemView {
 			</div>
 		`;
 		this.bind();
+		this.applyPeriodShortcut("week");
 		this.renderAll();
 	}
 
@@ -170,33 +187,52 @@ export class ZTaskingView extends ItemView {
 		return el as HTMLElement;
 	}
 
-	private periodRange(): { start: Date; end: Date; label: string } {
-		const t = parseDate(todayStr());
-		if (this.period === "week") {
-			const day = (t.getDay() + 6) % 7;
-			const start = addDays(t, -day);
-			return { start, end: addDays(start, 6), label: "本周" };
+	private periodRange(): PeriodRange {
+		const r = normalizeDateRange(this.rangeStart || todayStr(), this.rangeEnd || todayStr());
+		const preset = matchPeriodPreset(r.startStr, r.endStr, todayStr());
+		if (preset !== "custom") {
+			const named = resolvePeriodRange(preset, todayStr());
+			return { ...r, label: named.label, preset };
 		}
-		if (this.period === "month") {
-			return {
-				start: new Date(t.getFullYear(), t.getMonth(), 1),
-				end: new Date(t.getFullYear(), t.getMonth() + 1, 0),
-				label: "本月",
-			};
-		}
-		if (this.period === "quarter") {
-			const q = Math.floor(t.getMonth() / 3) * 3;
-			return {
-				start: new Date(t.getFullYear(), q, 1),
-				end: new Date(t.getFullYear(), q + 3, 0),
-				label: "本季",
-			};
-		}
-		return {
-			start: new Date(t.getFullYear(), 0, 1),
-			end: new Date(t.getFullYear(), 11, 31),
-			label: "今年",
-		};
+		return { ...r, label: "自定", preset: "custom" };
+	}
+
+	private applyPeriodShortcut(preset: (typeof PERIOD_SHORTCUTS)[number]): void {
+		const r = resolvePeriodRange(preset, todayStr());
+		this.period = preset;
+		this.rangeStart = r.startStr;
+		this.rangeEnd = r.endStr;
+		this.syncPeriodControls();
+	}
+
+	private applyCustomRangeFromInputs(): void {
+		const startEl = this.contentEl.querySelector(".ztk-range-start") as HTMLInputElement | null;
+		const endEl = this.contentEl.querySelector(".ztk-range-end") as HTMLInputElement | null;
+		const start = startEl?.value || this.rangeStart || todayStr();
+		const end = endEl?.value || this.rangeEnd || todayStr();
+		const r = normalizeDateRange(start, end);
+		this.rangeStart = r.startStr;
+		this.rangeEnd = r.endStr;
+		this.period = matchPeriodPreset(r.startStr, r.endStr, todayStr());
+		this.syncPeriodControls();
+	}
+
+	private syncPeriodControls(): void {
+		this.contentEl.querySelectorAll<HTMLButtonElement>(".ztk-period button[data-p]").forEach((b) => {
+			b.classList.toggle("on", b.dataset.p === this.period);
+		});
+		const startEl = this.contentEl.querySelector(".ztk-range-start") as HTMLInputElement | null;
+		const endEl = this.contentEl.querySelector(".ztk-range-end") as HTMLInputElement | null;
+		if (startEl) startEl.value = this.rangeStart;
+		if (endEl) endEl.value = this.rangeEnd;
+	}
+
+	private refreshPeriodViews(): void {
+		this.mdGen += 1;
+		const gen = this.mdGen;
+		this.renderGantt();
+		this.renderReport();
+		void this.paintMarkdown(gen);
 	}
 
 	private inRange(date: string, range: { start: Date; end: Date }): boolean {
@@ -232,6 +268,10 @@ export class ZTaskingView extends ItemView {
 			this.contentEl.querySelector(`#ztk-view-${v}`)?.classList.toggle("on", v === view);
 		}
 		this.syncPeriodVisibility();
+		if (view === "gantt" || view === "cal" || view === "report") {
+			this.mdGen += 1;
+			void this.paintMarkdown(this.mdGen);
+		}
 	}
 
 	private logsInPeriod() {
@@ -245,8 +285,15 @@ export class ZTaskingView extends ItemView {
 
 	private bind(): void {
 		const root = this.contentEl;
+		root.addEventListener("contextmenu", (e) => {
+			this.openCopyMenu(e);
+		});
 		root.addEventListener("click", (e) => {
 			const target = e.target as HTMLElement;
+			const selected = window.getSelection()?.toString() ?? "";
+			if (selected && !target.closest("button, a, textarea, input, select, [data-act]")) {
+				return;
+			}
 			const mdLink = target.closest<HTMLAnchorElement>("a.internal-link");
 			const mdHost = target.closest<HTMLElement>(".ztk-md");
 			if (mdLink && mdHost) {
@@ -260,15 +307,10 @@ export class ZTaskingView extends ItemView {
 				this.switchView(tab.dataset.view as BoardView);
 				return;
 			}
-			const p = target.closest<HTMLButtonElement>(".ztk-period button");
-			if (p?.dataset.p) {
-				this.period = p.dataset.p as Period;
-				root.querySelectorAll(".ztk-period button").forEach((b) => b.classList.toggle("on", b === p));
-				this.mdGen += 1;
-				const gen = this.mdGen;
-				this.renderGantt();
-				this.renderReport();
-				void this.paintMarkdown(gen);
+			const p = target.closest<HTMLButtonElement>(".ztk-period button[data-p]");
+			if (p?.dataset.p && (PERIOD_SHORTCUTS as readonly string[]).includes(p.dataset.p)) {
+				this.applyPeriodShortcut(p.dataset.p as (typeof PERIOD_SHORTCUTS)[number]);
+				this.refreshPeriodViews();
 				return;
 			}
 			const act = target.closest<HTMLElement>("[data-act]");
@@ -278,16 +320,16 @@ export class ZTaskingView extends ItemView {
 				if (a === "cancel") this.closeModal();
 				if (a === "cal-prev") {
 					this.calCursor.setMonth(this.calCursor.getMonth() - 1);
-					this.renderCalendar();
+					this.refreshCalendar();
 				}
 				if (a === "cal-next") {
 					this.calCursor.setMonth(this.calCursor.getMonth() + 1);
-					this.renderCalendar();
+					this.refreshCalendar();
 				}
 				if (a === "cal-today") {
 					this.calCursor = new Date();
 					this.selectedDay = todayStr();
-					this.renderCalendar();
+					this.refreshCalendar();
 				}
 				if (a === "add-log") void this.addTodayLog();
 				if (a === "edit-log" || a === "save-log" || a === "cancel-log" || a === "del-log") {
@@ -295,8 +337,21 @@ export class ZTaskingView extends ItemView {
 					if (date) void this.handleLogAction(a, date);
 					return;
 				}
+				if (a === "copy-log") {
+					const date = act.closest<HTMLElement>("[data-date]")?.dataset.date;
+					if (date) void this.copyLog(date);
+					return;
+				}
 				if (a === "edit-desc" || a === "save-desc" || a === "cancel-desc") {
 					void this.handleDescAction(a);
+					return;
+				}
+				if (a === "copy-desc") {
+					void this.copyDesc();
+					return;
+				}
+				if (a === "copy-md") {
+					void this.copyByPathDate(act.dataset.path ?? "", act.dataset.date ?? "");
 					return;
 				}
 				if (a === "goto-task" && act.dataset.id) {
@@ -331,13 +386,13 @@ export class ZTaskingView extends ItemView {
 			const day = target.closest<HTMLElement>(".ztk-day");
 			if (day?.dataset.day) {
 				this.selectedDay = day.dataset.day;
-				this.renderCalendar();
+				this.refreshCalendar();
 				return;
 			}
 			const grow = target.closest<HTMLElement>("[data-gid]");
 			if (grow?.dataset.gid) {
 				this.ganttTaskId = grow.dataset.gid;
-				this.renderGantt();
+				this.refreshGantt();
 			}
 		});
 		root.addEventListener("change", (e) => {
@@ -348,6 +403,10 @@ export class ZTaskingView extends ItemView {
 			}
 			if (el.id === "ztk-task-status") {
 				void this.changeStatus((el as HTMLSelectElement).value as TaskStatus);
+			}
+			if (el.classList.contains("ztk-range-start") || el.classList.contains("ztk-range-end")) {
+				this.applyCustomRangeFromInputs();
+				this.refreshPeriodViews();
 			}
 		});
 		root.addEventListener("input", (e) => {
@@ -415,6 +474,120 @@ export class ZTaskingView extends ItemView {
 		this.renderAll();
 	}
 
+	private async copyToClipboard(text: string, okMsg = "已复制"): Promise<void> {
+		const ok = await copyText(text);
+		new Notice(ok ? okMsg : "复制失败");
+	}
+
+	private resolveSourceText(path: string, date: string, kind: string): string {
+		const task = this.tasks().find((t) => t.path === path);
+		if (!task) return "";
+		if (kind === "desc" || (!date && kind !== "log")) return task.desc;
+		return task.logs.find((l) => l.date === date)?.text ?? "";
+	}
+
+	private textNear(el: HTMLElement | null): string {
+		if (!el) return "";
+		const md = el.closest<HTMLElement>(".ztk-md");
+		if (md) {
+			const fromStore = this.resolveSourceText(md.dataset.src ?? "", md.dataset.date ?? "", md.dataset.kind ?? "log");
+			if (fromStore.trim()) return fromStore;
+			return md.innerText || "";
+		}
+		const log = el.closest<HTMLElement>(".ztk-log");
+		if (log?.dataset.date) {
+			const t = this.tasks().find((x) => x.id === this.selectedId);
+			const text = t?.logs.find((l) => l.date === log.dataset.date)?.text;
+			if (text?.trim()) return text;
+			return log.innerText || "";
+		}
+		const desc = el.closest<HTMLElement>(".ztk-desc");
+		if (desc) {
+			const t = this.tasks().find((x) => x.id === this.selectedId);
+			if (t?.desc?.trim()) return t.desc;
+			return desc.innerText || "";
+		}
+		const today = el.closest<HTMLElement>(".ztk-today-item");
+		if (today) {
+			return this.resolveSourceText(today.dataset.path ?? "", today.dataset.date ?? "", "log")
+				|| today.innerText || "";
+		}
+		const cell = el.closest<HTMLElement>("td");
+		if (cell) {
+			const slot = cell.querySelector<HTMLElement>(".ztk-md");
+			if (slot) {
+				return this.resolveSourceText(slot.dataset.src ?? "", slot.dataset.date ?? "", slot.dataset.kind ?? "log")
+					|| slot.innerText || "";
+			}
+		}
+		return "";
+	}
+
+	private openCopyMenu(e: MouseEvent): void {
+		const target = e.target as HTMLElement;
+		if (target.closest("textarea, input, select, button")) return;
+		const selected = window.getSelection()?.toString() ?? "";
+		const block = this.textNear(target);
+		if (!selected.trim() && !block.trim()) return;
+		e.preventDefault();
+		const menu = new Menu();
+		if (selected.trim()) {
+			menu.addItem((item) => {
+				item.setTitle("复制选中内容")
+					.setIcon("copy")
+					.onClick(() => {
+						void this.copyToClipboard(selected);
+					});
+			});
+		}
+		if (block.trim() && block.trim() !== selected.trim()) {
+			menu.addItem((item) => {
+				item.setTitle("复制本段")
+					.setIcon("clipboard-copy")
+					.onClick(() => {
+						void this.copyToClipboard(block);
+					});
+			});
+		} else if (block.trim() && !selected.trim()) {
+			menu.addItem((item) => {
+				item.setTitle("复制本段")
+					.setIcon("clipboard-copy")
+					.onClick(() => {
+						void this.copyToClipboard(block);
+					});
+			});
+		}
+		menu.showAtMouseEvent(e);
+	}
+
+	private async copyDesc(): Promise<void> {
+		const t = this.tasks().find((x) => x.id === this.selectedId);
+		if (!t?.desc.trim()) {
+			new Notice("没有可复制的说明");
+			return;
+		}
+		await this.copyToClipboard(t.desc);
+	}
+
+	private async copyLog(date: string): Promise<void> {
+		const t = this.tasks().find((x) => x.id === this.selectedId);
+		const text = t?.logs.find((l) => l.date === date)?.text ?? "";
+		if (!text.trim()) {
+			new Notice("没有可复制的进展");
+			return;
+		}
+		await this.copyToClipboard(text);
+	}
+
+	private async copyByPathDate(path: string, date: string): Promise<void> {
+		const text = this.resolveSourceText(path, date, "log");
+		if (!text.trim()) {
+			new Notice("没有可复制的内容");
+			return;
+		}
+		await this.copyToClipboard(text);
+	}
+
 	private async handleDescAction(act: string): Promise<void> {
 		const t = this.tasks().find((x) => x.id === this.selectedId);
 		if (!t) return;
@@ -478,6 +651,7 @@ export class ZTaskingView extends ItemView {
 		this.mdGen += 1;
 		const gen = this.mdGen;
 		this.syncPeriodVisibility();
+		this.syncPeriodControls();
 		this.renderFilters();
 		this.renderList();
 		this.renderCatalog();
@@ -661,6 +835,7 @@ export class ZTaskingView extends ItemView {
 			<time>${esc(date)}</time>
 			<div class="ztk-log-body">${this.mdSlot(path, date)}</div>
 			<div class="ztk-log-actions">
+				<button class="ztk-ghost" data-act="copy-log" type="button">复制</button>
 				<button class="ztk-ghost" data-act="edit-log" type="button">编辑</button>
 				<button class="ztk-btn-danger" data-act="del-log" type="button">删除</button>
 			</div>
@@ -692,40 +867,40 @@ export class ZTaskingView extends ItemView {
 		this.$(".ztk-days").innerHTML = html;
 		const dayLogs = this.logsOn(this.selectedDay);
 		this.$(".ztk-day-pane").innerHTML = `<h2>${this.selectedDay}</h2>` + (dayLogs.length
-			? dayLogs.map((l) => `<div class="ztk-log"><time><button class="ztk-ghost" data-act="goto-task" data-id="${esc(l.task.id)}">${esc(l.task.title)}</button></time><div class="ztk-log-body">${this.mdSlot(l.task.path, l.date)}</div></div>`).join("")
+			? dayLogs.map((l) => `<div class="ztk-log ztk-day-log">
+				<button class="ztk-ghost" data-act="goto-task" data-id="${esc(l.task.id)}" type="button">${esc(l.task.title)}</button>
+				<div class="ztk-log-body">${this.mdSlot(l.task.path, l.date)}</div>
+			</div>`).join("")
 			: `<p class="ztk-muted">这天还没有进展记录</p>`);
 	}
 
+	private refreshCalendar(): void {
+		this.mdGen += 1;
+		const gen = this.mdGen;
+		this.renderCalendar();
+		void this.paintMarkdown(gen);
+	}
+
+	private refreshGantt(): void {
+		this.mdGen += 1;
+		const gen = this.mdGen;
+		this.renderGantt();
+		void this.paintMarkdown(gen);
+	}
+
 	private ganttUnits(range: { start: Date; end: Date }) {
-		const units: { start: Date; end: Date; label: string }[] = [];
-		if (this.period === "week" || this.period === "month") {
-			for (let d = new Date(range.start); d <= range.end; d = addDays(d, 1)) {
-				units.push({ start: new Date(d), end: new Date(d), label: String(d.getDate()) });
-			}
-		} else if (this.period === "quarter") {
-			let d = new Date(range.start);
-			d = addDays(d, -((d.getDay() + 6) % 7));
-			while (d <= range.end) {
-				units.push({ start: new Date(d), end: addDays(d, 6), label: `${d.getMonth() + 1}/${d.getDate()}` });
-				d = addDays(d, 7);
-			}
-		} else {
-			for (let m = 0; m < 12; m++) {
-				units.push({
-					start: new Date(range.start.getFullYear(), m, 1),
-					end: new Date(range.start.getFullYear(), m + 1, 0),
-					label: `${m + 1}月`,
-				});
-			}
-		}
-		return units;
+		const days = daysBetween(range.start, range.end) + 1;
+		const scale = ganttScaleForDays(days);
+		return buildGanttUnits(fmt(range.start), fmt(range.end), scale);
 	}
 
 	private renderGantt(): void {
 		const r = this.periodRange();
 		const units = this.ganttUnits(r);
-		const hint = { week: "按天看本周", month: "按天看本月", quarter: "按周看本季", year: "按月看今年" }[this.period];
-		this.$(".ztk-gantt-hint").textContent = `${fmt(r.start)} 至 ${fmt(r.end)} · ${hint}`;
+		const days = daysBetween(r.start, r.end) + 1;
+		const scale = ganttScaleForDays(days);
+		const scaleHint = { day: "按天", week: "按周", month: "按月" }[scale];
+		this.$(".ztk-gantt-hint").textContent = `${r.startStr} 至 ${r.endStr} · ${r.label} · ${scaleHint}`;
 		const today = parseDate(todayStr());
 		const todayIdx = units.findIndex((u) => today >= u.start && today <= u.end);
 		const todayPct = todayIdx < 0 ? -1 : ((todayIdx + 0.5) / units.length) * 100;
@@ -739,8 +914,8 @@ export class ZTaskingView extends ItemView {
 				${todayPct >= 0 ? `<div class="ztk-today-line" style="left:${todayPct}%"></div>` : ""}
 				<div class="ztk-gantt-head">${units.map((u) => `<div class="ztk-col">${u.label}</div>`).join("")}</div>
 				${rows.map((t) => {
-					const ts = parseDate(t.start || fmt(r.start));
-					const te = parseDate(t.end || fmt(r.end));
+					const ts = parseDate(t.start || r.startStr);
+					const te = parseDate(t.end || r.endStr);
 					const startIdx = units.findIndex((u) => te >= u.start && ts <= u.end);
 					let endIdx = startIdx;
 					for (let i = 0; i < units.length; i++) {

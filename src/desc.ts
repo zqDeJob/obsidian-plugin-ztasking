@@ -17,6 +17,7 @@ export function descBlockHtml(opts: { editing: boolean; desc: string; path: stri
 	return `<div class="ztk-desc">
 		<div class="ztk-desc-body">${body}</div>
 		<div class="ztk-log-actions">
+			<button class="ztk-ghost" data-act="copy-desc" type="button">复制</button>
 			<button class="ztk-ghost" data-act="edit-desc" type="button">编辑</button>
 		</div>
 	</div>`;

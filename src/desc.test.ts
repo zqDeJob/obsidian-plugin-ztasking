@@ -5,6 +5,7 @@ import { descBlockHtml } from "./desc.ts";
 test("浏览态显示编辑按钮和 markdown 槽", () => {
 	const html = descBlockHtml({ editing: false, desc: "这是说明", path: "z-tasking/长期/a.md" });
 	assert.match(html, /data-act="edit-desc"/);
+	assert.match(html, /data-act="copy-desc"/);
 	assert.match(html, /data-kind="desc"/);
 	assert.equal(html.includes('data-act="save-desc"'), false);
 });

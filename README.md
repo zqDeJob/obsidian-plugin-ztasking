@@ -55,46 +55,18 @@ npm run dev
 
 ## 界面预览
 
-截图来自交互原型（Mock 数据），与 Obsidian 内实际插件界面一致。
+**[在线预览](https://obsidian-plugin-ztasking.vercel.app/)** · 截图来自交互原型（Mock 数据），点击可跳转体验。
 
 | 工作台 | 列表 |
 | --- | --- |
-| ![工作台](docs/previews/workbench.png) | ![列表](docs/previews/list.png) |
+| [![工作台](docs/previews/workbench.png)](https://obsidian-plugin-ztasking.vercel.app/) | [![列表](docs/previews/list.png)](https://obsidian-plugin-ztasking.vercel.app/) |
 
 | 日历 | 甘特图 |
 | --- | --- |
-| ![日历](docs/previews/calendar.png) | ![甘特图](docs/previews/gantt.png) |
+| [![日历](docs/previews/calendar.png)](https://obsidian-plugin-ztasking.vercel.app/) | [![甘特图](docs/previews/gantt.png)](https://obsidian-plugin-ztasking.vercel.app/) |
 
-![汇总](docs/previews/report.png)
+[![汇总](docs/previews/report.png)](https://obsidian-plugin-ztasking.vercel.app/)
 
-## 界面原型预览
-
-`prototype/index.html` 是纯前端交互原型（内置 **Mock 数据**），**不是**插件运行时依赖，也不会读写你的 vault。
-
-### 最快：直接打开
-
-1. 在资源管理器中进入本仓库的 `prototype` 目录  
-2. 双击 `index.html`，用系统默认浏览器打开  
-
-或在浏览器地址栏打开本地 `file://` 路径（把盘符与目录换成你本机位置）：
-
-```text
-file:///C:/path/to/obsidian-plugin-ztasking/prototype/index.html
-```
-
-### 用本地静态服务（可选）
-
-若浏览器对 `file://` 限制剪贴板等 API，可在仓库根目录执行：
-
-```bash
-npx --yes serve prototype -p 5173
-```
-
-浏览器访问：http://localhost:5173
-
-### 在 Cursor / VS Code 里
-
-安装 **Live Server**（或同类）扩展 → 右键 `prototype/index.html` → **Open with Live Server**。
 
 ### 原型里能看什么
 

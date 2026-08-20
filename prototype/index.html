@@ -65,16 +65,29 @@
     #view-board { grid-template-columns: 320px 1fr; }
     .list-pane, .detail-pane, .gantt-pane, .cal-grid, .day-pane { min-height: 0; overflow: auto; }
     .list-pane { border-right: 1px solid var(--line); }
-    .filters, .catalog-bar {
+    .filters {
+      display: flex; flex-direction: column; gap: 8px;
+      padding: 12px 14px; border-bottom: 1px solid var(--line);
+    }
+    .catalog-bar {
       display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
       padding: 12px 14px; border-bottom: 1px solid var(--line);
     }
+    .side-tabs {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+      background: var(--raised, #f3f4f6); border-radius: 8px; padding: 3px;
+    }
+    .side-tabs button {
+      border: 0; background: transparent; color: var(--muted);
+      padding: 7px 10px; border-radius: 6px; font-size: 13px; font-weight: 600;
+    }
+    .side-tabs button.on {
+      background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.06);
+    }
+    .side-status { width: 100%; }
     .chip { border: 1px solid var(--line); background: #fff; color: var(--muted); border-radius: 999px; padding: 4px 10px; font-size: 12px; }
     .chip.on { color: var(--teal); border-color: var(--teal); background: var(--teal-soft); }
-    .filters select, .catalog-bar select, .status-box select { width: auto; min-width: 7.5em; }
     .catalog-bar .search { flex: 1; min-width: 160px; }
-    .group-title { padding: 8px 16px 4px; color: var(--muted); font-size: 11px; letter-spacing: .08em; }
-    .more { display: block; margin: 6px 10px 12px; width: calc(100% - 20px); }
     .task {
       display: grid; grid-template-columns: 4px 1fr auto; gap: 10px;
       margin: 6px 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
@@ -94,11 +107,13 @@
     .need { width: 8px; height: 8px; border-radius: 50%; background: var(--copper); margin-top: 6px; }
 
     .detail-pane { padding: 16px 20px 28px; }
-    .detail-head { display: flex; align-items: flex-start; gap: 16px; }
-    .detail-head h1 { flex: 1; margin: 6px 0 10px; font-size: 22px; }
-    .status-box { margin-top: 4px; display: grid; gap: 6px; min-width: 120px; }
-    .status-box label { font-size: 12px; color: var(--muted); }
-    .kicker { font-size: 11px; color: var(--teal); }
+    .detail-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 16px; align-items: center; }
+    .title-block h1, .detail-title { margin: 0; font-size: 22px; cursor: context-menu; }
+    .title-input { width: 100%; font-size: 20px; font-weight: 600; margin: 0; }
+    .meta-fields { display: flex; flex-wrap: nowrap; gap: 8px 12px; align-items: center; justify-content: flex-end; }
+    .meta-fields label { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .filters select, .catalog-bar select, .meta-fields select { width: auto; min-width: 7.5em; }
+    .kicker { font-size: 11px; color: var(--teal); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .desc {
       display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start;
       color: #333; line-height: 1.7; border-left: 2px solid var(--teal); padding-left: 12px; margin: 12px 0 18px;
@@ -113,15 +128,33 @@
     }
     select { height: auto; min-height: 32px; line-height: 1.5; padding: 2px 28px 2px 10px; }
     textarea { min-height: 72px; resize: vertical; }
-    .composer-row { display: flex; justify-content: flex-end; margin-top: 8px; }
+    .composer-row { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 8px; }
+    .hours-field { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin: 0; }
+    .hours-field input { width: 5.5em; min-width: 5.5em; height: 32px; box-sizing: border-box; }
+    .composer-row .btn { height: 32px; display: inline-flex; align-items: center; }
     .log {
-      display: grid; grid-template-columns: 92px 1fr auto; gap: 12px;
+      display: grid; grid-template-columns: 108px 1fr auto; gap: 12px;
       padding: 10px 0; border-bottom: 1px dashed var(--line); align-items: start;
     }
-    .log time { font-family: var(--mono); font-size: 12px; color: var(--muted); padding-top: 4px; }
+    .log-when { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding-top: 2px; }
+    .hours-badge {
+      display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px;
+      font-size: 11px; font-weight: 600; background: #f4efe2; color: var(--gold, #8a6d1f); line-height: 1.4;
+    }
+    .log time { font-family: var(--mono); font-size: 12px; color: var(--muted); }
     .log-body { min-width: 0; white-space: pre-wrap; line-height: 1.65; }
-    .log-actions { display: flex; gap: 8px; flex-shrink: 0; }
-    .log-actions .ghost, .log-actions .btn, .log-actions .btn-danger { padding: 4px 10px; font-size: 12px; }
+    .log-actions { display: flex; gap: 6px; flex-shrink: 0; align-items: flex-start; }
+    .icon-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; cursor: pointer;
+    }
+    .icon-btn svg { display: block; pointer-events: none; }
+    .icon-btn--copy { background: #e7f2f0; color: #2f6f68; }
+    .icon-btn--edit { background: #f3ebe3; color: #a85a2a; }
+    .icon-btn--del { background: #d32f2f; color: #fff; }
+    .icon-btn--del:hover { background: #b71c1c; }
+    .icon-btn--save { background: #2f6f68; color: #fff; }
+    .icon-btn--cancel { background: #ececec; color: #5c5c5c; }
     .muted { color: var(--muted); }
     .empty { color: var(--muted); display: grid; place-items: center; height: 100%; padding: 20px; }
 
@@ -298,7 +331,16 @@
   <script>
     const STATUS = { todo: "未开始", doing: "进行中", done: "已完结" };
     const TYPE = { long: "长期", temp: "临时" };
-    const SIDEBAR_LIMIT = 5;
+    const ICON_SVG = {
+      copy: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+      edit: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`,
+      del: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`,
+      save: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`,
+      cancel: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
+    };
+    function iconBtn(act, kind, label) {
+      return `<button type="button" class="icon-btn icon-btn--${kind}" data-act="${act}" title="${label}" aria-label="${label}">${ICON_SVG[kind]}</button>`;
+    }
     const SHORTCUTS = ["week", "month", "quarter", "year"];
     const $ = (s) => document.querySelector(s);
     const pad = (n) => String(n).padStart(2, "0");
@@ -308,6 +350,16 @@
     const daysBetween = (a, b) => Math.round((b - a) / 86400000);
     const TODAY = fmt(new Date());
     const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+    function parseHoursInput(raw) {
+      const t = String(raw || "").trim().replace(/h$/i, "").trim();
+      if (!t) return null;
+      const n = Number(t);
+      if (!Number.isFinite(n) || n <= 0) return null;
+      return Math.round(n * 1000) / 1000;
+    }
+    function formatHours(hours) {
+      return `${Math.round(hours * 1000) / 1000}h`;
+    }
 
     let view = "board";
     let period = "week";
@@ -315,6 +367,8 @@
     let rangeEnd = "";
     let typeFilter = "all";
     let statusFilter = "all";
+    let sidebarType = "long";
+    let sidebarStatus = "all";
     let query = "";
     let selectedId = "mock-long-1";
     let calCursor = new Date();
@@ -322,6 +376,7 @@
     let ganttTaskId = "mock-long-1";
     let editingLogDate = null;
     let editingDesc = false;
+    let editingTitle = false;
 
     // —— Mock 数据：虚构演示用，与真实 vault 无关 ——
     let tasks = [
@@ -330,9 +385,9 @@
         start: "2026-07-01", end: "2026-09-30",
         desc: "把零散笔记归类、修断链，并统一命名规范。\n\n支持 **Markdown** 与列表。",
         logs: [
-          { date: TODAY, text: "- 清理孤立附件\n- 补全本周目录索引" },
-          { date: "2026-08-10", text: "- 合并重复「会议纪要」模板" },
-          { date: "2026-07-28", text: "- 约定：`年/月/日` 目录结构" },
+          { date: TODAY, text: "- 清理孤立附件\n- 补全本周目录索引", hours: 1.5 },
+          { date: "2026-08-10", text: "- 合并重复「会议纪要」模板", hours: 0.5 },
+          { date: "2026-07-28", text: "- 约定：`年/月/日` 目录结构", hours: 2 },
         ],
       },
       {
@@ -562,17 +617,26 @@
       return filtered().filter((t) => !q || t.title.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q));
     }
 
-    function sidebarTasks(type) {
-      const rank = (t) => {
-        if (t.status === "doing" && !t.logs.some((l) => l.date === TODAY)) return 1;
-        if (t.status === "doing") return 2;
-        if (t.status === "todo") return 3;
-        return 4;
-      };
-      return filtered()
-        .filter((t) => t.type === type)
-        .sort((a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title, "zh"))
-        .slice(0, SIDEBAR_LIMIT);
+    function sidebarUpdatedAt(t) {
+      if (t.updatedAt > 0) return t.updatedAt;
+      let latest = "";
+      for (const log of t.logs) if (log.date > latest) latest = log.date;
+      if (latest) return Date.parse(latest + "T00:00:00");
+      if (t.start) return Date.parse(t.start + "T00:00:00");
+      return 0;
+    }
+
+    function touch(t) {
+      t.updatedAt = Date.now();
+    }
+
+    function sidebarTasks() {
+      return tasks
+        .filter((t) =>
+          t.type === sidebarType &&
+          (sidebarStatus === "all" || t.status === sidebarStatus)
+        )
+        .sort((a, b) => sidebarUpdatedAt(b) - sidebarUpdatedAt(a) || a.title.localeCompare(b.title, "zh"));
     }
 
     function logsInPeriod() {
@@ -599,8 +663,24 @@
       `;
     }
 
+    function renderSidebarChrome() {
+      $("#filters").innerHTML = `
+        <div class="side-tabs">
+          <button type="button" data-side-tab="long" class="${sidebarType === "long" ? "on" : ""}">长期</button>
+          <button type="button" data-side-tab="temp" class="${sidebarType === "temp" ? "on" : ""}">临时</button>
+        </div>
+        <select class="side-status" aria-label="状态筛选">
+          <option value="all">全部状态</option>
+          <option value="todo">未开始</option>
+          <option value="doing">进行中</option>
+          <option value="done">已完结</option>
+        </select>
+      `;
+      const status = document.querySelector(".side-status");
+      if (status) status.value = sidebarStatus;
+    }
+
     function renderFilters() {
-      $("#filters").innerHTML = filterBarHtml();
       $("#catalogBar").innerHTML = filterBarHtml(
         `<input class="search" type="search" placeholder="搜索标题或说明" value="${esc(query)}" />
          <span class="muted">${catalogFiltered().length} / ${tasks.length}</span>`
@@ -609,31 +689,24 @@
     }
 
     function renderList() {
-      $("#taskList").innerHTML = ["long", "temp"].map((key) => {
-        const all = filtered().filter((t) => t.type === key);
-        const items = sidebarTasks(key);
-        if (!all.length) return "";
-        const hidden = all.length - items.length;
-        const cards = items.map((t) => {
-          const need = t.status === "doing" && !t.logs.some((l) => l.date === TODAY);
-          return `<div class="task ${t.id === selectedId ? "sel" : ""}" data-id="${t.id}">
-            <div class="rail ${t.type}"></div>
-            <div>
-              <h3>${esc(t.title)}</h3>
-              <div class="meta">
-                <span class="st ${t.status}">${STATUS[t.status]}</span>
-                <span>${esc(t.start)} → ${esc(t.end)}</span>
-                <span>${t.logs.length} 笔</span>
-              </div>
+      const items = sidebarTasks();
+      const cards = items.map((t) => {
+        const need = t.status === "doing" && !t.logs.some((l) => l.date === TODAY);
+        return `<div class="task ${t.id === selectedId ? "sel" : ""}" data-id="${t.id}">
+          <div class="rail ${t.type}"></div>
+          <div>
+            <h3>${esc(t.title)}</h3>
+            <div class="meta">
+              <span class="st ${t.status}">${STATUS[t.status]}</span>
+              <span>${esc(t.start)} → ${esc(t.end)}</span>
+              <span>${t.logs.length} 笔</span>
             </div>
-            ${need ? `<div class="need" title="今天还没记"></div>` : ""}
-          </div>`;
-        }).join("");
-        const more = hidden
-          ? `<button class="ghost more" data-act="open-list" type="button">还有 ${hidden} 条${TYPE[key]}，打开列表</button>`
-          : "";
-        return `<div class="group-title">${TYPE[key]}任务 · ${all.length}</div>${cards}${more}`;
-      }).join("") || `<p class="empty">还没有任务</p>`;
+          </div>
+          ${need ? `<div class="need" title="今天还没记"></div>` : ""}
+        </div>`;
+      }).join("");
+      $("#taskList").innerHTML = cards
+        || `<p class="empty">${TYPE[sidebarType]}里没有符合筛选的任务</p>`;
     }
 
     function renderCatalog() {
@@ -657,38 +730,45 @@
         return `<div class="desc">
           <textarea class="desc-edit" id="descText">${esc(t.desc)}</textarea>
           <div class="log-actions">
-            <button class="btn" data-act="save-desc" type="button">保存</button>
-            <button class="ghost" data-act="cancel-desc" type="button">取消</button>
+            ${iconBtn("save-desc", "save", "保存")}
+            ${iconBtn("cancel-desc", "cancel", "取消")}
           </div>
         </div>`;
       }
       return `<div class="desc">
         <div class="desc-body">${t.desc.trim() ? esc(t.desc) : `<span class="muted">还没有说明</span>`}</div>
         <div class="log-actions">
-          <button class="ghost" data-act="copy-desc" type="button">复制</button>
-          <button class="ghost" data-act="edit-desc" type="button">编辑</button>
+          ${iconBtn("copy-desc", "copy", "复制")}
+          ${iconBtn("edit-desc", "edit", "编辑")}
         </div>
       </div>`;
     }
 
     function logRowHtml(l) {
+      const badge = l.hours > 0 ? `<span class="hours-badge">${esc(formatHours(l.hours))}</span>` : "";
       if (editingLogDate === l.date) {
+        const hoursVal = l.hours > 0 ? String(l.hours) : "";
         return `<div class="log" data-date="${esc(l.date)}">
-          <time>${esc(l.date)}</time>
-          <div class="log-body"><textarea class="log-edit">${esc(l.text)}</textarea></div>
+          <div class="log-when"><time>${esc(l.date)}</time>${badge}</div>
+          <div class="log-body">
+            <label class="hours-field">工时 (h)
+              <input class="log-hours-edit" type="number" min="0.1" step="0.1" value="${esc(hoursVal)}" />
+            </label>
+            <textarea class="log-edit">${esc(l.text)}</textarea>
+          </div>
           <div class="log-actions">
-            <button class="btn" data-act="save-log" type="button">保存</button>
-            <button class="ghost" data-act="cancel-log" type="button">取消</button>
+            ${iconBtn("save-log", "save", "保存")}
+            ${iconBtn("cancel-log", "cancel", "取消")}
           </div>
         </div>`;
       }
       return `<div class="log" data-date="${esc(l.date)}">
-        <time>${esc(l.date)}</time>
+        <div class="log-when"><time>${esc(l.date)}</time>${badge}</div>
         <div class="log-body">${esc(l.text)}</div>
         <div class="log-actions">
-          <button class="ghost" data-act="copy-log" type="button">复制</button>
-          <button class="ghost" data-act="edit-log" type="button">编辑</button>
-          <button class="btn-danger" data-act="del-log" type="button">删除</button>
+          ${iconBtn("copy-log", "copy", "复制")}
+          ${iconBtn("edit-log", "edit", "编辑")}
+          ${iconBtn("del-log", "del", "删除")}
         </div>
       </div>`;
     }
@@ -701,27 +781,48 @@
       }
       const logs = [...t.logs].sort((a, b) => b.date.localeCompare(a.date));
       $("#detail").innerHTML = `
-        <div class="kicker">${TYPE[t.type]} · ${esc(t.start)} → ${esc(t.end)}</div>
         <div class="detail-head">
-          <h1>${esc(t.title)}</h1>
-          <div class="status-box">
-            <label>状态</label>
-            <select id="taskStatus">
-              <option value="todo">未开始</option>
-              <option value="doing">进行中</option>
-              <option value="done">已完结</option>
-            </select>
+          <div class="title-block">
+            ${editingTitle
+              ? `<input id="titleInput" class="title-input" value="${esc(t.title)}" />
+                 <div class="log-actions">
+                   ${iconBtn("save-title", "save", "保存")}
+                   ${iconBtn("cancel-title", "cancel", "取消")}
+                 </div>`
+              : `<h1 class="detail-title" title="右键可修改标题">${esc(t.title)}</h1>`}
+            <div class="kicker">${esc(t.id)}</div>
+          </div>
+          <div class="meta-fields">
+            <label>类型
+              <select id="taskType">
+                <option value="long">长期</option>
+                <option value="temp">临时</option>
+              </select>
+            </label>
+            <label>状态
+              <select id="taskStatus">
+                <option value="todo">未开始</option>
+                <option value="doing">进行中</option>
+                <option value="done">已完结</option>
+              </select>
+            </label>
           </div>
         </div>
-        <div class="meta"><span>${t.logs.length} 条进展</span></div>
+        <div class="meta"><span>${esc(t.start)} → ${esc(t.end)}</span><span>${t.logs.length} 条进展</span></div>
         ${descBlockHtml(t)}
         <div class="composer">
           <label>记今天 · ${TODAY}</label>
           <textarea id="logText" placeholder="支持列表、加粗等 Markdown 文案"></textarea>
-          <div class="composer-row"><button class="btn" id="addLog" type="button">记一笔</button></div>
+          <div class="composer-row">
+            <label class="hours-field">工时 (h)
+              <input id="logHours" type="number" min="0.1" step="0.1" placeholder="必填" />
+            </label>
+            <button class="btn" id="addLog" type="button">记一笔</button>
+          </div>
         </div>
         <div>${logs.map(logRowHtml).join("") || `<p class="muted">还没有进展，从上面记第一笔。</p>`}</div>
       `;
+      $("#taskType").value = t.type;
       $("#taskStatus").value = t.status;
     }
 
@@ -861,6 +962,7 @@
     function renderAll() {
       syncPeriodVisibility();
       syncPeriodControls();
+      renderSidebarChrome();
       renderFilters();
       renderList();
       renderCatalog();
@@ -905,10 +1007,22 @@
         if (a === "goto-task" && actEl.dataset.id) {
           selectedId = actEl.dataset.id;
           editingDesc = false;
-          editingLogDate = null;
+          editingTitle = false;
           switchView("board");
           renderList();
           renderDetail();
+          return;
+        }
+        if (a === "edit-title") { editingTitle = true; renderDetail(); return; }
+        if (a === "cancel-title") { editingTitle = false; renderDetail(); return; }
+        if (a === "save-title") {
+          const t = selectedTask();
+          const title = ($("#titleInput")?.value || "").trim();
+          if (!title) { toast("标题不能为空"); return; }
+          if (t) { t.title = title; touch(t); }
+          editingTitle = false;
+          renderAll();
+          toast("已更新标题");
           return;
         }
         if (a === "copy-desc") {
@@ -920,7 +1034,7 @@
         if (a === "cancel-desc") { editingDesc = false; renderDetail(); return; }
         if (a === "save-desc") {
           const t = selectedTask();
-          if (t) t.desc = ($("#descText")?.value || "").trim();
+          if (t) { t.desc = ($("#descText")?.value || "").trim(); touch(t); }
           editingDesc = false;
           renderDetail();
           toast("已更新说明");
@@ -941,12 +1055,15 @@
         if (a === "save-log") {
           const date = actEl.closest("[data-date]")?.dataset.date;
           const t = selectedTask();
-          const box = actEl.closest(".log")?.querySelector("textarea");
-          const text = (box?.value || "").trim();
+          const row = actEl.closest(".log");
+          const text = (row?.querySelector("textarea")?.value || "").trim();
+          const hours = parseHoursInput(row?.querySelector(".log-hours-edit")?.value || "");
           if (!text) { toast("进展内容不能为空"); return; }
+          if (hours === null) { toast("请填写有效工时（小时，须大于 0）"); return; }
           if (t && date) {
             const log = t.logs.find((l) => l.date === date);
-            if (log) log.text = text;
+            if (log) { log.text = text; log.hours = hours; }
+            touch(t);
           }
           editingLogDate = null;
           renderAll();
@@ -958,6 +1075,7 @@
           const t = selectedTask();
           if (!date || !t || !confirm(`删除 ${date} 这条进展？`)) return;
           t.logs = t.logs.filter((l) => l.date !== date);
+          touch(t);
           if (editingLogDate === date) editingLogDate = null;
           renderAll();
           toast("已删除进展");
@@ -972,7 +1090,16 @@
       const chip = e.target.closest(".chip[data-k]");
       if (chip) {
         typeFilter = chip.dataset.k;
-        renderAll();
+        renderFilters();
+        renderCatalog();
+        return;
+      }
+
+      const sideTab = e.target.closest("[data-side-tab]");
+      if (sideTab?.dataset.sideTab === "long" || sideTab?.dataset.sideTab === "temp") {
+        sidebarType = sideTab.dataset.sideTab;
+        renderSidebarChrome();
+        renderList();
         return;
       }
 
@@ -1002,14 +1129,49 @@
       }
     });
 
+    document.addEventListener("contextmenu", (e) => {
+      const titleEl = e.target.closest(".detail-title");
+      if (!titleEl) return;
+      e.preventDefault();
+      editingTitle = true;
+      renderDetail();
+      $("#titleInput")?.focus();
+    });
+
     document.addEventListener("change", (e) => {
+      if (e.target.classList.contains("side-status")) {
+        sidebarStatus = e.target.value;
+        renderSidebarChrome();
+        renderList();
+        return;
+      }
       if (e.target.classList.contains("status-filter")) {
         statusFilter = e.target.value;
-        renderAll();
+        renderFilters();
+        renderCatalog();
       }
       if (e.target.id === "taskStatus") {
         const t = selectedTask();
-        if (t) t.status = e.target.value;
+        const next = e.target.value;
+        if (!t || t.status === next) return;
+        if (!confirm(`确认将状态改为「${STATUS[next]}」？`)) {
+          e.target.value = t.status;
+          return;
+        }
+        t.status = next;
+        touch(t);
+        renderAll();
+      }
+      if (e.target.id === "taskType") {
+        const t = selectedTask();
+        const next = e.target.value;
+        if (!t || t.type === next) return;
+        if (!confirm(`确认将类型改为「${TYPE[next]}」？`)) {
+          e.target.value = t.type;
+          return;
+        }
+        t.type = next;
+        touch(t);
         renderAll();
       }
     });
@@ -1029,10 +1191,13 @@
       if (e.target.id === "addLog") {
         const t = selectedTask();
         const text = ($("#logText")?.value || "").trim();
-        if (!t || !text) return;
+        const hours = parseHoursInput($("#logHours")?.value || "");
+        if (!t || !text) { toast("请填写进展内容"); return; }
+        if (hours === null) { toast("请填写有效工时（小时，须大于 0）"); return; }
         t.logs = t.logs.filter((l) => l.date !== TODAY);
-        t.logs.push({ date: TODAY, text });
+        t.logs.push({ date: TODAY, text, hours });
         if (t.status === "todo") t.status = "doing";
+        touch(t);
         renderAll();
         toast("已写入今日进展");
       }
@@ -1058,6 +1223,7 @@
         start: f.start.value,
         end: f.end.value,
         logs: [],
+        updatedAt: Date.now(),
       });
       selectedId = id;
       $("#modal").close();

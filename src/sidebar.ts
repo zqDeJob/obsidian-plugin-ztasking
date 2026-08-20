@@ -1,22 +1,33 @@
-import type { Task, TaskType } from "./model.ts";
+import type { Task, TaskStatus, TaskType } from "./model.ts";
 
-function sidebarRank(task: Task, today: string): number {
-	if (task.status === "doing" && !task.logs.some((l) => l.date === today)) return 1;
-	if (task.status === "doing") return 2;
-	if (task.status === "todo") return 3;
-	return 4;
+/** 侧边栏排序键：优先笔记 mtime，否则取最近进展日期。 */
+export function sidebarUpdatedAt(task: Task): number {
+	if (task.updatedAt > 0) return task.updatedAt;
+	let latest = "";
+	for (const log of task.logs) {
+		if (log.date > latest) latest = log.date;
+	}
+	if (latest) return Date.parse(`${latest}T00:00:00`);
+	if (task.start) return Date.parse(`${task.start}T00:00:00`);
+	return 0;
 }
 
-/** 侧边栏列表：按状态优先级排序。选中项只高亮，不插到最前。 */
+/**
+ * 侧边栏列表：当前类型 Tab + 状态筛选，按最近更新倒序，不截断。
+ * statusFilter 为 all 时含已完结。
+ */
 export function pickSidebarTasks(
 	tasks: Task[],
 	type: TaskType,
-	_selectedId: string,
-	today: string,
-	limit: number,
+	statusFilter: "all" | TaskStatus = "all",
 ): Task[] {
 	return tasks
-		.filter((t) => t.type === type)
-		.sort((a, b) => sidebarRank(a, today) - sidebarRank(b, today) || a.title.localeCompare(b.title, "zh"))
-		.slice(0, limit);
+		.filter((t) =>
+			t.type === type
+			&& (statusFilter === "all" || t.status === statusFilter)
+		)
+		.sort((a, b) =>
+			sidebarUpdatedAt(b) - sidebarUpdatedAt(a)
+			|| a.title.localeCompare(b.title, "zh")
+		);
 }

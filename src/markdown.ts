@@ -1,12 +1,13 @@
 import {
 	TYPE_DIR,
+	formatHours,
 	isStatus,
 	isType,
 	type Task,
 	type TaskLog,
 	type TaskStatus,
 	type TaskType,
-} from "./model";
+} from "./model.ts";
 
 function parseFrontmatter(content: string): { fields: Record<string, string>; body: string } {
 	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
@@ -25,18 +26,37 @@ function typeFromPath(path: string, fallback: TaskType): TaskType {
 	return fallback;
 }
 
+/** 解析进展标题：`### [[YYYY-MM-DD]]` 或 `### [[YYYY-MM-DD]] 1.5h` */
+export function parseLogHeading(line: string): { date: string; hours?: number } | null {
+	const m = line.match(
+		/^###\s+(?:\[\[)?(\d{4}-\d{2}-\d{2})(?:\]\])?(?:\s+(\d+(?:\.\d+)?)\s*h)?\s*$/i,
+	);
+	if (!m?.[1]) return null;
+	const hoursRaw = m[2];
+	if (hoursRaw === undefined) return { date: m[1] };
+	const hours = Number(hoursRaw);
+	if (!Number.isFinite(hours) || hours <= 0) return { date: m[1] };
+	return { date: m[1], hours: Math.round(hours * 1000) / 1000 };
+}
+
 function parseLogs(progressBody: string): TaskLog[] {
 	const logs: TaskLog[] = [];
-	const re = /^### (?:\[\[)?(\d{4}-\d{2}-\d{2})(?:\]\])?\s*$/gm;
+	const re = /^###\s+(?:\[\[)?(\d{4}-\d{2}-\d{2})(?:\]\])?(?:\s+(\d+(?:\.\d+)?)\s*h)?\s*$/gim;
 	const matches = [...progressBody.matchAll(re)];
 	for (let i = 0; i < matches.length; i++) {
 		const cur = matches[i];
 		const next = matches[i + 1];
-		const date = cur?.[1];
-		if (!cur || !date || cur.index === undefined) continue;
+		if (!cur || cur.index === undefined) continue;
+		const heading = parseLogHeading(cur[0].trim());
+		if (!heading) continue;
 		const start = cur.index + cur[0].length;
 		const end = next?.index ?? progressBody.length;
-		logs.push({ date, text: progressBody.slice(start, end).trim() });
+		const entry: TaskLog = {
+			date: heading.date,
+			text: progressBody.slice(start, end).trim(),
+		};
+		if (heading.hours !== undefined) entry.hours = heading.hours;
+		logs.push(entry);
 	}
 	return logs;
 }
@@ -59,13 +79,19 @@ export function parseTaskMarkdown(path: string, content: string): Task {
 		end: fields.end || "",
 		desc,
 		logs,
+		updatedAt: 0,
 	};
+}
+
+export function serializeLogHeading(log: TaskLog): string {
+	const hours = log.hours !== undefined && log.hours > 0 ? ` ${formatHours(log.hours)}` : "";
+	return `### [[${log.date}]]${hours}`;
 }
 
 export function serializeTaskMarkdown(task: Task): string {
 	const logs = [...task.logs].sort((a, b) => b.date.localeCompare(a.date));
 	const logBlock = logs.length
-		? logs.map((l) => `### [[${l.date}]]\n${l.text}`).join("\n\n")
+		? logs.map((l) => `${serializeLogHeading(l)}\n${l.text}`).join("\n\n")
 		: "";
 	return [
 		"---",

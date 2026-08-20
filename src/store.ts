@@ -42,9 +42,11 @@ export class TaskStore {
 		const tasks: Task[] = [];
 		for (const file of files) {
 			const content = await this.app.vault.read(file);
-			tasks.push(parseTaskMarkdown(file.path, content));
+			const task = parseTaskMarkdown(file.path, content);
+			task.updatedAt = file.stat.mtime;
+			tasks.push(task);
 		}
-		tasks.sort((a, b) => a.title.localeCompare(b.title, "zh"));
+		tasks.sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title, "zh"));
 		this.tasks = tasks;
 	}
 
@@ -60,48 +62,65 @@ export class TaskStore {
 		}
 	}
 
-	async create(input: Omit<Task, "id" | "path" | "logs"> & { logs?: Task["logs"] }): Promise<Task> {
+	async create(input: Omit<Task, "id" | "path" | "logs" | "updatedAt"> & { logs?: Task["logs"] }): Promise<Task> {
 		await this.ensureFolders();
 		const path = await this.uniquePath(input.type, input.title);
-		const task: Task = { ...input, id: path, path, logs: input.logs ?? [] };
+		const task: Task = {
+			...input,
+			id: path,
+			path,
+			logs: input.logs ?? [],
+			updatedAt: Date.now(),
+		};
 		await this.app.vault.create(path, serializeTaskMarkdown(task));
 		await this.reload();
 		return this.tasks.find((t) => t.path === path) ?? task;
 	}
 
-	async save(task: Task): Promise<void> {
+	async save(task: Task): Promise<string> {
 		const file = this.app.vault.getAbstractFileByPath(task.path);
-		if (!(file instanceof TFile)) return;
+		if (!(file instanceof TFile)) return task.path;
 		const nextPath = await this.uniquePath(task.type, task.title, task.path);
 		await this.app.vault.modify(file, serializeTaskMarkdown({ ...task, path: nextPath, id: nextPath }));
 		if (nextPath !== task.path) {
 			await this.app.fileManager.renameFile(file, nextPath);
 		}
 		await this.reload();
+		return nextPath;
 	}
 
-	async setStatus(task: Task, status: TaskStatus): Promise<void> {
-		await this.save({ ...task, status });
+	async setStatus(task: Task, status: TaskStatus): Promise<string> {
+		return this.save({ ...task, status });
 	}
 
-	async setDesc(task: Task, desc: string): Promise<void> {
-		await this.save({ ...task, desc });
+	async setType(task: Task, type: TaskType): Promise<string> {
+		return this.save({ ...task, type });
 	}
 
-	async addLog(task: Task, date: string, text: string): Promise<void> {
+	async setTitle(task: Task, title: string): Promise<string> {
+		const next = title.trim();
+		if (!next) return task.path;
+		return this.save({ ...task, title: next });
+	}
+
+	async setDesc(task: Task, desc: string): Promise<string> {
+		return this.save({ ...task, desc });
+	}
+
+	async addLog(task: Task, date: string, text: string, hours: number): Promise<string> {
 		const logs = task.logs.filter((l) => l.date !== date);
-		logs.push({ date, text });
+		logs.push({ date, text, hours });
 		const status = task.status === "todo" ? "doing" : task.status;
-		await this.save({ ...task, logs, status });
+		return this.save({ ...task, logs, status });
 	}
 
-	async updateLog(task: Task, date: string, text: string): Promise<void> {
-		const logs = task.logs.map((l) => l.date === date ? { ...l, text } : l);
-		await this.save({ ...task, logs });
+	async updateLog(task: Task, date: string, text: string, hours: number): Promise<string> {
+		const logs = task.logs.map((l) => l.date === date ? { ...l, text, hours } : l);
+		return this.save({ ...task, logs });
 	}
 
-	async deleteLog(task: Task, date: string): Promise<void> {
-		await this.save({ ...task, logs: task.logs.filter((l) => l.date !== date) });
+	async deleteLog(task: Task, date: string): Promise<string> {
+		return this.save({ ...task, logs: task.logs.filter((l) => l.date !== date) });
 	}
 }
 

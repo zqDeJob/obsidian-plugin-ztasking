@@ -22,6 +22,8 @@ export type TaskStatus = keyof typeof STATUS_LABEL;
 export interface TaskLog {
 	date: string;
 	text: string;
+	/** 花费工时（小时，小数）；旧笔记可能缺失 */
+	hours?: number;
 }
 
 export interface Task {
@@ -34,6 +36,8 @@ export interface Task {
 	end: string;
 	desc: string;
 	logs: TaskLog[];
+	/** 笔记最近修改时间（毫秒），用于侧边栏倒序 */
+	updatedAt: number;
 }
 
 export interface ZTaskingSettings {
@@ -78,6 +82,21 @@ export function esc(s: string): string {
 		'"': "&quot;",
 		"'": "&#39;",
 	}[c] ?? c));
+}
+
+/** 解析用户输入的工时；合法且 > 0 返回数值，否则 null */
+export function parseHoursInput(raw: string): number | null {
+	const t = raw.trim().replace(/h$/i, "").trim();
+	if (!t) return null;
+	const n = Number(t);
+	if (!Number.isFinite(n) || n <= 0) return null;
+	return Math.round(n * 1000) / 1000;
+}
+
+/** 展示用：1.5 → 1.5h */
+export function formatHours(hours: number): string {
+	const n = Math.round(hours * 1000) / 1000;
+	return `${n}h`;
 }
 
 export function sanitizeFileName(title: string): string {

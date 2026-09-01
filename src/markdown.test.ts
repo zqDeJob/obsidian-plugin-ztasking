@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { formatHours, parseHoursInput } from "./model.ts";
-import { parseLogHeading, parseTaskMarkdown, serializeLogHeading, serializeTaskMarkdown } from "./markdown.ts";
+import {
+	appendTaskLog,
+	parseLogHeading,
+	parseTaskMarkdown,
+	serializeLogHeading,
+	serializeTaskMarkdown,
+} from "./markdown.ts";
 
 test("parseHoursInput 接受正小数", () => {
 	assert.equal(parseHoursInput("1.5"), 1.5);
@@ -48,4 +54,41 @@ test("serialize / parse 往返保留工时", () => {
 
 test("serializeLogHeading 无工时时不写 h", () => {
 	assert.equal(serializeLogHeading({ date: "2026-08-01", text: "x" }), "### [[2026-08-01]]");
+});
+
+test("appendTaskLog 无当日进展时新增一条", () => {
+	const next = appendTaskLog(
+		[{ date: "2026-08-19", text: "昨天", hours: 1 }],
+		"2026-08-20",
+		"今天第一笔",
+		0.5,
+	);
+	assert.deepEqual(next, [
+		{ date: "2026-08-19", text: "昨天", hours: 1 },
+		{ date: "2026-08-20", text: "今天第一笔", hours: 0.5 },
+	]);
+});
+
+test("appendTaskLog 已有当日进展时追加正文并累加工时", () => {
+	const next = appendTaskLog(
+		[{ date: "2026-08-20", text: "上午做了 A", hours: 1 }],
+		"2026-08-20",
+		"下午做了 B",
+		0.5,
+	);
+	assert.equal(next.length, 1);
+	assert.equal(next[0]?.date, "2026-08-20");
+	assert.equal(next[0]?.text, "上午做了 A\n\n下午做了 B");
+	assert.equal(next[0]?.hours, 1.5);
+});
+
+test("appendTaskLog 当日正文为空时直接写入新内容", () => {
+	const next = appendTaskLog(
+		[{ date: "2026-08-20", text: "  ", hours: 1 }],
+		"2026-08-20",
+		"补记",
+		0.25,
+	);
+	assert.equal(next[0]?.text, "补记");
+	assert.equal(next[0]?.hours, 1.25);
 });

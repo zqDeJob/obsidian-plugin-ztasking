@@ -1,5 +1,5 @@
 import { TAbstractFile, TFile, type App } from "obsidian";
-import { parseTaskMarkdown, serializeTaskMarkdown } from "./markdown";
+import { appendTaskLog, parseTaskMarkdown, serializeTaskMarkdown } from "./markdown";
 import {
 	TYPE_DIR,
 	sanitizeFileName,
@@ -108,8 +108,7 @@ export class TaskStore {
 	}
 
 	async addLog(task: Task, date: string, text: string, hours: number): Promise<string> {
-		const logs = task.logs.filter((l) => l.date !== date);
-		logs.push({ date, text, hours });
+		const logs = appendTaskLog(task.logs, date, text, hours);
 		const status = task.status === "todo" ? "doing" : task.status;
 		return this.save({ ...task, logs, status });
 	}

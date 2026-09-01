@@ -88,6 +88,26 @@ export function serializeLogHeading(log: TaskLog): string {
 	return `### [[${log.date}]]${hours}`;
 }
 
+/** 「记一笔」：无当日进展则新增；已有则追加正文并累加工时（不覆盖） */
+export function appendTaskLog(
+	logs: TaskLog[],
+	date: string,
+	text: string,
+	hours: number,
+): TaskLog[] {
+	const trimmed = text.trim();
+	const existing = logs.find((l) => l.date === date);
+	if (!existing) {
+		return [...logs, { date, text: trimmed, hours }];
+	}
+	const prev = existing.text.trim();
+	const mergedText = prev ? `${prev}\n\n${trimmed}` : trimmed;
+	const mergedHours = Math.round(((existing.hours ?? 0) + hours) * 1000) / 1000;
+	return logs.map((l) =>
+		l.date === date ? { date, text: mergedText, hours: mergedHours } : l,
+	);
+}
+
 export function serializeTaskMarkdown(task: Task): string {
 	const logs = [...task.logs].sort((a, b) => b.date.localeCompare(a.date));
 	const logBlock = logs.length

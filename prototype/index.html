@@ -1194,8 +1194,14 @@
         const hours = parseHoursInput($("#logHours")?.value || "");
         if (!t || !text) { toast("请填写进展内容"); return; }
         if (hours === null) { toast("请填写有效工时（小时，须大于 0）"); return; }
-        t.logs = t.logs.filter((l) => l.date !== TODAY);
-        t.logs.push({ date: TODAY, text, hours });
+        const existing = t.logs.find((l) => l.date === TODAY);
+        if (!existing) {
+          t.logs.push({ date: TODAY, text, hours });
+        } else {
+          const prev = (existing.text || "").trim();
+          existing.text = prev ? `${prev}\n\n${text}` : text;
+          existing.hours = Math.round(((existing.hours || 0) + hours) * 1000) / 1000;
+        }
         if (t.status === "todo") t.status = "doing";
         touch(t);
         renderAll();

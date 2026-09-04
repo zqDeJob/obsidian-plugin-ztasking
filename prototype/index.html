@@ -244,11 +244,9 @@
       <header>
         <div class="brand">Z-TASKING<span>任务台</span></div>
         <div class="tabs" id="tabs">
-          <button data-view="board" class="on">工作台</button>
-          <button data-view="list">列表</button>
-          <button data-view="cal">日历</button>
-          <button data-view="gantt">甘特图</button>
-          <button data-view="report">汇总</button>
+          <button data-tab="report" class="on" type="button">汇总</button>
+          <button data-tab="work" type="button">工作台</button>
+          <button data-tab="schedule" type="button">日历</button>
         </div>
         <div class="spacer"></div>
         <div class="period" id="period">
@@ -264,7 +262,7 @@
         <button class="btn" id="newBtn">新建任务</button>
       </header>
       <main>
-        <div class="view on" id="view-board">
+        <div class="view" id="view-board">
           <aside class="list-pane">
             <div class="filters" id="filters"></div>
             <div id="taskList"></div>
@@ -282,6 +280,8 @@
               <strong id="calTitle"></strong>
               <button class="ghost" id="calNext">下一月</button>
               <button class="ghost" id="calToday">今天</button>
+              <span class="spacer"></span>
+              <button class="ghost" data-act="goto-gantt" type="button">甘特图</button>
             </div>
             <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
             <div class="days" id="calDays"></div>
@@ -289,11 +289,14 @@
           <aside class="day-pane" id="dayPane"></aside>
         </div>
         <div class="view" id="view-gantt">
-          <div class="gantt-hint" id="ganttHint"></div>
+          <div class="gantt-toolbar" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--line)">
+            <button class="ghost" data-act="goto-cal" type="button">日历</button>
+            <div class="gantt-hint" id="ganttHint" style="padding:0;border:0;flex:1"></div>
+          </div>
           <div class="gantt-pane" id="gantt"></div>
           <div class="gantt-logs" id="ganttLogs"></div>
         </div>
-        <div class="view" id="view-report"></div>
+        <div class="view on" id="view-report"></div>
       </main>
     </section>
   </div>
@@ -361,7 +364,9 @@
       return `${Math.round(hours * 1000) / 1000}h`;
     }
 
-    let view = "board";
+    let view = "report";
+    let workMode = "board";
+    let scheduleMode = "cal";
     let period = "week";
     let rangeStart = "";
     let rangeEnd = "";
@@ -648,8 +653,19 @@
       return tasks.flatMap((t) => t.logs.filter((l) => l.date === day).map((l) => ({ ...l, task: t })));
     }
 
+    function workModeTabsHtml() {
+      const onList = view === "list";
+      return `
+        <div class="side-tabs work-mode">
+          <button type="button" data-work-mode="board" class="${!onList ? "on" : ""}">工作台</button>
+          <button type="button" data-work-mode="list" class="${onList ? "on" : ""}">列表</button>
+        </div>
+      `;
+    }
+
     function filterBarHtml(extra = "") {
       return `
+        ${workModeTabsHtml()}
         <button class="chip ${typeFilter === "all" ? "on" : ""}" data-k="all">全部</button>
         <button class="chip ${typeFilter === "long" ? "on" : ""}" data-k="long">长期</button>
         <button class="chip ${typeFilter === "temp" ? "on" : ""}" data-k="temp">临时</button>
@@ -665,18 +681,23 @@
 
     function renderSidebarChrome() {
       $("#filters").innerHTML = `
-        <div class="side-tabs">
-          <button type="button" data-side-tab="long" class="${sidebarType === "long" ? "on" : ""}">长期</button>
-          <button type="button" data-side-tab="temp" class="${sidebarType === "temp" ? "on" : ""}">临时</button>
+        ${workModeTabsHtml()}
+        <div class="side-filters" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <select class="side-type" aria-label="类型筛选">
+            <option value="long">长期</option>
+            <option value="temp">临时</option>
+          </select>
+          <select class="side-status" aria-label="状态筛选">
+            <option value="all">全部状态</option>
+            <option value="todo">未开始</option>
+            <option value="doing">进行中</option>
+            <option value="done">已完结</option>
+          </select>
         </div>
-        <select class="side-status" aria-label="状态筛选">
-          <option value="all">全部状态</option>
-          <option value="todo">未开始</option>
-          <option value="doing">进行中</option>
-          <option value="done">已完结</option>
-        </select>
       `;
+      const type = document.querySelector(".side-type");
       const status = document.querySelector(".side-status");
+      if (type) type.value = sidebarType;
       if (status) status.value = sidebarStatus;
     }
 
@@ -945,14 +966,28 @@
       `;
     }
 
+    function topTabFor(next) {
+      if (next === "report") return "report";
+      if (next === "cal" || next === "gantt") return "schedule";
+      return "work";
+    }
+
+    function switchTopTab(tab) {
+      if (tab === "report") switchView("report");
+      else if (tab === "work") switchView(workMode);
+      else switchView(scheduleMode);
+    }
+
     function switchView(next) {
       view = next;
-      const tabView = next === "detail" ? "list" : next;
-      [...$("#tabs").children].forEach((b) => b.classList.toggle("on", b.dataset.view === tabView));
+      if (next === "board" || next === "list") workMode = next;
+      if (next === "cal" || next === "gantt") scheduleMode = next;
+      const tabView = topTabFor(next);
+      [...$("#tabs").children].forEach((b) => b.classList.toggle("on", b.dataset.tab === tabView));
       ["board", "list", "cal", "gantt", "report"].forEach((v) => $("#view-" + v).classList.toggle("on", v === next));
       syncPeriodVisibility();
       syncPeriodControls();
-      if (next === "board") renderDetail();
+      if (next === "board") { renderSidebarChrome(); renderList(); renderDetail(); }
       if (next === "list") { renderFilters(); renderCatalog(); }
       if (next === "cal") renderCalendar();
       if (next === "gantt") renderGantt();
@@ -977,9 +1012,9 @@
     }
 
     $("#tabs").onclick = (e) => {
-      const btn = e.target.closest("button[data-view]");
+      const btn = e.target.closest("button[data-tab]");
       if (!btn) return;
-      switchView(btn.dataset.view);
+      switchTopTab(btn.dataset.tab);
     };
 
     $("#period").onclick = (e) => {
@@ -1004,6 +1039,8 @@
       if (actEl?.dataset.act) {
         const a = actEl.dataset.act;
         if (a === "open-list") { switchView("list"); return; }
+        if (a === "goto-gantt") { switchView("gantt"); return; }
+        if (a === "goto-cal") { switchView("cal"); return; }
         if (a === "goto-task" && actEl.dataset.id) {
           selectedId = actEl.dataset.id;
           editingDesc = false;
@@ -1095,11 +1132,9 @@
         return;
       }
 
-      const sideTab = e.target.closest("[data-side-tab]");
-      if (sideTab?.dataset.sideTab === "long" || sideTab?.dataset.sideTab === "temp") {
-        sidebarType = sideTab.dataset.sideTab;
-        renderSidebarChrome();
-        renderList();
+      const workModeBtn = e.target.closest("[data-work-mode]");
+      if (workModeBtn?.dataset.workMode === "board" || workModeBtn?.dataset.workMode === "list") {
+        switchView(workModeBtn.dataset.workMode);
         return;
       }
 
@@ -1139,9 +1174,15 @@
     });
 
     document.addEventListener("change", (e) => {
+      if (e.target.classList.contains("side-type")) {
+        if (e.target.value === "long" || e.target.value === "temp") {
+          sidebarType = e.target.value;
+          renderList();
+        }
+        return;
+      }
       if (e.target.classList.contains("side-status")) {
         sidebarStatus = e.target.value;
-        renderSidebarChrome();
         renderList();
         return;
       }

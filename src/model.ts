@@ -40,12 +40,24 @@ export interface Task {
 	updatedAt: number;
 }
 
+export interface WebBookmark {
+	id: string;
+	title: string;
+	url: string;
+}
+
 export interface ZTaskingSettings {
 	rootFolder: string;
+	/** 常见网页书签 */
+	webBookmarks: WebBookmark[];
 }
 
 export const DEFAULT_SETTINGS: ZTaskingSettings = {
 	rootFolder: "z-tasking",
+	webBookmarks: [
+		{ id: "bm-google", title: "Google", url: "https://www.google.com/" },
+		{ id: "bm-github", title: "GitHub", url: "https://github.com/" },
+	],
 };
 
 export function pad(n: number): string {

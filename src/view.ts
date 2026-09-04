@@ -1,4 +1,4 @@
-import { Component, ItemView, MarkdownRenderer, Menu, Notice, type WorkspaceLeaf } from "obsidian";
+import { Component, ItemView, MarkdownRenderer, Menu, Notice, Platform, type WorkspaceLeaf } from "obsidian";
 import type ZTaskingPlugin from "./main";
 import {
 	STATUS_LABEL,
@@ -30,14 +30,22 @@ import {
 } from "./period";
 import { mdSlotHtml, reportLogRowHtml, todayDigestHtml } from "./report";
 import { pickSidebarTasks } from "./sidebar";
+import { WebPanel } from "./web-panel";
 
-type BoardView = "board" | "list" | "detail" | "cal" | "gantt" | "report";
-const VIEWS: BoardView[] = ["board", "list", "detail", "cal", "gantt", "report"];
+type BoardView = "board" | "list" | "detail" | "cal" | "gantt" | "report" | "web";
+type TopTab = "report" | "work" | "schedule" | "web";
+type WorkMode = "board" | "list";
+type ScheduleMode = "cal" | "gantt";
+const VIEWS: BoardView[] = ["board", "list", "detail", "cal", "gantt", "report", "web"];
 const PERIOD_SHORTCUTS = ["week", "month", "quarter", "year"] as const;
 
 export class ZTaskingView extends ItemView {
 	plugin: ZTaskingPlugin;
-	view: BoardView = "board";
+	view: BoardView = "report";
+	/** 工作台顶栏下的子模式（列表 / 工作台） */
+	workMode: WorkMode = "board";
+	/** 日历顶栏下的子模式（日历 / 甘特） */
+	scheduleMode: ScheduleMode = "cal";
 	period: PeriodPreset = "week";
 	rangeStart = "";
 	rangeEnd = "";
@@ -59,10 +67,12 @@ export class ZTaskingView extends ItemView {
 	editingTitle = false;
 	private mdRoot = new Component();
 	private mdGen = 0;
+	private webPanel: WebPanel;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ZTaskingPlugin) {
 		super(leaf);
 		this.plugin = plugin;
+		this.webPanel = new WebPanel(plugin);
 	}
 
 	getViewType(): string {
@@ -86,11 +96,10 @@ export class ZTaskingView extends ItemView {
 			<header class="ztk-header">
 				<div class="ztk-brand">Z-TASKING<span>任务台</span></div>
 				<div class="ztk-tabs">
-					<button data-view="board" class="on">工作台</button>
-					<button data-view="list">列表</button>
-					<button data-view="cal">日历</button>
-					<button data-view="gantt">甘特图</button>
-					<button data-view="report">汇总</button>
+					<button data-tab="report" class="on" type="button">汇总</button>
+					<button data-tab="work" type="button">工作台</button>
+					<button data-tab="schedule" type="button">日历</button>
+					${Platform.isDesktopApp ? `<button data-tab="web" type="button">网页</button>` : ""}
 				</div>
 				<div class="ztk-spacer"></div>
 				<div class="ztk-period">
@@ -106,7 +115,7 @@ export class ZTaskingView extends ItemView {
 				<button class="ztk-btn" data-act="new">新建任务</button>
 			</header>
 			<main class="ztk-main">
-				<div class="ztk-page on" id="ztk-view-board">
+				<div class="ztk-page" id="ztk-view-board">
 					<aside class="ztk-list">
 						<div class="ztk-filters"></div>
 						<div class="ztk-task-list"></div>
@@ -123,10 +132,12 @@ export class ZTaskingView extends ItemView {
 				<div class="ztk-page" id="ztk-view-cal">
 					<div class="ztk-cal-grid">
 						<div class="ztk-cal-toolbar">
-							<button class="ztk-ghost" data-act="cal-prev">上一月</button>
+							<button class="ztk-ghost" data-act="cal-prev" type="button">上一月</button>
 							<strong class="ztk-cal-title"></strong>
-							<button class="ztk-ghost" data-act="cal-next">下一月</button>
-							<button class="ztk-ghost" data-act="cal-today">今天</button>
+							<button class="ztk-ghost" data-act="cal-next" type="button">下一月</button>
+							<button class="ztk-ghost" data-act="cal-today" type="button">今天</button>
+							<span class="ztk-spacer"></span>
+							<button class="ztk-ghost" data-act="goto-gantt" type="button">甘特图</button>
 						</div>
 						<div class="ztk-weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
 						<div class="ztk-days"></div>
@@ -134,11 +145,15 @@ export class ZTaskingView extends ItemView {
 					<aside class="ztk-day-pane"></aside>
 				</div>
 				<div class="ztk-page" id="ztk-view-gantt">
-					<div class="ztk-gantt-hint"></div>
+					<div class="ztk-gantt-toolbar">
+						<button class="ztk-ghost" data-act="goto-cal" type="button">日历</button>
+						<div class="ztk-gantt-hint"></div>
+					</div>
 					<div class="ztk-gantt-pane"></div>
 					<div class="ztk-gantt-logs"></div>
 				</div>
-				<div class="ztk-page" id="ztk-view-report"></div>
+				<div class="ztk-page on" id="ztk-view-report"></div>
+				<div class="ztk-page" id="ztk-view-web"></div>
 			</main>
 			<div class="ztk-modal">
 				<form class="ztk-modal-card">
@@ -175,6 +190,7 @@ export class ZTaskingView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		this.webPanel.destroy();
 		this.mdRoot.unload();
 	}
 
@@ -268,11 +284,27 @@ export class ZTaskingView extends ItemView {
 		return pickSidebarTasks(this.tasks(), this.sidebarType, this.sidebarStatus);
 	}
 
+	private topTabFor(view: BoardView): TopTab {
+		if (view === "report") return "report";
+		if (view === "cal" || view === "gantt") return "schedule";
+		if (view === "web") return "web";
+		return "work";
+	}
+
+	private switchTopTab(tab: TopTab): void {
+		if (tab === "report") this.switchView("report");
+		else if (tab === "work") this.switchView(this.workMode);
+		else if (tab === "schedule") this.switchView(this.scheduleMode);
+		else if (tab === "web") this.switchView("web");
+	}
+
 	private switchView(view: BoardView): void {
 		this.view = view;
-		const tabView = view === "detail" ? "list" : view;
+		if (view === "board" || view === "list") this.workMode = view;
+		if (view === "cal" || view === "gantt") this.scheduleMode = view;
+		const topTab = this.topTabFor(view);
 		this.contentEl.querySelectorAll(".ztk-tabs button").forEach((b) =>
-			b.classList.toggle("on", (b as HTMLElement).dataset.view === tabView));
+			b.classList.toggle("on", (b as HTMLElement).dataset.tab === topTab));
 		for (const v of VIEWS) {
 			const page = this.contentEl.querySelector(`#ztk-view-${v}`);
 			if (!page) continue;
@@ -284,6 +316,10 @@ export class ZTaskingView extends ItemView {
 		const gen = this.mdGen;
 		// 切页必须重绘目标区：详情页会清空工作台右侧，不重绘就会一直空白
 		if (view === "board" || view === "detail") this.renderDetail();
+		if (view === "board") {
+			this.renderSidebarChrome();
+			this.renderList();
+		}
 		if (view === "list") {
 			this.renderFilters();
 			this.renderCatalog();
@@ -291,6 +327,7 @@ export class ZTaskingView extends ItemView {
 		if (view === "cal") this.renderCalendar();
 		if (view === "gantt") this.renderGantt();
 		if (view === "report") this.renderReport();
+		if (view === "web") this.webPanel.mount(this.$("#ztk-view-web"));
 		void this.paintMarkdown(gen);
 	}
 
@@ -323,8 +360,18 @@ export class ZTaskingView extends ItemView {
 				return;
 			}
 			const tab = target.closest<HTMLButtonElement>(".ztk-tabs button");
-			if (tab?.dataset.view) {
-				this.switchView(tab.dataset.view as BoardView);
+			if (
+				tab?.dataset.tab === "report"
+				|| tab?.dataset.tab === "work"
+				|| tab?.dataset.tab === "schedule"
+				|| tab?.dataset.tab === "web"
+			) {
+				this.switchTopTab(tab.dataset.tab);
+				return;
+			}
+			const workMode = target.closest<HTMLElement>("[data-work-mode]");
+			if (workMode?.dataset.workMode === "board" || workMode?.dataset.workMode === "list") {
+				this.switchView(workMode.dataset.workMode);
 				return;
 			}
 			const p = target.closest<HTMLButtonElement>(".ztk-period button[data-p]");
@@ -338,6 +385,14 @@ export class ZTaskingView extends ItemView {
 				const a = act.dataset.act;
 				if (a === "new") this.openModal();
 				if (a === "cancel") this.closeModal();
+				if (a === "goto-gantt") {
+					this.switchView("gantt");
+					return;
+				}
+				if (a === "goto-cal") {
+					this.switchView("cal");
+					return;
+				}
 				if (a === "cal-prev") {
 					this.calCursor.setMonth(this.calCursor.getMonth() - 1);
 					this.refreshCalendar();
@@ -399,13 +454,6 @@ export class ZTaskingView extends ItemView {
 				this.renderCatalog();
 				return;
 			}
-			const sideTab = target.closest<HTMLElement>("[data-side-tab]");
-			if (sideTab?.dataset.sideTab === "long" || sideTab?.dataset.sideTab === "temp") {
-				this.sidebarType = sideTab.dataset.sideTab;
-				this.renderSidebarChrome();
-				this.renderList();
-				return;
-			}
 			const taskEl = target.closest<HTMLElement>(".ztk-task");
 			if (taskEl?.dataset.id) {
 				if (this.selectedId !== taskEl.dataset.id) {
@@ -436,9 +484,15 @@ export class ZTaskingView extends ItemView {
 				this.renderFilters();
 				this.renderCatalog();
 			}
+			if (el.classList.contains("ztk-side-type")) {
+				const v = (el as HTMLSelectElement).value;
+				if (v === "long" || v === "temp") {
+					this.sidebarType = v;
+					this.renderList();
+				}
+			}
 			if (el.classList.contains("ztk-side-status")) {
 				this.sidebarStatus = (el as HTMLSelectElement).value as "all" | TaskStatus;
-				this.renderSidebarChrome();
 				this.renderList();
 			}
 			if (el.classList.contains("ztk-task-status")) {
@@ -468,8 +522,16 @@ export class ZTaskingView extends ItemView {
 	private syncPeriodVisibility(): void {
 		this.$(".ztk-period").classList.toggle(
 			"is-hidden",
-			this.view === "board" || this.view === "list" || this.view === "detail" || this.view === "cal",
+			this.view === "board"
+				|| this.view === "list"
+				|| this.view === "detail"
+				|| this.view === "cal"
+				|| this.view === "web",
 		);
+		const newBtn = this.contentEl.querySelector<HTMLElement>("[data-act=\"new\"]");
+		if (newBtn) {
+			newBtn.classList.toggle("is-hidden", this.view === "web");
+		}
 	}
 
 	private openModal(): void {
@@ -779,6 +841,9 @@ export class ZTaskingView extends ItemView {
 	renderAll(): void {
 		this.mdGen += 1;
 		const gen = this.mdGen;
+		const topTab = this.topTabFor(this.view);
+		this.contentEl.querySelectorAll(".ztk-tabs button").forEach((b) =>
+			b.classList.toggle("on", (b as HTMLElement).dataset.tab === topTab));
 		this.syncPeriodVisibility();
 		this.syncPeriodControls();
 		this.renderSidebarChrome();
@@ -824,8 +889,19 @@ export class ZTaskingView extends ItemView {
 		}
 	}
 
+	private workModeTabsHtml(): string {
+		const onList = this.view === "list" || this.view === "detail";
+		return `
+			<div class="ztk-side-tabs ztk-work-mode">
+				<button type="button" data-work-mode="board" class="${!onList ? "on" : ""}">工作台</button>
+				<button type="button" data-work-mode="list" class="${onList ? "on" : ""}">列表</button>
+			</div>
+		`;
+	}
+
 	private filterBarHtml(extra = ""): string {
 		return `
+			${this.workModeTabsHtml()}
 			<button class="ztk-chip ${this.typeFilter === "all" ? "on" : ""}" data-k="all" type="button">全部</button>
 			<button class="ztk-chip ${this.typeFilter === "long" ? "on" : ""}" data-k="long" type="button">长期</button>
 			<button class="ztk-chip ${this.typeFilter === "temp" ? "on" : ""}" data-k="temp" type="button">临时</button>
@@ -841,18 +917,23 @@ export class ZTaskingView extends ItemView {
 
 	private renderSidebarChrome(): void {
 		this.$(".ztk-filters").innerHTML = `
-			<div class="ztk-side-tabs">
-				<button type="button" data-side-tab="long" class="${this.sidebarType === "long" ? "on" : ""}">长期</button>
-				<button type="button" data-side-tab="temp" class="${this.sidebarType === "temp" ? "on" : ""}">临时</button>
+			${this.workModeTabsHtml()}
+			<div class="ztk-side-filters">
+				<select class="ztk-side-type" aria-label="类型筛选">
+					<option value="long">长期</option>
+					<option value="temp">临时</option>
+				</select>
+				<select class="ztk-side-status" aria-label="状态筛选">
+					<option value="all">全部状态</option>
+					<option value="todo">未开始</option>
+					<option value="doing">进行中</option>
+					<option value="done">已完结</option>
+				</select>
 			</div>
-			<select class="ztk-side-status" aria-label="状态筛选">
-				<option value="all">全部状态</option>
-				<option value="todo">未开始</option>
-				<option value="doing">进行中</option>
-				<option value="done">已完结</option>
-			</select>
 		`;
+		const type = this.contentEl.querySelector<HTMLSelectElement>(".ztk-side-type");
 		const status = this.contentEl.querySelector<HTMLSelectElement>(".ztk-side-status");
+		if (type) type.value = this.sidebarType;
 		if (status) status.value = this.sidebarStatus;
 	}
 
@@ -932,10 +1013,12 @@ export class ZTaskingView extends ItemView {
 			<div class="ztk-detail-head">
 				<div class="ztk-title-block">
 					${this.editingTitle
-						? `<input id="ztk-title-input" class="ztk-title-input" value="${esc(t.title)}" />
-							<div class="ztk-log-actions">
-								${iconBtn("save-title", "save", "保存")}
-								${iconBtn("cancel-title", "cancel", "取消")}
+						? `<div class="ztk-title-edit">
+								<input id="ztk-title-input" class="ztk-title-input" value="${esc(t.title)}" />
+								<div class="ztk-title-edit-actions">
+									${iconBtn("cancel-title", "cancel", "取消")}
+									${iconBtn("save-title", "save", "保存")}
+								</div>
 							</div>`
 						: `<h1 class="ztk-detail-title" title="右键可修改标题">${esc(t.title)}</h1>`}
 					<div class="ztk-kicker">${esc(t.path)}</div>

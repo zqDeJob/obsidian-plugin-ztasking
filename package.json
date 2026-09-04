@@ -10,10 +10,14 @@
 		"test": "node --experimental-strip-types --test src/sidebar.test.ts src/report.test.ts src/desc.test.ts src/clipboard.test.ts src/period.test.ts src/markdown.test.ts",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
-	"keywords": ["obsidian", "plugin", "task"],
+	"keywords": [
+		"obsidian",
+		"plugin",
+		"task"
+	],
 	"license": "MIT",
 	"devDependencies": {
-		"@types/node": "^22.15.17",
+		"@types/node": "^22.20.1",
 		"esbuild": "0.25.5",
 		"obsidian": "latest",
 		"typescript": "^5.8.3"

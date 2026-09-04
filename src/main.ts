@@ -1,5 +1,5 @@
 import { Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
-import { DEFAULT_SETTINGS, VIEW_TYPE, type ZTaskingSettings } from "./model";
+import { DEFAULT_SETTINGS, VIEW_TYPE, type WebBookmark, type ZTaskingSettings } from "./model";
 import { TaskStore, isInTaskFolder } from "./store";
 import { ZTaskingView } from "./view";
 
@@ -58,7 +58,14 @@ export default class ZTaskingPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const raw = (await this.loadData()) as Partial<ZTaskingSettings> | null;
+		this.settings = {
+			...DEFAULT_SETTINGS,
+			...raw,
+			webBookmarks: Array.isArray(raw?.webBookmarks)
+				? raw!.webBookmarks as WebBookmark[]
+				: DEFAULT_SETTINGS.webBookmarks.map((b) => ({ ...b })),
+		};
 	}
 
 	async saveSettings(): Promise<void> {
@@ -99,6 +106,62 @@ class ZTaskingSettingTab extends PluginSettingTab {
 						await this.plugin.store.reload();
 						new Notice(`任务目录：${next}/长期 、 ${next}/临时`);
 					});
+			});
+
+		containerEl.createEl("h3", { text: "网页" });
+		containerEl.createEl("p", {
+			cls: "setting-item-description",
+			text: "书签可在「网页」页或下方添加/删除；登录态保存在插件专用 Chromium 分区（非系统 Chrome）。",
+		});
+		if (!Array.isArray(this.plugin.settings.webBookmarks)) {
+			this.plugin.settings.webBookmarks = [];
+		}
+		for (const bm of this.plugin.settings.webBookmarks) {
+			new Setting(containerEl)
+				.setName(bm.title)
+				.setDesc(bm.url)
+				.addButton((btn) => {
+					btn.setButtonText("删除").setWarning().onClick(async () => {
+						this.plugin.settings.webBookmarks = this.plugin.settings.webBookmarks.filter((b) => b.id !== bm.id);
+						await this.plugin.saveSettings();
+						this.display();
+					});
+				});
+		}
+		let titleInput: HTMLInputElement | null = null;
+		let urlInput: HTMLInputElement | null = null;
+		new Setting(containerEl)
+			.setName("添加书签")
+			.setDesc("填写名称与网址后点添加")
+			.addText((t) => {
+				t.setPlaceholder("名称");
+				titleInput = t.inputEl;
+			})
+			.addText((t) => {
+				t.setPlaceholder("https://");
+				urlInput = t.inputEl;
+			})
+			.addButton((btn) => {
+				btn.setButtonText("添加").setCta().onClick(async () => {
+					const title = titleInput?.value.trim() || "新网页";
+					let url = urlInput?.value.trim() || "";
+					if (!url) {
+						new Notice("请填写网址");
+						return;
+					}
+					if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+					if (!Array.isArray(this.plugin.settings.webBookmarks)) {
+						this.plugin.settings.webBookmarks = [];
+					}
+					this.plugin.settings.webBookmarks.push({
+						id: `bm-${Date.now().toString(36)}`,
+						title,
+						url,
+					});
+					await this.plugin.saveSettings();
+					new Notice(`已添加书签：${title}`);
+					this.display();
+				});
 			});
 	}
 }

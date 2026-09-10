@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Z-Tasking · 任务台原型</title>
+  <title>Z-Tasking � ?????</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
   <style>
     :root {
       --bg: #ffffff; --raised: #f4f4f4; --ink: #1a1a1a; --muted: #6b6b6b;
-      --line: #e6e6e6; --teal: #2f6f68; --teal-soft: #e7f2f0;
+      --line: #ebe0d6; --teal: #d17a45; --teal-soft: #f8eee6;
       --copper: #c46b3a; --gold: #8a6d1f;
       --font: "Noto Sans SC", "PingFang SC", sans-serif;
       --mono: "IBM Plex Mono", ui-monospace, monospace;
@@ -43,18 +43,35 @@
     .tabs button.on { background: var(--raised); color: var(--ink); }
     .spacer { flex: 1; }
     .period {
-      display: flex; align-items: center; background: #fff; border: 1px solid var(--line);
-      border-radius: 8px; overflow: hidden; flex-wrap: nowrap;
+      display: flex; align-items: center; gap: 6px; padding: 3px;
+      background: var(--teal-soft); border: 1px solid #f0e2d6;
+      border-radius: 999px; flex-wrap: nowrap;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.65);
     }
     .period.is-hidden { display: none; }
-    .period button { border: 0; background: transparent; color: var(--muted); padding: 6px 12px; font-size: 12px; }
-    .period button.on { background: var(--teal); color: #fff; }
-    .period-sep { font-size: 12px; color: var(--muted); padding: 0 6px 0 10px; border-left: 1px solid var(--line); white-space: nowrap; }
-    .period-tilde { font-size: 12px; color: var(--muted); padding: 0 2px; }
-    .period input[type="date"] {
-      width: auto; min-width: 8.5em; border: 0; border-radius: 0; padding: 4px 6px;
-      font-size: 12px; background: transparent; color: var(--ink);
+    .period-presets { display: flex; align-items: center; gap: 2px; }
+    .period button {
+      border: 0; background: transparent; color: var(--muted);
+      padding: 5px 12px; font-size: 12px; font-weight: 550;
+      border-radius: 999px; line-height: 1.2;
     }
+    .period button:hover { background: rgba(255,255,255,.72); color: var(--ink); }
+    .period button.on { background: var(--teal); color: #fff; box-shadow: 0 1px 2px rgba(209,122,69,.28); }
+    .period-custom {
+      display: flex; align-items: center; gap: 4px;
+      padding: 2px 8px 2px 4px; margin-left: 2px;
+      border-left: 1px solid rgba(209,122,69,.22);
+      border-radius: 0 999px 999px 0;
+    }
+    .period.is-custom .period-custom { background: rgba(255,255,255,.78); }
+    .period-sep { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--muted); padding: 0 4px 0 8px; white-space: nowrap; }
+    .period.is-custom .period-sep { color: var(--teal); }
+    .period-tilde { font-size: 12px; color: var(--muted); padding: 0 1px; }
+    .period input[type="date"] {
+      width: auto; min-width: 8.2em; border: 1px solid transparent; border-radius: 999px;
+      padding: 3px 8px; font-size: 12px; background: rgba(255,255,255,.55); color: var(--ink);
+    }
+    .period.is-custom input[type="date"] { background: #fff; border-color: #edd9c8; }
     .btn { border: 0; background: var(--teal); color: #fff; font-weight: 600; padding: 7px 12px; border-radius: 8px; font-size: 13px; }
     .btn-danger { border: 0; background: #d32f2f; color: #fff; font-weight: 600; padding: 4px 10px; border-radius: 8px; font-size: 12px; }
     .ghost { background: #fff; border: 1px solid var(--line); color: var(--ink); padding: 7px 12px; border-radius: 8px; font-size: 13px; }
@@ -149,11 +166,11 @@
       width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; cursor: pointer;
     }
     .icon-btn svg { display: block; pointer-events: none; }
-    .icon-btn--copy { background: #e7f2f0; color: #2f6f68; }
+    .icon-btn--copy { background: #f8eee6; color: #d17a45; }
     .icon-btn--edit { background: #f3ebe3; color: #a85a2a; }
     .icon-btn--del { background: #d32f2f; color: #fff; }
     .icon-btn--del:hover { background: #b71c1c; }
-    .icon-btn--save { background: #2f6f68; color: #fff; }
+    .icon-btn--save { background: #d17a45; color: #fff; }
     .icon-btn--cancel { background: #ececec; color: #5c5c5c; }
     .muted { color: var(--muted); }
     .empty { color: var(--muted); display: grid; place-items: center; height: 100%; padding: 20px; }
@@ -210,9 +227,9 @@
     th { color: var(--muted); font-weight: 500; }
     .heat { display: grid; grid-template-columns: repeat(auto-fill, 14px); gap: 4px; }
     .heat i { width: 14px; height: 14px; border-radius: 3px; background: #f0f0f0; display: block; }
-    .heat i.l1 { background: #cfe3df; }
-    .heat i.l2 { background: #7eb8ae; }
-    .heat i.l3 { background: #2f6f68; }
+    .heat i.l1 { background: #f3d9c4; }
+    .heat i.l2 { background: #e4a875; }
+    .heat i.l3 { background: #d17a45; }
     .toast {
       position: fixed; right: 16px; bottom: 16px; background: var(--ink); color: #fff;
       padding: 8px 12px; border-radius: 8px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s;
@@ -234,32 +251,36 @@
 </head>
 <body>
   <div class="obsidian">
-    <nav class="ribbon" aria-label="Obsidian 侧边栏">
-      <button title="文件">⌘</button>
-      <button title="搜索">⌕</button>
-      <button class="active" title="Z-Tasking 任务台">☰</button>
-      <button title="日记">日</button>
+    <nav class="ribbon" aria-label="Obsidian ???">
+      <button title="??">?</button>
+      <button title="??">?</button>
+      <button class="active" title="Z-Tasking ???">?</button>
+      <button title="??">?</button>
     </nav>
     <section class="app">
       <header>
-        <div class="brand">Z-TASKING<span>任务台</span></div>
+        <div class="brand">Z-TASKING<span>???</span></div>
         <div class="tabs" id="tabs">
-          <button data-tab="report" class="on" type="button">汇总</button>
-          <button data-tab="work" type="button">工作台</button>
-          <button data-tab="schedule" type="button">日历</button>
+          <button data-tab="report" class="on" type="button">??</button>
+          <button data-tab="work" type="button">???</button>
+          <button data-tab="schedule" type="button">??</button>
         </div>
         <div class="spacer"></div>
         <div class="period" id="period">
-          <button data-p="week" class="on" type="button">周</button>
-          <button data-p="month" type="button">月</button>
-          <button data-p="quarter" type="button">季</button>
-          <button data-p="year" type="button">年</button>
-          <span class="period-sep">自定</span>
-          <input type="date" id="rangeStart" aria-label="开始日期" />
-          <span class="period-tilde">~</span>
-          <input type="date" id="rangeEnd" aria-label="结束日期" />
+          <div class="period-presets">
+            <button data-p="week" class="on" type="button">?</button>
+            <button data-p="month" type="button">?</button>
+            <button data-p="quarter" type="button">?</button>
+            <button data-p="year" type="button">?</button>
+          </div>
+          <div class="period-custom">
+            <span class="period-sep">??</span>
+            <input type="date" id="rangeStart" aria-label="????" />
+            <span class="period-tilde">~</span>
+            <input type="date" id="rangeEnd" aria-label="????" />
+          </div>
         </div>
-        <button class="btn" id="newBtn">新建任务</button>
+        <button class="btn" id="newBtn">????</button>
       </header>
       <main>
         <div class="view" id="view-board">
@@ -276,21 +297,21 @@
         <div class="view" id="view-cal">
           <div class="cal-grid">
             <div class="cal-toolbar">
-              <button class="ghost" id="calPrev">上一月</button>
+              <button class="ghost" id="calPrev">???</button>
               <strong id="calTitle"></strong>
-              <button class="ghost" id="calNext">下一月</button>
-              <button class="ghost" id="calToday">今天</button>
+              <button class="ghost" id="calNext">???</button>
+              <button class="ghost" id="calToday">??</button>
               <span class="spacer"></span>
-              <button class="ghost" data-act="goto-gantt" type="button">甘特图</button>
+              <button class="ghost" data-act="goto-gantt" type="button">???</button>
             </div>
-            <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+            <div class="weekdays"><span>?</span><span>?</span><span>?</span><span>?</span><span>?</span><span>?</span><span>?</span></div>
             <div class="days" id="calDays"></div>
           </div>
           <aside class="day-pane" id="dayPane"></aside>
         </div>
         <div class="view" id="view-gantt">
           <div class="gantt-toolbar" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--line)">
-            <button class="ghost" data-act="goto-cal" type="button">日历</button>
+            <button class="ghost" data-act="goto-cal" type="button">??</button>
             <div class="gantt-hint" id="ganttHint" style="padding:0;border:0;flex:1"></div>
           </div>
           <div class="gantt-pane" id="gantt"></div>
@@ -303,19 +324,19 @@
 
   <dialog id="modal">
     <form class="modal" id="newForm">
-      <h2>新建任务</h2>
+      <h2>????</h2>
       <div class="form">
-        <input name="title" required placeholder="任务标题" />
-        <textarea name="desc" placeholder="说明：这件事项要达成什么"></textarea>
+        <input name="title" required placeholder="????" />
+        <textarea name="desc" placeholder="????????????"></textarea>
         <div class="two">
           <select name="type">
-            <option value="long">长期任务</option>
-            <option value="temp">临时任务</option>
+            <option value="long">????</option>
+            <option value="temp">????</option>
           </select>
           <select name="status">
-            <option value="todo">未开始</option>
-            <option value="doing">进行中</option>
-            <option value="done">已完结</option>
+            <option value="todo">???</option>
+            <option value="doing">???</option>
+            <option value="done">???</option>
           </select>
         </div>
         <div class="two">
@@ -324,16 +345,16 @@
         </div>
       </div>
       <div class="modal-actions">
-        <button type="button" class="ghost" id="cancelBtn">取消</button>
-        <button class="btn" type="submit">创建</button>
+        <button type="button" class="ghost" id="cancelBtn">??</button>
+        <button class="btn" type="submit">??</button>
       </div>
     </form>
   </dialog>
   <div class="toast" id="toast"></div>
 
   <script>
-    const STATUS = { todo: "未开始", doing: "进行中", done: "已完结" };
-    const TYPE = { long: "长期", temp: "临时" };
+    const STATUS = { todo: "???", doing: "???", done: "???" };
+    const TYPE = { long: "??", temp: "??" };
     const ICON_SVG = {
       copy: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
       edit: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`,
@@ -383,83 +404,83 @@
     let editingDesc = false;
     let editingTitle = false;
 
-    // —— Mock 数据：虚构演示用，与真实 vault 无关 ——
+    // ?? Mock ???????????? vault ?? ??
     let tasks = [
       {
-        id: "mock-long-1", type: "long", status: "doing", title: "示例：知识库整理",
+        id: "mock-long-1", type: "long", status: "doing", title: "????????",
         start: "2026-07-01", end: "2026-09-30",
-        desc: "把零散笔记归类、修断链，并统一命名规范。\n\n支持 **Markdown** 与列表。",
+        desc: "????????????????????\n\n?? **Markdown** ????",
         logs: [
-          { date: TODAY, text: "- 清理孤立附件\n- 补全本周目录索引", hours: 1.5 },
-          { date: "2026-08-10", text: "- 合并重复「会议纪要」模板", hours: 0.5 },
-          { date: "2026-07-28", text: "- 约定：`年/月/日` 目录结构", hours: 2 },
+          { date: TODAY, text: "- ??????\n- ????????", hours: 1.5 },
+          { date: "2026-08-10", text: "- ????????????", hours: 0.5 },
+          { date: "2026-07-28", text: "- ???`?/?/?` ????", hours: 2 },
         ],
       },
       {
-        id: "mock-long-2", type: "long", status: "doing", title: "示例：阅读计划",
+        id: "mock-long-2", type: "long", status: "doing", title: "???????",
         start: "2026-06-01", end: "2026-12-31",
-        desc: "每月读完 2 本非虚构类，并写一页札记。",
+        desc: "???? 2 ?????????????",
         logs: [
-          { date: "2026-08-05", text: "- 《深度工作》第 3–5 章\n- 提炼：时间块 + 关机仪式" },
-          { date: "2026-07-15", text: "- 选书清单定稿（12 本）" },
+          { date: "2026-08-05", text: "- ??????? 3?5 ?\n- ?????? + ????" },
+          { date: "2026-07-15", text: "- ???????12 ??" },
         ],
       },
       {
-        id: "mock-long-3", type: "long", status: "todo", title: "示例：健身打卡",
+        id: "mock-long-3", type: "long", status: "todo", title: "???????",
         start: "2026-08-01", end: "2026-10-31",
-        desc: "每周力量训练 3 次，有氧 2 次。尚未开始第一周。",
+        desc: "?????? 3 ???? 2 ??????????",
         logs: [],
       },
       {
-        id: "mock-long-4", type: "long", status: "doing", title: "示例：个人站点改版",
+        id: "mock-long-4", type: "long", status: "doing", title: "?????????",
         start: "2026-07-20", end: "2026-09-15",
-        desc: "首页一屏定调：品牌名 > 一句介绍 > 一个 CTA。",
+        desc: "?????????? > ???? > ?? CTA?",
         logs: [
-          { date: TODAY, text: "- 定字体配对与主色\n- 草图：全幅 hero，无卡片堆叠" },
-          { date: "2026-08-08", text: "- 去掉首屏统计条与徽章" },
+          { date: TODAY, text: "- ????????\n- ????? hero??????" },
+          { date: "2026-08-08", text: "- ??????????" },
         ],
       },
       {
-        id: "mock-temp-1", type: "temp", status: "done", title: "示例：周末大扫除",
+        id: "mock-temp-1", type: "temp", status: "done", title: "????????",
         start: "2026-08-09", end: "2026-08-10",
-        desc: "厨房 + 阳台，半天搞定。",
-        logs: [{ date: "2026-08-10", text: "- 完成；下次记得先清空水槽" }],
+        desc: "?? + ????????",
+        logs: [{ date: "2026-08-10", text: "- ????????????" }],
       },
       {
-        id: "mock-temp-2", type: "temp", status: "done", title: "示例：给护照延期拍照",
+        id: "mock-temp-2", type: "temp", status: "done", title: "??????????",
         start: "2026-07-18", end: "2026-07-18",
-        desc: "白底证件照，导出 413×531。",
-        logs: [{ date: "2026-07-18", text: "- 已拍并上传网办" }],
+        desc: "???????? 413�531?",
+        logs: [{ date: "2026-07-18", text: "- ???????" }],
       },
       {
-        id: "mock-temp-3", type: "temp", status: "doing", title: "示例：订会议室投影",
+        id: "mock-temp-3", type: "temp", status: "doing", title: "?????????",
         start: "2026-08-12", end: "2026-08-15",
-        desc: "下周四分享会，确认 HDMI / 无线投屏。",
-        logs: [{ date: TODAY, text: "- 行政回复：可用 B201，需自带转接头" }],
+        desc: "????????? HDMI / ?????",
+        logs: [{ date: TODAY, text: "- ??????? B201???????" }],
       },
       {
-        id: "mock-temp-4", type: "temp", status: "done", title: "示例：修自行车刹车",
+        id: "mock-temp-4", type: "temp", status: "done", title: "?????????",
         start: "2026-07-22", end: "2026-07-22",
-        desc: "前刹异响，换来令片。",
-        logs: [{ date: "2026-07-22", text: "- 修好；线管也顺带调了" }],
+        desc: "??????????",
+        logs: [{ date: "2026-07-22", text: "- ??????????" }],
       },
       {
-        id: "mock-temp-5", type: "temp", status: "todo", title: "示例：寄回快递纸箱",
+        id: "mock-temp-5", type: "temp", status: "todo", title: "?????????",
         start: "2026-08-14", end: "2026-08-16",
-        desc: "楼下驿站回收，记得带会员码。",
+        desc: "??????????????",
         logs: [],
       },
       {
-        id: "mock-temp-6", type: "temp", status: "done", title: "示例：牙医复诊",
+        id: "mock-temp-6", type: "temp", status: "done", title: "???????",
         start: "2026-07-30", end: "2026-07-30",
-        desc: "洗牙 + 复查补牙。",
-        logs: [{ date: "2026-07-30", text: "- 完成；下次 6 个月后再约" }],
+        desc: "?? + ?????",
+        logs: [{ date: "2026-07-30", text: "- ????? 6 ?????" }],
       },
       {
-        id: "mock-temp-7", type: "temp", status: "done", title: "示例：备份相册到移动硬盘",
+        id: "mock-temp-7", type: "temp", status: "done", title: "????????????",
         start: "2026-08-02", end: "2026-08-03",
-        desc: "只拷贝 Raw + 精修 JPG。",
-        logs: [{ date: "2026-08-03", text: "- 约 120GB，校验 hash 通过" }],
+        desc: "??? Raw + ?? JPG?",
+        logs: [{ date: "2026-08-03", text: "- ? 120GB??? hash ??" }],
       },
     ];
 
@@ -496,7 +517,7 @@
         end = parse(TODAY);
       }
       if (start > end) { const t = start; start = end; end = t; }
-      return { start, end, startStr: fmt(start), endStr: fmt(end), label: "自定", preset: "custom" };
+      return { start, end, startStr: fmt(start), endStr: fmt(end), label: "??", preset: "custom" };
     }
 
     function resolvePeriodRange(preset, todayStr = TODAY) {
@@ -505,22 +526,22 @@
         const day = (t.getDay() + 6) % 7;
         const start = addDays(t, -day);
         const end = addDays(start, 6);
-        return { start, end, startStr: fmt(start), endStr: fmt(end), label: "本周", preset };
+        return { start, end, startStr: fmt(start), endStr: fmt(end), label: "??", preset };
       }
       if (preset === "month") {
         const start = new Date(t.getFullYear(), t.getMonth(), 1);
         const end = new Date(t.getFullYear(), t.getMonth() + 1, 0);
-        return { start, end, startStr: fmt(start), endStr: fmt(end), label: "本月", preset };
+        return { start, end, startStr: fmt(start), endStr: fmt(end), label: "??", preset };
       }
       if (preset === "quarter") {
         const q = Math.floor(t.getMonth() / 3) * 3;
         const start = new Date(t.getFullYear(), q, 1);
         const end = new Date(t.getFullYear(), q + 3, 0);
-        return { start, end, startStr: fmt(start), endStr: fmt(end), label: "本季", preset };
+        return { start, end, startStr: fmt(start), endStr: fmt(end), label: "??", preset };
       }
       const start = new Date(t.getFullYear(), 0, 1);
       const end = new Date(t.getFullYear(), 11, 31);
-      return { start, end, startStr: fmt(start), endStr: fmt(end), label: "今年", preset };
+      return { start, end, startStr: fmt(start), endStr: fmt(end), label: "??", preset };
     }
 
     function matchPeriodPreset(startStr, endStr) {
@@ -561,7 +582,7 @@
         units.push({
           start: new Date(cursor),
           end: new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0),
-          label: `${cursor.getMonth() + 1}月`,
+          label: `${cursor.getMonth() + 1}?`,
         });
         cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
       }
@@ -575,7 +596,7 @@
         const named = resolvePeriodRange(preset);
         return { ...r, label: named.label, preset };
       }
-      return { ...r, label: "自定", preset: "custom" };
+      return { ...r, label: "??", preset: "custom" };
     }
 
     function applyPeriodShortcut(preset) {
@@ -596,6 +617,7 @@
 
     function syncPeriodControls() {
       [...$("#period").querySelectorAll("button[data-p]")].forEach((b) => b.classList.toggle("on", b.dataset.p === period));
+      $("#period").classList.toggle("is-custom", period === "custom");
       $("#rangeStart").value = rangeStart;
       $("#rangeEnd").value = rangeEnd;
     }
@@ -657,8 +679,8 @@
       const onList = view === "list";
       return `
         <div class="side-tabs work-mode">
-          <button type="button" data-work-mode="board" class="${!onList ? "on" : ""}">工作台</button>
-          <button type="button" data-work-mode="list" class="${onList ? "on" : ""}">列表</button>
+          <button type="button" data-work-mode="board" class="${!onList ? "on" : ""}">???</button>
+          <button type="button" data-work-mode="list" class="${onList ? "on" : ""}">??</button>
         </div>
       `;
     }
@@ -666,14 +688,14 @@
     function filterBarHtml(extra = "") {
       return `
         ${workModeTabsHtml()}
-        <button class="chip ${typeFilter === "all" ? "on" : ""}" data-k="all">全部</button>
-        <button class="chip ${typeFilter === "long" ? "on" : ""}" data-k="long">长期</button>
-        <button class="chip ${typeFilter === "temp" ? "on" : ""}" data-k="temp">临时</button>
+        <button class="chip ${typeFilter === "all" ? "on" : ""}" data-k="all">??</button>
+        <button class="chip ${typeFilter === "long" ? "on" : ""}" data-k="long">??</button>
+        <button class="chip ${typeFilter === "temp" ? "on" : ""}" data-k="temp">??</button>
         <select class="status-filter">
-          <option value="all">全部状态</option>
-          <option value="todo">未开始</option>
-          <option value="doing">进行中</option>
-          <option value="done">已完结</option>
+          <option value="all">????</option>
+          <option value="todo">???</option>
+          <option value="doing">???</option>
+          <option value="done">???</option>
         </select>
         ${extra}
       `;
@@ -683,15 +705,15 @@
       $("#filters").innerHTML = `
         ${workModeTabsHtml()}
         <div class="side-filters" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <select class="side-type" aria-label="类型筛选">
-            <option value="long">长期</option>
-            <option value="temp">临时</option>
+          <select class="side-type" aria-label="????">
+            <option value="long">??</option>
+            <option value="temp">??</option>
           </select>
-          <select class="side-status" aria-label="状态筛选">
-            <option value="all">全部状态</option>
-            <option value="todo">未开始</option>
-            <option value="doing">进行中</option>
-            <option value="done">已完结</option>
+          <select class="side-status" aria-label="????">
+            <option value="all">????</option>
+            <option value="todo">???</option>
+            <option value="doing">???</option>
+            <option value="done">???</option>
           </select>
         </div>
       `;
@@ -703,7 +725,7 @@
 
     function renderFilters() {
       $("#catalogBar").innerHTML = filterBarHtml(
-        `<input class="search" type="search" placeholder="搜索标题或说明" value="${esc(query)}" />
+        `<input class="search" type="search" placeholder="???????" value="${esc(query)}" />
          <span class="muted">${catalogFiltered().length} / ${tasks.length}</span>`
       );
       document.querySelectorAll(".status-filter").forEach((el) => { el.value = statusFilter; });
@@ -719,29 +741,29 @@
             <h3>${esc(t.title)}</h3>
             <div class="meta">
               <span class="st ${t.status}">${STATUS[t.status]}</span>
-              <span>${esc(t.start)} → ${esc(t.end)}</span>
-              <span>${t.logs.length} 笔</span>
+              <span>${esc(t.start)} ? ${esc(t.end)}</span>
+              <span>${t.logs.length} ?</span>
             </div>
           </div>
-          ${need ? `<div class="need" title="今天还没记"></div>` : ""}
+          ${need ? `<div class="need" title="?????"></div>` : ""}
         </div>`;
       }).join("");
       $("#taskList").innerHTML = cards
-        || `<p class="empty">${TYPE[sidebarType]}里没有符合筛选的任务</p>`;
+        || `<p class="empty">${TYPE[sidebarType]}??????????</p>`;
     }
 
     function renderCatalog() {
       const items = catalogFiltered();
       $("#catalogBody").innerHTML = `<table>
-        <thead><tr><th>标题</th><th>类型</th><th>状态</th><th>周期</th><th>进展</th></tr></thead>
+        <thead><tr><th>??</th><th>??</th><th>??</th><th>??</th><th>??</th></tr></thead>
         <tbody>
           ${items.map((t) => `<tr data-act="goto-task" data-id="${t.id}">
             <td><span class="rail-dot ${t.type}"></span>${esc(t.title)}</td>
             <td>${TYPE[t.type]}</td>
             <td><span class="st ${t.status}">${STATUS[t.status]}</span></td>
-            <td>${esc(t.start)} → ${esc(t.end)}</td>
-            <td>${t.logs.length} 笔</td>
-          </tr>`).join("") || `<tr><td colspan="5">没有匹配的任务</td></tr>`}
+            <td>${esc(t.start)} ? ${esc(t.end)}</td>
+            <td>${t.logs.length} ?</td>
+          </tr>`).join("") || `<tr><td colspan="5">???????</td></tr>`}
         </tbody>
       </table>`;
     }
@@ -751,16 +773,16 @@
         return `<div class="desc">
           <textarea class="desc-edit" id="descText">${esc(t.desc)}</textarea>
           <div class="log-actions">
-            ${iconBtn("save-desc", "save", "保存")}
-            ${iconBtn("cancel-desc", "cancel", "取消")}
+            ${iconBtn("save-desc", "save", "??")}
+            ${iconBtn("cancel-desc", "cancel", "??")}
           </div>
         </div>`;
       }
       return `<div class="desc">
-        <div class="desc-body">${t.desc.trim() ? esc(t.desc) : `<span class="muted">还没有说明</span>`}</div>
+        <div class="desc-body">${t.desc.trim() ? esc(t.desc) : `<span class="muted">?????</span>`}</div>
         <div class="log-actions">
-          ${iconBtn("copy-desc", "copy", "复制")}
-          ${iconBtn("edit-desc", "edit", "编辑")}
+          ${iconBtn("copy-desc", "copy", "??")}
+          ${iconBtn("edit-desc", "edit", "??")}
         </div>
       </div>`;
     }
@@ -772,14 +794,14 @@
         return `<div class="log" data-date="${esc(l.date)}">
           <div class="log-when"><time>${esc(l.date)}</time>${badge}</div>
           <div class="log-body">
-            <label class="hours-field">工时 (h)
+            <label class="hours-field">?? (h)
               <input class="log-hours-edit" type="number" min="0.1" step="0.1" value="${esc(hoursVal)}" />
             </label>
             <textarea class="log-edit">${esc(l.text)}</textarea>
           </div>
           <div class="log-actions">
-            ${iconBtn("save-log", "save", "保存")}
-            ${iconBtn("cancel-log", "cancel", "取消")}
+            ${iconBtn("save-log", "save", "??")}
+            ${iconBtn("cancel-log", "cancel", "??")}
           </div>
         </div>`;
       }
@@ -787,9 +809,9 @@
         <div class="log-when"><time>${esc(l.date)}</time>${badge}</div>
         <div class="log-body">${esc(l.text)}</div>
         <div class="log-actions">
-          ${iconBtn("copy-log", "copy", "复制")}
-          ${iconBtn("edit-log", "edit", "编辑")}
-          ${iconBtn("del-log", "del", "删除")}
+          ${iconBtn("copy-log", "copy", "??")}
+          ${iconBtn("edit-log", "edit", "??")}
+          ${iconBtn("del-log", "del", "??")}
         </div>
       </div>`;
     }
@@ -797,7 +819,7 @@
     function renderDetail() {
       const t = tasks.find((x) => x.id === selectedId);
       if (!t) {
-        $("#detail").innerHTML = `<div class="empty">选一条任务，在这里写今天的进展</div>`;
+        $("#detail").innerHTML = `<div class="empty">???????????????</div>`;
         return;
       }
       const logs = [...t.logs].sort((a, b) => b.date.localeCompare(a.date));
@@ -807,41 +829,41 @@
             ${editingTitle
               ? `<input id="titleInput" class="title-input" value="${esc(t.title)}" />
                  <div class="log-actions">
-                   ${iconBtn("save-title", "save", "保存")}
-                   ${iconBtn("cancel-title", "cancel", "取消")}
+                   ${iconBtn("save-title", "save", "??")}
+                   ${iconBtn("cancel-title", "cancel", "??")}
                  </div>`
-              : `<h1 class="detail-title" title="右键可修改标题">${esc(t.title)}</h1>`}
+              : `<h1 class="detail-title" title="???????">${esc(t.title)}</h1>`}
             <div class="kicker">${esc(t.id)}</div>
           </div>
           <div class="meta-fields">
-            <label>类型
+            <label>??
               <select id="taskType">
-                <option value="long">长期</option>
-                <option value="temp">临时</option>
+                <option value="long">??</option>
+                <option value="temp">??</option>
               </select>
             </label>
-            <label>状态
+            <label>??
               <select id="taskStatus">
-                <option value="todo">未开始</option>
-                <option value="doing">进行中</option>
-                <option value="done">已完结</option>
+                <option value="todo">???</option>
+                <option value="doing">???</option>
+                <option value="done">???</option>
               </select>
             </label>
           </div>
         </div>
-        <div class="meta"><span>${esc(t.start)} → ${esc(t.end)}</span><span>${t.logs.length} 条进展</span></div>
+        <div class="meta"><span>${esc(t.start)} ? ${esc(t.end)}</span><span>${t.logs.length} ???</span></div>
         ${descBlockHtml(t)}
         <div class="composer">
-          <label>记今天 · ${TODAY}</label>
-          <textarea id="logText" placeholder="支持列表、加粗等 Markdown 文案"></textarea>
+          <label>??? � ${TODAY}</label>
+          <textarea id="logText" placeholder="???????? Markdown ??"></textarea>
           <div class="composer-row">
-            <label class="hours-field">工时 (h)
-              <input id="logHours" type="number" min="0.1" step="0.1" placeholder="必填" />
+            <label class="hours-field">?? (h)
+              <input id="logHours" type="number" min="0.1" step="0.1" placeholder="??" />
             </label>
-            <button class="btn" id="addLog" type="button">记一笔</button>
+            <button class="btn" id="addLog" type="button">???</button>
           </div>
         </div>
-        <div>${logs.map(logRowHtml).join("") || `<p class="muted">还没有进展，从上面记第一笔。</p>`}</div>
+        <div>${logs.map(logRowHtml).join("") || `<p class="muted">??????????????</p>`}</div>
       `;
       $("#taskType").value = t.type;
       $("#taskStatus").value = t.status;
@@ -850,7 +872,7 @@
     function renderCalendar() {
       const y = calCursor.getFullYear();
       const m = calCursor.getMonth();
-      $("#calTitle").textContent = `${y} 年 ${m + 1} 月`;
+      $("#calTitle").textContent = `${y} ? ${m + 1} ?`;
       const first = new Date(y, m, 1);
       const startOffset = (first.getDay() + 6) % 7;
       const gridStart = addDays(first, -startOffset);
@@ -871,7 +893,7 @@
             <button class="ghost" data-act="goto-task" data-id="${l.task.id}" type="button">${esc(l.task.title)}</button>
             <div class="log-body">${esc(l.text)}</div>
           </div>`).join("")
-        : `<p class="muted">这天还没有进展记录</p>`);
+        : `<p class="muted">?????????</p>`);
     }
 
     function renderGantt() {
@@ -879,8 +901,8 @@
       const days = Math.max(1, daysBetween(r.start, r.end) + 1);
       const scale = ganttScaleForDays(days);
       const units = buildGanttUnits(r.startStr, r.endStr, scale);
-      const scaleHint = { day: "按天", week: "按周", month: "按月" }[scale];
-      $("#ganttHint").textContent = `${r.startStr} 至 ${r.endStr} · ${r.label} · ${scaleHint}`;
+      const scaleHint = { day: "??", week: "??", month: "??" }[scale];
+      $("#ganttHint").textContent = `${r.startStr} ? ${r.endStr} � ${r.label} � ${scaleHint}`;
       const today = parse(TODAY);
       const todayIdx = units.findIndex((u) => today >= u.start && today <= u.end);
       const todayPct = todayIdx < 0 || !units.length ? -1 : ((todayIdx + 0.5) / units.length) * 100;
@@ -919,7 +941,7 @@
       const focus = tasks.find((t) => t.id === ganttTaskId) || rows[0];
       const logs = focus ? focus.logs.filter((l) => inRange(l.date, r)).sort((a, b) => b.date.localeCompare(a.date)) : [];
       $("#ganttLogs").innerHTML = focus
-        ? `<strong>${esc(focus.title)} · ${r.label}做了什么</strong>${logs.map((l) => `<div class="log"><time>${esc(l.date)}</time><div class="log-body">${esc(l.text)}</div></div>`).join("") || `<p class="muted">这个周期还没有进展</p>`}`
+        ? `<strong>${esc(focus.title)} � ${r.label}????</strong>${logs.map((l) => `<div class="log"><time>${esc(l.date)}</time><div class="log-body">${esc(l.text)}</div></div>`).join("") || `<p class="muted">?????????</p>`}`
         : "";
     }
 
@@ -936,32 +958,32 @@
       for (let i = 0; i < Math.min(heatDays, 370); i++) {
         const d = fmt(addDays(r.start, i));
         const n = countByDay[d] || 0;
-        heat += `<i class="${n >= 3 ? "l3" : n === 2 ? "l2" : n === 1 ? "l1" : ""}" title="${d} · ${n} 笔"></i>`;
+        heat += `<i class="${n >= 3 ? "l3" : n === 2 ? "l2" : n === 1 ? "l1" : ""}" title="${d} � ${n} ?"></i>`;
       }
       const todayHtml = todayLogs.length
         ? todayLogs.map((l) => `<div class="today-item">
             <div class="today-head">
               <button class="ghost" data-act="goto-task" data-id="${l.task.id}" type="button">${esc(l.task.title)}</button>
-              <button class="ghost" data-act="copy-text" data-text="${esc(l.text)}" type="button">复制</button>
+              <button class="ghost" data-act="copy-text" data-text="${esc(l.text)}" type="button">??</button>
             </div>
             <div class="log-body">${esc(l.text)}</div>
           </div>`).join("")
-        : `<p class="muted">今天还没有记一笔</p>`;
+        : `<p class="muted">????????</p>`;
       $("#view-report").innerHTML = `
         <div class="card today-card">
-          <h2>我的今天 · ${TODAY} · ${todayLogs.length} 笔</h2>
+          <h2>???? � ${TODAY} � ${todayLogs.length} ?</h2>
           ${todayHtml}
         </div>
         <div class="card">
-          <h2>${r.label}进展明细</h2>
+          <h2>${r.label}????</h2>
           <table>
-            <thead><tr><th>日期</th><th>任务</th><th>做了什么</th></tr></thead>
-            <tbody>${logs.map((l) => `<tr><td>${esc(l.date)}</td><td>${esc(l.task.title)}</td><td class="log-body">${esc(l.text)}</td></tr>`).join("") || `<tr><td colspan="3">这个周期还没有记录</td></tr>`}</tbody>
+            <thead><tr><th>??</th><th>??</th><th>????</th></tr></thead>
+            <tbody>${logs.map((l) => `<tr><td>${esc(l.date)}</td><td>${esc(l.task.title)}</td><td class="log-body">${esc(l.text)}</td></tr>`).join("") || `<tr><td colspan="3">?????????</td></tr>`}</tbody>
           </table>
         </div>
         <div>
-          <div class="card" style="margin-bottom:12px"><h2>活跃分布</h2><div class="heat">${heat}</div></div>
-          <div class="card"><h2>按任务计数</h2><table>${Object.entries(byTask).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v} 笔</td></tr>`).join("") || "<tr><td>暂无</td></tr>"}</table></div>
+          <div class="card" style="margin-bottom:12px"><h2>????</h2><div class="heat">${heat}</div></div>
+          <div class="card"><h2>?????</h2><table>${Object.entries(byTask).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v} ?</td></tr>`).join("") || "<tr><td>??</td></tr>"}</table></div>
         </div>
       `;
     }
@@ -1055,16 +1077,16 @@
         if (a === "save-title") {
           const t = selectedTask();
           const title = ($("#titleInput")?.value || "").trim();
-          if (!title) { toast("标题不能为空"); return; }
+          if (!title) { toast("??????"); return; }
           if (t) { t.title = title; touch(t); }
           editingTitle = false;
           renderAll();
-          toast("已更新标题");
+          toast("?????");
           return;
         }
         if (a === "copy-desc") {
           const ok = await copyText(selectedTask()?.desc || "");
-          toast(ok ? "已复制说明" : "复制失败");
+          toast(ok ? "?????" : "????");
           return;
         }
         if (a === "edit-desc") { editingDesc = true; renderDetail(); return; }
@@ -1074,13 +1096,13 @@
           if (t) { t.desc = ($("#descText")?.value || "").trim(); touch(t); }
           editingDesc = false;
           renderDetail();
-          toast("已更新说明");
+          toast("?????");
           return;
         }
         if (a === "copy-log") {
           const date = actEl.closest("[data-date]")?.dataset.date;
           const text = selectedTask()?.logs.find((l) => l.date === date)?.text || "";
-          toast((await copyText(text)) ? "已复制进展" : "复制失败");
+          toast((await copyText(text)) ? "?????" : "????");
           return;
         }
         if (a === "edit-log") {
@@ -1095,8 +1117,8 @@
           const row = actEl.closest(".log");
           const text = (row?.querySelector("textarea")?.value || "").trim();
           const hours = parseHoursInput(row?.querySelector(".log-hours-edit")?.value || "");
-          if (!text) { toast("进展内容不能为空"); return; }
-          if (hours === null) { toast("请填写有效工时（小时，须大于 0）"); return; }
+          if (!text) { toast("????????"); return; }
+          if (hours === null) { toast("?????????????? 0?"); return; }
           if (t && date) {
             const log = t.logs.find((l) => l.date === date);
             if (log) { log.text = text; log.hours = hours; }
@@ -1104,22 +1126,22 @@
           }
           editingLogDate = null;
           renderAll();
-          toast("已更新进展");
+          toast("?????");
           return;
         }
         if (a === "del-log") {
           const date = actEl.closest("[data-date]")?.dataset.date;
           const t = selectedTask();
-          if (!date || !t || !confirm(`删除 ${date} 这条进展？`)) return;
+          if (!date || !t || !confirm(`?? ${date} ?????`)) return;
           t.logs = t.logs.filter((l) => l.date !== date);
           touch(t);
           if (editingLogDate === date) editingLogDate = null;
           renderAll();
-          toast("已删除进展");
+          toast("?????");
           return;
         }
         if (a === "copy-text") {
-          toast((await copyText(actEl.dataset.text || "")) ? "已复制" : "复制失败");
+          toast((await copyText(actEl.dataset.text || "")) ? "???" : "????");
           return;
         }
       }
@@ -1195,7 +1217,7 @@
         const t = selectedTask();
         const next = e.target.value;
         if (!t || t.status === next) return;
-        if (!confirm(`确认将状态改为「${STATUS[next]}」？`)) {
+        if (!confirm(`????????${STATUS[next]}??`)) {
           e.target.value = t.status;
           return;
         }
@@ -1207,7 +1229,7 @@
         const t = selectedTask();
         const next = e.target.value;
         if (!t || t.type === next) return;
-        if (!confirm(`确认将类型改为「${TYPE[next]}」？`)) {
+        if (!confirm(`????????${TYPE[next]}??`)) {
           e.target.value = t.type;
           return;
         }
@@ -1233,8 +1255,8 @@
         const t = selectedTask();
         const text = ($("#logText")?.value || "").trim();
         const hours = parseHoursInput($("#logHours")?.value || "");
-        if (!t || !text) { toast("请填写进展内容"); return; }
-        if (hours === null) { toast("请填写有效工时（小时，须大于 0）"); return; }
+        if (!t || !text) { toast("???????"); return; }
+        if (hours === null) { toast("?????????????? 0?"); return; }
         const existing = t.logs.find((l) => l.date === TODAY);
         if (!existing) {
           t.logs.push({ date: TODAY, text, hours });
@@ -1246,7 +1268,7 @@
         if (t.status === "todo") t.status = "doing";
         touch(t);
         renderAll();
-        toast("已写入今日进展");
+        toast("???????");
       }
     });
 
@@ -1277,7 +1299,7 @@
       f.reset();
       switchView("board");
       renderAll();
-      toast("已创建任务");
+      toast("?????");
     };
 
     applyPeriodShortcut("week");

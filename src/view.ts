@@ -28,7 +28,7 @@ import {
 	type PeriodPreset,
 	type PeriodRange,
 } from "./period";
-import { mdSlotHtml, reportLogRowHtml, todayDigestHtml } from "./report";
+import { hoursBadgeHtml, mdSlotHtml, reportLogRowHtml, reportTaskCountRowHtml, sumHours, todayDigestHtml } from "./report";
 import { pickSidebarTasks } from "./sidebar";
 import { WebPanel } from "./web-panel";
 
@@ -68,6 +68,9 @@ export class ZTaskingView extends ItemView {
 	private mdRoot = new Component();
 	private mdGen = 0;
 	private webPanel: WebPanel;
+	/** 列表栏占「列表+详情」的比例，默认 5:4 → 5/9 */
+	private listPaneRatio = 5 / 9;
+	private resizingList = false;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ZTaskingPlugin) {
 		super(leaf);
@@ -103,30 +106,33 @@ export class ZTaskingView extends ItemView {
 				</div>
 				<div class="ztk-spacer"></div>
 				<div class="ztk-period">
-					<button data-p="week" class="on" type="button">周</button>
-					<button data-p="month" type="button">月</button>
-					<button data-p="quarter" type="button">季</button>
-					<button data-p="year" type="button">年</button>
-					<span class="ztk-period-sep">自定</span>
-					<input type="date" class="ztk-range-start" aria-label="开始日期" />
-					<span class="ztk-period-tilde">~</span>
-					<input type="date" class="ztk-range-end" aria-label="结束日期" />
+					<div class="ztk-period-presets" role="group" aria-label="周期快捷">
+						<button data-p="week" class="on" type="button">周</button>
+						<button data-p="month" type="button">月</button>
+						<button data-p="quarter" type="button">季</button>
+						<button data-p="year" type="button">年</button>
+					</div>
+					<div class="ztk-period-custom">
+						<span class="ztk-period-sep">自定</span>
+						<input type="date" class="ztk-range-start" aria-label="开始日期" />
+						<span class="ztk-period-tilde">~</span>
+						<input type="date" class="ztk-range-end" aria-label="结束日期" />
+					</div>
 				</div>
 				<button class="ztk-btn" data-act="new">新建任务</button>
 			</header>
 			<main class="ztk-main">
-				<div class="ztk-page" id="ztk-view-board">
+				<div class="ztk-page" id="ztk-view-board" data-mode="board">
+					<nav class="ztk-work-rail" aria-label="工作模式">
+						<button type="button" data-work-mode="board" class="on"><span>工作台</span></button>
+						<button type="button" data-work-mode="list"><span>列表</span></button>
+					</nav>
 					<aside class="ztk-list">
 						<div class="ztk-filters"></div>
 						<div class="ztk-task-list"></div>
+						<div class="ztk-catalog-body"></div>
 					</aside>
-					<article class="ztk-detail"></article>
-				</div>
-				<div class="ztk-page" id="ztk-view-list">
-					<div class="ztk-catalog-bar"></div>
-					<div class="ztk-catalog-body"></div>
-				</div>
-				<div class="ztk-page" id="ztk-view-detail">
+					<div class="ztk-splitter" role="separator" aria-orientation="vertical" aria-label="调整侧栏宽度" tabindex="0"></div>
 					<article class="ztk-detail"></article>
 				</div>
 				<div class="ztk-page" id="ztk-view-cal">
@@ -246,6 +252,7 @@ export class ZTaskingView extends ItemView {
 		this.contentEl.querySelectorAll<HTMLButtonElement>(".ztk-period button[data-p]").forEach((b) => {
 			b.classList.toggle("on", b.dataset.p === this.period);
 		});
+		this.$(".ztk-period").classList.toggle("is-custom", this.period === "custom");
 		const startEl = this.contentEl.querySelector(".ztk-range-start") as HTMLInputElement | null;
 		const endEl = this.contentEl.querySelector(".ztk-range-end") as HTMLInputElement | null;
 		if (startEl) startEl.value = this.rangeStart;
@@ -299,36 +306,39 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private switchView(view: BoardView): void {
+		// 详情并入工作壳右侧，不再单独占页
+		if (view === "detail") view = "list";
 		this.view = view;
 		if (view === "board" || view === "list") this.workMode = view;
 		if (view === "cal" || view === "gantt") this.scheduleMode = view;
 		const topTab = this.topTabFor(view);
 		this.contentEl.querySelectorAll(".ztk-tabs button").forEach((b) =>
 			b.classList.toggle("on", (b as HTMLElement).dataset.tab === topTab));
+		const pageId = this.pageIdFor(view);
 		for (const v of VIEWS) {
 			const page = this.contentEl.querySelector(`#ztk-view-${v}`);
 			if (!page) continue;
-			page.classList.toggle("on", v === view);
+			page.classList.toggle("on", v === pageId);
 		}
 		this.syncPeriodVisibility();
 		this.syncPeriodControls();
 		this.mdGen += 1;
 		const gen = this.mdGen;
-		// 切页必须重绘目标区：详情页会清空工作台右侧，不重绘就会一直空白
-		if (view === "board" || view === "detail") this.renderDetail();
-		if (view === "board") {
-			this.renderSidebarChrome();
-			this.renderList();
-		}
-		if (view === "list") {
-			this.renderFilters();
-			this.renderCatalog();
+		if (view === "board" || view === "list") {
+			this.syncWorkShell();
+			this.renderDetail();
+			requestAnimationFrame(() => this.applyBoardLayout());
 		}
 		if (view === "cal") this.renderCalendar();
 		if (view === "gantt") this.renderGantt();
 		if (view === "report") this.renderReport();
 		if (view === "web") this.webPanel.mount(this.$("#ztk-view-web"));
 		void this.paintMarkdown(gen);
+	}
+
+	private pageIdFor(view: BoardView): string {
+		if (view === "list" || view === "detail") return "board";
+		return view;
 	}
 
 	private logsInPeriod() {
@@ -438,12 +448,19 @@ export class ZTaskingView extends ItemView {
 					this.editingLogDate = null;
 					this.editingDesc = false;
 					this.editingTitle = false;
-					this.switchView("detail");
-					this.renderAll();
+					if (this.view === "board" || this.view === "list") {
+						this.syncWorkShell();
+						this.rerenderDetail();
+					} else {
+						this.switchView("list");
+						this.renderAll();
+					}
+					return;
 				}
 				if (a === "back-list" || a === "open-list") {
 					this.switchView("list");
 					this.renderAll();
+					return;
 				}
 				return;
 			}
@@ -517,6 +534,63 @@ export class ZTaskingView extends ItemView {
 			e.preventDefault();
 			void this.createTask(e.target as HTMLFormElement);
 		});
+		this.bindListResize();
+	}
+
+	private bindListResize(): void {
+		const root = this.contentEl;
+		const onMove = (e: PointerEvent) => {
+			if (!this.resizingList) return;
+			const board = root.querySelector("#ztk-view-board") as HTMLElement | null;
+			if (!board) return;
+			const rect = board.getBoundingClientRect();
+			const rail = 48;
+			const split = 6;
+			const avail = Math.max(1, rect.width - rail - split);
+			const x = e.clientX - rect.left - rail;
+			const minList = 200;
+			const minDetail = 260;
+			const listW = Math.max(minList, Math.min(avail - minDetail, x));
+			this.listPaneRatio = listW / avail;
+			this.applyBoardLayout();
+		};
+		const onUp = () => {
+			if (!this.resizingList) return;
+			this.resizingList = false;
+			root.classList.remove("is-resizing");
+		};
+		root.addEventListener("pointerdown", (e) => {
+			const split = (e.target as HTMLElement).closest(".ztk-splitter");
+			if (!split) return;
+			e.preventDefault();
+			this.resizingList = true;
+			root.classList.add("is-resizing");
+			(split as HTMLElement).setPointerCapture?.(e.pointerId);
+		});
+		root.addEventListener("pointermove", onMove);
+		root.addEventListener("pointerup", onUp);
+		root.addEventListener("pointercancel", onUp);
+		window.addEventListener("resize", () => {
+			if (this.view === "board" || this.view === "list") this.applyBoardLayout();
+		});
+	}
+
+	private applyBoardLayout(): void {
+		const board = this.contentEl.querySelector("#ztk-view-board") as HTMLElement | null;
+		if (!board || !board.classList.contains("on")) return;
+		const rail = 48;
+		const split = 6;
+		const w = board.clientWidth;
+		if (w <= 0) {
+			board.style.gridTemplateColumns = `${rail}px minmax(200px, ${this.listPaneRatio}fr) ${split}px minmax(260px, ${1 - this.listPaneRatio}fr)`;
+			return;
+		}
+		const avail = Math.max(1, w - rail - split);
+		const minList = 200;
+		const minDetail = 260;
+		let listW = Math.round(avail * this.listPaneRatio);
+		listW = Math.max(minList, Math.min(avail - minDetail, listW));
+		board.style.gridTemplateColumns = `${rail}px ${listW}px ${split}px minmax(${minDetail}px, 1fr)`;
 	}
 
 	private syncPeriodVisibility(): void {
@@ -844,16 +918,20 @@ export class ZTaskingView extends ItemView {
 		const topTab = this.topTabFor(this.view);
 		this.contentEl.querySelectorAll(".ztk-tabs button").forEach((b) =>
 			b.classList.toggle("on", (b as HTMLElement).dataset.tab === topTab));
+		const pageId = this.pageIdFor(this.view);
+		for (const v of VIEWS) {
+			const page = this.contentEl.querySelector(`#ztk-view-${v}`);
+			if (!page) continue;
+			page.classList.toggle("on", v === pageId);
+		}
 		this.syncPeriodVisibility();
 		this.syncPeriodControls();
-		this.renderSidebarChrome();
-		this.renderFilters();
-		this.renderList();
-		this.renderCatalog();
+		this.syncWorkShell();
 		this.renderDetail();
 		this.renderCalendar();
 		this.renderGantt();
 		this.renderReport();
+		requestAnimationFrame(() => this.applyBoardLayout());
 		void this.paintMarkdown(gen);
 	}
 
@@ -889,19 +967,31 @@ export class ZTaskingView extends ItemView {
 		}
 	}
 
-	private workModeTabsHtml(): string {
-		const onList = this.view === "list" || this.view === "detail";
-		return `
-			<div class="ztk-side-tabs ztk-work-mode">
-				<button type="button" data-work-mode="board" class="${!onList ? "on" : ""}">工作台</button>
-				<button type="button" data-work-mode="list" class="${onList ? "on" : ""}">列表</button>
-			</div>
-		`;
+	private syncWorkShell(): void {
+		const board = this.contentEl.querySelector("#ztk-view-board") as HTMLElement | null;
+		if (!board) return;
+		const mode: WorkMode = this.view === "board" ? "board" : "list";
+		// 非工作页时仍按 workMode 预渲染，便于切回
+		const activeMode = (this.view === "board" || this.view === "list") ? mode : this.workMode;
+		board.dataset.mode = activeMode;
+		this.renderWorkRail(activeMode);
+		if (activeMode === "board") {
+			this.renderSidebarChrome();
+			this.renderList();
+		} else {
+			this.renderFilters();
+			this.renderCatalog();
+		}
+	}
+
+	private renderWorkRail(mode: WorkMode = this.workMode): void {
+		this.contentEl.querySelectorAll<HTMLButtonElement>(".ztk-work-rail [data-work-mode]").forEach((b) => {
+			b.classList.toggle("on", b.dataset.workMode === mode);
+		});
 	}
 
 	private filterBarHtml(extra = ""): string {
 		return `
-			${this.workModeTabsHtml()}
 			<button class="ztk-chip ${this.typeFilter === "all" ? "on" : ""}" data-k="all" type="button">全部</button>
 			<button class="ztk-chip ${this.typeFilter === "long" ? "on" : ""}" data-k="long" type="button">长期</button>
 			<button class="ztk-chip ${this.typeFilter === "temp" ? "on" : ""}" data-k="temp" type="button">临时</button>
@@ -917,7 +1007,6 @@ export class ZTaskingView extends ItemView {
 
 	private renderSidebarChrome(): void {
 		this.$(".ztk-filters").innerHTML = `
-			${this.workModeTabsHtml()}
 			<div class="ztk-side-filters">
 				<select class="ztk-side-type" aria-label="类型筛选">
 					<option value="long">长期</option>
@@ -938,7 +1027,7 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private renderFilters(): void {
-		this.$(".ztk-catalog-bar").innerHTML = this.filterBarHtml(
+		this.$(".ztk-filters").innerHTML = this.filterBarHtml(
 			`<input class="ztk-search" type="search" placeholder="搜索标题或说明" value="${esc(this.query)}" />
 			<span class="ztk-catalog-count">${this.catalogFiltered().length} / ${this.tasks().length}</span>`,
 		);
@@ -954,7 +1043,7 @@ export class ZTaskingView extends ItemView {
 			const need = t.status === "doing" && !t.logs.some((l) => l.date === today);
 			return `<div class="ztk-task ${t.id === this.selectedId ? "sel" : ""}" data-id="${esc(t.id)}">
 				<div class="ztk-rail ${t.type}"></div>
-				<div>
+				<div class="ztk-task-main">
 					<h3>${esc(t.title)}</h3>
 					<div class="ztk-meta">
 						<span class="ztk-st ${t.status}">${STATUS_LABEL[t.status]}</span>
@@ -972,7 +1061,7 @@ export class ZTaskingView extends ItemView {
 	private renderCatalog(): void {
 		const items = this.catalogFiltered();
 		const rows = items.map((t) => `
-			<tr data-act="goto-task" data-id="${esc(t.id)}">
+			<tr data-act="goto-task" data-id="${esc(t.id)}" class="${t.id === this.selectedId ? "sel" : ""}">
 				<td><span class="ztk-rail-dot ${t.type}"></span>${esc(t.title)}</td>
 				<td>${TYPE_LABEL[t.type]}</td>
 				<td><span class="ztk-st ${t.status}">${STATUS_LABEL[t.status]}</span></td>
@@ -995,9 +1084,7 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private activeDetail(): HTMLElement {
-		return this.view === "detail"
-			? this.$("#ztk-view-detail .ztk-detail")
-			: this.$("#ztk-view-board .ztk-detail");
+		return this.$("#ztk-view-board .ztk-detail");
 	}
 
 	private renderDetail(): void {
@@ -1009,7 +1096,6 @@ export class ZTaskingView extends ItemView {
 		}
 		const logs = [...t.logs].sort((a, b) => b.date.localeCompare(a.date));
 		el.innerHTML = `
-			${this.view === "detail" ? `<button class="ztk-ghost ztk-back" data-act="back-list" type="button">返回列表</button>` : ""}
 			<div class="ztk-detail-head">
 				<div class="ztk-title-block">
 					${this.editingTitle
@@ -1051,7 +1137,7 @@ export class ZTaskingView extends ItemView {
 					<button class="ztk-btn" data-act="add-log" type="button">记一笔</button>
 				</div>
 			</div>
-			<div>
+			<div class="ztk-log-list">
 				${logs.map((l) => this.logRowHtml(l)).join("") || `<p class="ztk-muted">还没有进展，从上面记第一笔。</p>`}
 			</div>
 		`;
@@ -1105,6 +1191,8 @@ export class ZTaskingView extends ItemView {
 			const d = addDays(gridStart, i);
 			const key = fmt(d);
 			const logs = this.logsOn(key);
+			const dayTotal = sumHours(logs);
+			const hoursLabel = dayTotal > 0 ? `<span class="ztk-day-hours">${esc(formatHours(dayTotal))}</span>` : "";
 			const cls = [
 				"ztk-day",
 				d.getMonth() !== m ? "out" : "",
@@ -1113,13 +1201,18 @@ export class ZTaskingView extends ItemView {
 			].join(" ");
 			const items = logs.slice(0, 3).map((l) => `<div class="ztk-day-item">${esc(l.task.title)}</div>`).join("");
 			const more = logs.length > 3 ? `<div class="ztk-day-item">+${logs.length - 3}</div>` : "";
-			html += `<div class="${cls}" data-day="${key}"><div class="ztk-day-num">${d.getDate()}</div>${items}${more}</div>`;
+			html += `<div class="${cls}" data-day="${key}"><div class="ztk-day-num"><span>${d.getDate()}</span>${hoursLabel}</div>${items}${more}</div>`;
 		}
 		this.$(".ztk-days").innerHTML = html;
 		const dayLogs = this.logsOn(this.selectedDay);
-		this.$(".ztk-day-pane").innerHTML = `<h2>${this.selectedDay}</h2>` + (dayLogs.length
+		const paneTotal = sumHours(dayLogs);
+		const paneHours = paneTotal > 0 ? ` · ${formatHours(paneTotal)}` : "";
+		this.$(".ztk-day-pane").innerHTML = `<h2>${this.selectedDay}${esc(paneHours)}</h2>` + (dayLogs.length
 			? dayLogs.map((l) => `<div class="ztk-log ztk-day-log">
-				<button class="ztk-ghost" data-act="goto-task" data-id="${esc(l.task.id)}" type="button">${esc(l.task.title)}</button>
+				<div class="ztk-day-log-head">
+					<button class="ztk-ghost" data-act="goto-task" data-id="${esc(l.task.id)}" type="button">${esc(l.task.title)}</button>
+					${hoursBadgeHtml(l.hours)}
+				</div>
 				<div class="ztk-log-body">${this.mdSlot(l.task.path, l.date)}</div>
 			</div>`).join("")
 			: `<p class="ztk-muted">这天还没有进展记录</p>`);
@@ -1213,18 +1306,27 @@ export class ZTaskingView extends ItemView {
 			heat += `<i class="${n >= 3 ? "l3" : n === 2 ? "l2" : n === 1 ? "l1" : ""}" title="${d} · ${n} 笔"></i>`;
 		}
 		this.$("#ztk-view-report").innerHTML = `
-			${todayDigestHtml(today, todayLogs.map((l) => ({ id: l.task.id, title: l.task.title, path: l.task.path })))}
-			<div class="ztk-card">
-				<h2>${r.label}进展明细</h2>
-				<table>
-					<thead><tr><th>日期</th><th>任务</th><th>做了什么</th></tr></thead>
-					<tbody>${logs.map((l) => reportLogRowHtml({ date: l.date, title: l.task.title, path: l.task.path })).join("") || `<tr><td colspan="3">这个周期还没有记录</td></tr>`}</tbody>
-				</table>
+			<div class="ztk-report-main">
+				${todayDigestHtml(today, todayLogs.map((l) => ({ id: l.task.id, title: l.task.title, path: l.task.path, hours: l.hours })))}
+				<div class="ztk-card ztk-report-logs">
+					<h2>${r.label}进展明细</h2>
+					<div class="ztk-report-list">
+						${logs.map((l) => reportLogRowHtml({ date: l.date, title: l.task.title, path: l.task.path, hours: l.hours })).join("") || `<p class="ztk-muted">这个周期还没有记录</p>`}
+					</div>
+				</div>
 			</div>
-			<div>
-				<div class="ztk-card" style="margin-bottom:12px"><h2>活跃分布</h2><div class="ztk-heat">${heat}</div></div>
-				<div class="ztk-card"><h2>按任务计数</h2><table>${Object.entries(byTask).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v} 笔</td></tr>`).join("") || "<tr><td>暂无</td></tr>"}</table></div>
-			</div>
+			<aside class="ztk-report-side">
+				<div class="ztk-card ztk-report-overview">
+					<h2>活跃分布</h2>
+					<div class="ztk-heat">${heat}</div>
+				</div>
+				<div class="ztk-card ztk-report-overview">
+					<h2>按任务计数</h2>
+					<div class="ztk-count-list">
+						${Object.entries(byTask).map(([k, v]) => reportTaskCountRowHtml(k, v)).join("") || `<p class="ztk-muted">暂无</p>`}
+					</div>
+				</div>
+			</aside>
 		`;
 	}
 }

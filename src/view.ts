@@ -28,7 +28,18 @@ import {
 	type PeriodPreset,
 	type PeriodRange,
 } from "./period";
-import { hoursBadgeHtml, mdSlotHtml, reportLogRowHtml, reportTaskCountRowHtml, sumHours, todayDigestHtml } from "./report";
+import {
+	formatReportLogsCopyText,
+	groupReportLogsByTask,
+	hoursBadgeHtml,
+	mdSlotHtml,
+	reportLogRowHtml,
+	reportLogsHeadHtml,
+	reportMergedGroupHtml,
+	reportTaskCountRowHtml,
+	sumHours,
+	todayDigestHtml,
+} from "./report";
 import { pickSidebarTasks } from "./sidebar";
 import { WebPanel } from "./web-panel";
 
@@ -65,6 +76,8 @@ export class ZTaskingView extends ItemView {
 	editingLogDate: string | null = null;
 	editingDesc = false;
 	editingTitle = false;
+	/** 汇总进展明细：按任务聚合查看 */
+	reportByTask = false;
 	private mdRoot = new Component();
 	private mdGen = 0;
 	private webPanel: WebPanel;
@@ -417,6 +430,18 @@ export class ZTaskingView extends ItemView {
 					this.refreshCalendar();
 				}
 				if (a === "add-log") void this.addTodayLog();
+				if (a === "toggle-report-by-task") {
+					this.reportByTask = !this.reportByTask;
+					this.mdGen += 1;
+					const gen = this.mdGen;
+					this.renderReport();
+					void this.paintMarkdown(gen);
+					return;
+				}
+				if (a === "copy-report-logs") {
+					void this.copyReportLogs();
+					return;
+				}
 				if (a === "edit-log" || a === "save-log" || a === "cancel-log" || a === "del-log") {
 					const date = act.closest<HTMLElement>("[data-date]")?.dataset.date;
 					if (date) void this.handleLogAction(a, date);
@@ -710,6 +735,24 @@ export class ZTaskingView extends ItemView {
 	private async copyToClipboard(text: string, okMsg = "已复制"): Promise<void> {
 		const ok = await copyText(text);
 		new Notice(ok ? okMsg : "复制失败");
+	}
+
+	private async copyReportLogs(): Promise<void> {
+		const logs = this.logsInPeriod()
+			.sort((a, b) => b.date.localeCompare(a.date))
+			.map((l) => ({
+				date: l.date,
+				title: l.task.title,
+				path: l.task.path,
+				text: l.text,
+				hours: l.hours,
+			}));
+		const text = formatReportLogsCopyText(logs, this.reportByTask);
+		if (!text) {
+			new Notice("这个周期还没有记录");
+			return;
+		}
+		await this.copyToClipboard(text, "已复制进展明细");
 	}
 
 	private resolveSourceText(path: string, date: string, kind: string): string {
@@ -1294,8 +1337,6 @@ export class ZTaskingView extends ItemView {
 		const today = todayStr();
 		const todayLogs = this.logsOn(today);
 		const logs = this.logsInPeriod().sort((a, b) => b.date.localeCompare(a.date));
-		const byTask: Record<string, number> = {};
-		for (const l of logs) byTask[l.task.title] = (byTask[l.task.title] ?? 0) + 1;
 		const countByDay: Record<string, number> = {};
 		for (const l of logs) countByDay[l.date] = (countByDay[l.date] ?? 0) + 1;
 		const heatDays = daysBetween(r.start, r.end) + 1;
@@ -1305,13 +1346,23 @@ export class ZTaskingView extends ItemView {
 			const n = countByDay[d] ?? 0;
 			heat += `<i class="${n >= 3 ? "l3" : n === 2 ? "l2" : n === 1 ? "l1" : ""}" title="${d} · ${n} 笔"></i>`;
 		}
+		const logItems = logs.map((l) => ({
+			date: l.date,
+			title: l.task.title,
+			path: l.task.path,
+			hours: l.hours,
+		}));
+		const taskGroups = groupReportLogsByTask(logItems);
+		const listHtml = this.reportByTask
+			? taskGroups.map((g) => reportMergedGroupHtml(g)).join("")
+			: logItems.map((l) => reportLogRowHtml(l)).join("");
 		this.$("#ztk-view-report").innerHTML = `
 			<div class="ztk-report-main">
 				${todayDigestHtml(today, todayLogs.map((l) => ({ id: l.task.id, title: l.task.title, path: l.task.path, hours: l.hours })))}
 				<div class="ztk-card ztk-report-logs">
-					<h2>${r.label}进展明细</h2>
+					${reportLogsHeadHtml(r.label, this.reportByTask)}
 					<div class="ztk-report-list">
-						${logs.map((l) => reportLogRowHtml({ date: l.date, title: l.task.title, path: l.task.path, hours: l.hours })).join("") || `<p class="ztk-muted">这个周期还没有记录</p>`}
+						${listHtml || `<p class="ztk-muted">这个周期还没有记录</p>`}
 					</div>
 				</div>
 			</div>
@@ -1323,7 +1374,7 @@ export class ZTaskingView extends ItemView {
 				<div class="ztk-card ztk-report-overview">
 					<h2>按任务计数</h2>
 					<div class="ztk-count-list">
-						${Object.entries(byTask).map(([k, v]) => reportTaskCountRowHtml(k, v)).join("") || `<p class="ztk-muted">暂无</p>`}
+						${taskGroups.map((g) => reportTaskCountRowHtml(g.title, g.count, g.hours)).join("") || `<p class="ztk-muted">暂无</p>`}
 					</div>
 				</div>
 			</aside>

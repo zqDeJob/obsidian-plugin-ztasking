@@ -50,6 +50,8 @@ export interface ZTaskingSettings {
 	rootFolder: string;
 	/** 常见网页书签 */
 	webBookmarks: WebBookmark[];
+	/** 网页页书签侧栏是否折叠 */
+	webSideCollapsed: boolean;
 }
 
 export const DEFAULT_SETTINGS: ZTaskingSettings = {
@@ -58,6 +60,7 @@ export const DEFAULT_SETTINGS: ZTaskingSettings = {
 		{ id: "bm-google", title: "Google", url: "https://www.google.com/" },
 		{ id: "bm-github", title: "GitHub", url: "https://github.com/" },
 	],
+	webSideCollapsed: false,
 };
 
 export function pad(n: number): string {

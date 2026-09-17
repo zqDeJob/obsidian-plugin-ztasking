@@ -116,30 +116,45 @@ class AddBookmarkModal extends Modal {
 	}
 }
 
+type WebviewEl = HTMLElement & {
+	src: string;
+	getURL?: () => string;
+	loadURL?: (url: string) => unknown;
+	reload?: () => void;
+	goBack?: () => void;
+};
+
 /** 常见网页：书签 + 内嵌 webview（持久化登录态分区） */
 export class WebPanel {
 	private plugin: ZTaskingPlugin;
 	private host: HTMLElement | null = null;
 	private activeId = "";
-	private webviewEl: HTMLElement | null = null;
+	/** 每个书签一个常驻 webview，切页只切可见性，页面不会重新加载 */
+	private views = new Map<string, WebviewEl>();
+	private shellReady = false;
 
 	constructor(plugin: ZTaskingPlugin) {
 		this.plugin = plugin;
 	}
 
 	mount(host: HTMLElement): void {
-		this.host = host;
 		if (!Array.isArray(this.plugin.settings.webBookmarks)) {
 			this.plugin.settings.webBookmarks = [];
 		}
-		if (!this.activeId) {
-			this.activeId = this.plugin.settings.webBookmarks[0]?.id ?? "";
+		// 外壳只建一次：重建 DOM 会销毁 webview，导致每次切页都重新加载
+		if (this.host === host && this.shellReady) {
+			this.renderBookmarks();
+			return;
 		}
+		this.host = host;
+		this.views.clear();
+		this.shellReady = false;
 		this.render();
 	}
 
 	destroy(): void {
-		this.webviewEl = null;
+		this.views.clear();
+		this.shellReady = false;
 		this.host = null;
 	}
 
@@ -149,18 +164,57 @@ export class WebPanel {
 			this.host.innerHTML = `<div class="ztk-empty">网页模块仅支持桌面端 Obsidian。</div>`;
 			return;
 		}
+		this.host.innerHTML = `
+			<aside class="ztk-web-side">
+				<div class="ztk-web-side-head">
+					<span class="ztk-web-side-label">书签</span>
+					<div class="ztk-web-side-actions">
+						<button class="ztk-web-side-btn" type="button" data-web-act="add" title="添加书签">＋</button>
+						<button class="ztk-web-side-btn ztk-web-collapse" type="button" data-web-act="toggle-side"></button>
+					</div>
+				</div>
+				<div class="ztk-web-bookmarks"></div>
+				<p class="ztk-web-hint">内嵌 Chromium · 登录态持久保存</p>
+			</aside>
+			<section class="ztk-web-main">
+				<div class="ztk-web-toolbar">
+					<button class="ztk-web-tool" type="button" data-web-act="back" title="后退">←</button>
+					<button class="ztk-web-tool" type="button" data-web-act="reload" title="刷新">↻</button>
+					<input class="ztk-web-url" type="url" placeholder="输入网址后回车前往" />
+					<button class="ztk-btn ztk-web-go" type="button" data-web-act="go">前往</button>
+				</div>
+				<div class="ztk-web-frame">
+					<div class="ztk-web-frame-empty">
+						<div class="ztk-web-frame-empty-inner">
+							<p class="ztk-web-empty-title">选择左侧书签</p>
+							<p class="ztk-muted">或点「＋」添加常用网页</p>
+						</div>
+					</div>
+				</div>
+			</section>
+		`;
+		this.shellReady = true;
+		this.bind();
+		this.syncCollapsed();
+		this.renderBookmarks();
+		this.showActive();
+	}
+
+	private renderBookmarks(): void {
+		const box = this.host?.querySelector<HTMLElement>(".ztk-web-bookmarks");
+		if (!box) return;
 		const bookmarks = this.plugin.settings.webBookmarks;
+		const prev = this.activeId;
 		if (!this.activeId || !bookmarks.some((b) => b.id === this.activeId)) {
 			this.activeId = bookmarks[0]?.id ?? "";
 		}
-		const active = bookmarks.find((b) => b.id === this.activeId);
-		const listHtml = bookmarks.length
+		box.innerHTML = bookmarks.length
 			? bookmarks.map((b) => {
 				const host = hostOf(b.url);
 				const mark = initialOf(b.title, b.url);
 				return `
 					<div class="ztk-web-bm ${b.id === this.activeId ? "sel" : ""}" data-web-id="${esc(b.id)}">
-						<button type="button" class="ztk-web-bm-open" data-web-act="open" data-web-id="${esc(b.id)}">
+						<button type="button" class="ztk-web-bm-open" data-web-act="open" data-web-id="${esc(b.id)}" title="${esc(b.title || b.url)}">
 							<span class="ztk-web-bm-mark" aria-hidden="true">${esc(mark)}</span>
 							<span class="ztk-web-bm-meta">
 								<span class="ztk-web-bm-title">${esc(b.title || b.url)}</span>
@@ -175,31 +229,8 @@ export class WebPanel {
 					<p class="ztk-muted">把常用站点钉在这里，登录态会留在本插件分区。</p>
 					<button type="button" class="ztk-btn" data-web-act="add">添加第一个</button>
 				</div>`;
-
-		this.host.innerHTML = `
-			<aside class="ztk-web-side">
-				<div class="ztk-web-side-head">
-					<div class="ztk-web-side-title">
-						<span class="ztk-web-side-label">书签</span>
-						<strong>常见网页</strong>
-					</div>
-					<button class="ztk-web-add" type="button" data-web-act="add" title="添加书签">＋</button>
-				</div>
-				<div class="ztk-web-bookmarks">${listHtml}</div>
-				<p class="ztk-web-hint">内嵌 Chromium · 登录态持久保存</p>
-			</aside>
-			<section class="ztk-web-main">
-				<div class="ztk-web-toolbar">
-					<button class="ztk-web-tool" type="button" data-web-act="back" title="后退" ${active ? "" : "disabled"}>←</button>
-					<button class="ztk-web-tool" type="button" data-web-act="reload" title="刷新" ${active ? "" : "disabled"}>↻</button>
-					<input class="ztk-web-url" type="url" value="${esc(active?.url ?? "")}" placeholder="输入网址后回车前往" ${active ? "" : "disabled"} />
-					<button class="ztk-btn ztk-web-go" type="button" data-web-act="go" ${active ? "" : "disabled"}>前往</button>
-				</div>
-				<div class="ztk-web-frame"></div>
-			</section>
-		`;
-		this.bind();
-		this.mountWebview(active?.url ?? "");
+		this.syncToolbar();
+		if (prev !== this.activeId) this.showActive();
 	}
 
 	private bind(): void {
@@ -212,11 +243,9 @@ export class WebPanel {
 			const act = t.dataset.webAct;
 			const id = t.dataset.webId ?? "";
 			if (act === "add") this.openAddModal();
-			if (act === "open" && id) {
-				this.activeId = id;
-				this.render();
-			}
+			if (act === "open" && id) this.openBookmark(id);
 			if (act === "del" && id) void this.removeBookmark(id);
+			if (act === "toggle-side") void this.toggleSide();
 			if (act === "go") this.navigateFromInput();
 			if (act === "reload") this.callWebview("reload");
 			if (act === "back") this.callWebview("goBack");
@@ -228,6 +257,30 @@ export class WebPanel {
 				this.navigateFromInput();
 			}
 		});
+	}
+
+	private openBookmark(id: string): void {
+		if (this.activeId === id) return;
+		this.activeId = id;
+		this.renderBookmarks();
+		this.showActive();
+	}
+
+	private async toggleSide(): Promise<void> {
+		this.plugin.settings.webSideCollapsed = !this.plugin.settings.webSideCollapsed;
+		this.syncCollapsed();
+		await this.plugin.saveSettings();
+	}
+
+	private syncCollapsed(): void {
+		if (!this.host) return;
+		const collapsed = this.plugin.settings.webSideCollapsed === true;
+		this.host.classList.toggle("is-side-collapsed", collapsed);
+		const btn = this.host.querySelector<HTMLButtonElement>(".ztk-web-collapse");
+		if (!btn) return;
+		btn.textContent = collapsed ? "›" : "‹";
+		btn.title = collapsed ? "展开书签栏" : "折叠书签栏";
+		btn.setAttribute("aria-label", btn.title);
 	}
 
 	private openAddModal(): void {
@@ -243,7 +296,8 @@ export class WebPanel {
 		this.plugin.settings.webBookmarks.push(bm);
 		await this.plugin.saveSettings();
 		this.activeId = bm.id;
-		this.render();
+		this.renderBookmarks();
+		this.showActive();
 		new Notice(`已添加书签：${bm.title}`);
 	}
 
@@ -283,8 +337,11 @@ export class WebPanel {
 		if (!ok) return;
 		this.plugin.settings.webBookmarks = this.plugin.settings.webBookmarks.filter((b) => b.id !== id);
 		await this.plugin.saveSettings();
+		this.views.get(id)?.remove();
+		this.views.delete(id);
 		if (this.activeId === id) this.activeId = this.plugin.settings.webBookmarks[0]?.id ?? "";
-		this.render();
+		this.renderBookmarks();
+		this.showActive();
 		new Notice("已删除书签");
 	}
 
@@ -297,31 +354,41 @@ export class WebPanel {
 			bm.url = url;
 			void this.plugin.saveSettings();
 		}
-		this.mountWebview(url);
-	}
-
-	private mountWebview(url: string): void {
-		const frame = this.host?.querySelector(".ztk-web-frame");
-		if (!frame) return;
-		frame.empty();
-		this.webviewEl = null;
-		if (!url) {
-			frame.createDiv({ cls: "ztk-web-frame-empty" }).innerHTML = `
-				<div class="ztk-web-frame-empty-inner">
-					<p class="ztk-web-empty-title">选择左侧书签</p>
-					<p class="ztk-muted">或点「＋」添加常用网页</p>
-				</div>`;
+		const wv = this.views.get(this.activeId);
+		if (!wv) {
+			this.showActive();
 			return;
 		}
 		try {
-			const wv = document.createElement("webview") as HTMLElement & {
-				src: string;
-				setAttribute(name: string, value: string): void;
-				addEventListener(type: string, listener: (ev: Event) => void): void;
-				getURL?: () => string;
-				reload?: () => void;
-				goBack?: () => void;
-			};
+			if (wv.loadURL) wv.loadURL(url);
+			else wv.src = url;
+		} catch {
+			wv.src = url;
+		}
+		this.renderBookmarks();
+	}
+
+	/** 只切换可见性：非当前书签的 webview 留在 DOM 里继续存活 */
+	private showActive(): void {
+		const frame = this.host?.querySelector<HTMLElement>(".ztk-web-frame");
+		if (!frame) return;
+		const bm = this.plugin.settings.webBookmarks.find((b) => b.id === this.activeId);
+		const empty = frame.querySelector<HTMLElement>(".ztk-web-frame-empty");
+		if (bm && !this.views.has(bm.id)) {
+			const wv = this.createWebview(bm.url, frame);
+			if (wv) this.views.set(bm.id, wv);
+		}
+		for (const [id, wv] of this.views) {
+			wv.classList.toggle("on", !!bm && id === bm.id);
+		}
+		empty?.classList.toggle("is-hidden", !!bm);
+		this.syncToolbar();
+	}
+
+	private createWebview(url: string, frame: HTMLElement): WebviewEl | null {
+		if (!url) return null;
+		try {
+			const wv = document.createElement("webview") as WebviewEl;
 			wv.setAttribute("partition", PARTITION);
 			wv.setAttribute("allowpopups", "true");
 			wv.setAttribute("webpreferences", "contextIsolation=yes");
@@ -330,23 +397,47 @@ export class WebPanel {
 			wv.addEventListener("did-navigate", () => this.syncUrlBar(wv));
 			wv.addEventListener("did-navigate-in-page", () => this.syncUrlBar(wv));
 			frame.appendChild(wv);
-			this.webviewEl = wv;
+			return wv;
 		} catch (err) {
 			frame.createEl("div", {
 				cls: "ztk-empty",
 				text: `无法创建内嵌网页（当前 Electron 可能未启用 webview）：${String(err)}`,
 			});
+			return null;
 		}
 	}
 
-	private syncUrlBar(wv: { getURL?: () => string }): void {
+	private currentUrl(id: string): string {
+		const wv = this.views.get(id);
+		if (!wv?.getURL) return "";
+		try {
+			return wv.getURL() ?? "";
+		} catch {
+			return "";
+		}
+	}
+
+	private syncToolbar(): void {
+		if (!this.host) return;
+		const active = this.plugin.settings.webBookmarks.find((b) => b.id === this.activeId);
+		this.host.querySelectorAll<HTMLButtonElement>(".ztk-web-tool, .ztk-web-go")
+			.forEach((btn) => { btn.disabled = !active; });
+		const input = this.host.querySelector<HTMLInputElement>(".ztk-web-url");
+		if (!input) return;
+		input.disabled = !active;
+		if (document.activeElement === input) return;
+		input.value = this.currentUrl(this.activeId) || active?.url || "";
+	}
+
+	private syncUrlBar(wv: WebviewEl): void {
+		if (this.views.get(this.activeId) !== wv) return;
 		const input = this.host?.querySelector<HTMLInputElement>(".ztk-web-url");
 		const next = wv.getURL?.() ?? "";
-		if (input && next) input.value = next;
+		if (input && next && document.activeElement !== input) input.value = next;
 	}
 
 	private callWebview(method: "reload" | "goBack"): void {
-		const wv = this.webviewEl as null | { reload?: () => void; goBack?: () => void };
+		const wv = this.views.get(this.activeId);
 		if (!wv) return;
 		try {
 			wv[method]?.();

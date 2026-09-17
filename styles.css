@@ -1383,103 +1383,130 @@
 .ztk-btn.is-hidden { display: none !important; }
 
 #ztk-view-web {
-	grid-template-columns: 248px 1fr;
+	grid-template-columns: 260px 1fr;
 	min-height: 0;
 	background:
-		linear-gradient(180deg, #f7faf9 0%, #ffffff 48%),
+		linear-gradient(180deg, #fbf7f3 0%, #ffffff 48%),
 		#ffffff;
 }
 .ztk-web-side {
-	border-right: 1px solid var(--ztk-line);
+	border-right: 1px solid color-mix(in srgb, var(--ztk-line) 80%, transparent);
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
 	background:
-		linear-gradient(165deg, rgba(209, 122, 69, 0.06), transparent 42%),
-		#fbfcfc;
+		linear-gradient(180deg, #faf6f2 0%, #ffffff 55%);
+	position: relative;
+}
+.ztk-web-side::after {
+	content: "";
+	position: absolute;
+	inset: 8px 0 8px auto;
+	width: 1px;
+	background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ztk-teal) 22%, transparent), transparent);
+	pointer-events: none;
 }
 .ztk-web-side-head {
 	display: flex;
-	align-items: flex-start;
+	align-items: center;
 	justify-content: space-between;
 	gap: 8px;
 	padding: 14px 14px 12px;
-	border-bottom: 1px solid var(--ztk-line);
+	position: relative;
 }
-.ztk-web-side-title {
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-	min-width: 0;
+.ztk-web-side-head::after {
+	content: "";
+	position: absolute;
+	left: 14px;
+	right: 14px;
+	bottom: 0;
+	height: 1px;
+	background: linear-gradient(90deg, transparent, var(--ztk-line), transparent);
 }
 .ztk-web-side-label {
-	font-size: 10px;
-	letter-spacing: 0.12em;
-	text-transform: uppercase;
-	color: var(--ztk-teal);
-	font-weight: 600;
-}
-.ztk-web-side-title strong {
-	font-size: 15px;
-	font-weight: 700;
+	font-size: 14px;
+	letter-spacing: .02em;
 	color: var(--ztk-ink);
+	font-weight: 700;
 }
-.ztk-web-add {
-	width: 32px;
-	height: 32px;
-	border-radius: 10px;
-	border: 1px solid rgba(209, 122, 69, 0.28);
-	background: #fff;
-	color: var(--ztk-teal);
+.ztk-web-side-actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+}
+.ztk-view .ztk-web-side-btn,
+.ztk-web-side-btn {
+	width: 30px;
+	height: 30px;
+	padding: 0 !important;
+	border-radius: 10px !important;
+	border: 0 !important;
+	background: var(--ztk-teal-soft) !important;
+	color: var(--ztk-teal-deep);
 	font-size: 18px;
 	line-height: 1;
 	cursor: pointer;
 	flex-shrink: 0;
-	transition: background .15s ease, border-color .15s ease, transform .15s ease;
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ztk-teal) 18%, transparent);
+	transition: background .15s ease, color .15s ease, transform .15s ease, box-shadow .15s ease;
 }
-.ztk-web-add:hover {
-	background: var(--ztk-teal-soft);
-	border-color: var(--ztk-teal);
+.ztk-view .ztk-web-side-btn:hover,
+.ztk-web-side-btn:hover {
+	background: var(--ztk-teal) !important;
+	color: #fff;
 	transform: translateY(-1px);
+	box-shadow: 0 4px 12px rgba(209, 122, 69, .28);
+}
+.ztk-web-collapse {
+	font-size: 20px;
+	font-weight: 700;
 }
 .ztk-web-bookmarks {
 	flex: 1;
 	min-height: 0;
 	overflow: auto;
-	padding: 10px;
+	padding: 4px 0 12px;
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
+	gap: 0;
 }
 .ztk-web-bm {
 	display: grid;
-	grid-template-columns: 1fr auto;
+	grid-template-columns: minmax(0, 1fr) auto;
 	gap: 0;
 	align-items: stretch;
 	border-radius: 0;
 	background: transparent;
+	border: 0;
 	border-bottom: 1px solid var(--ztk-line);
+	position: relative;
 	box-shadow: none;
-	transition: none;
+	transition: background .12s ease;
 }
+.ztk-web-bm::before { display: none; }
 .ztk-web-bm:hover {
-	background: transparent;
+	background: var(--ztk-teal-soft);
+	box-shadow: none;
+	transform: none;
 }
 .ztk-web-bm.sel {
-	background: transparent;
-	box-shadow: none;
-	border-left: 2px solid var(--ztk-teal);
+	background: color-mix(in srgb, var(--ztk-teal-soft) 88%, #fff);
+	box-shadow: inset 3px 0 0 var(--ztk-teal);
 }
+.ztk-view .ztk-web-bm-open,
 .ztk-web-bm-open {
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: 12px;
 	text-align: left;
 	border: 0 !important;
 	background: transparent !important;
 	border-radius: 0 !important;
 	box-shadow: none !important;
-	padding: 10px 8px 10px 10px;
+	padding: 20px 8px 20px 14px !important;
+	min-height: 68px;
+	box-sizing: border-box;
 	color: var(--ztk-ink);
 	min-width: 0;
 	cursor: pointer;
@@ -1488,30 +1515,31 @@
 	background: transparent !important;
 }
 .ztk-web-bm-mark {
-	width: 28px;
-	height: 28px;
+	width: 32px;
+	height: 32px;
 	border-radius: 0;
 	display: grid;
 	place-items: center;
 	flex-shrink: 0;
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 700;
 	color: #fff;
-	background: #d17a45;
+	background: var(--ztk-teal);
 	letter-spacing: 0;
+	box-shadow: none;
 }
 .ztk-web-bm.sel .ztk-web-bm-mark {
-	background: #c46b3a;
+	background: var(--ztk-teal-deep);
 }
 .ztk-web-bm-meta {
 	display: flex;
 	flex-direction: column;
-	gap: 1px;
+	gap: 4px;
 	min-width: 0;
 }
 .ztk-web-bm-title {
 	font-size: 13px;
-	font-weight: 600;
+	font-weight: 650;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -1527,7 +1555,7 @@
 	align-self: center;
 	width: 28px;
 	height: 28px;
-	margin-right: 4px;
+	margin-right: 8px;
 	border: 0 !important;
 	border-radius: 0 !important;
 	background: transparent !important;
@@ -1643,8 +1671,53 @@
 	height: 100%;
 	border: 0;
 }
+/* keep inactive webviews alive (no display:none) so pages never reload */
+.ztk-webview {
+	visibility: hidden;
+	pointer-events: none;
+	z-index: 0;
+}
+.ztk-webview.on {
+	visibility: visible;
+	pointer-events: auto;
+	z-index: 1;
+}
+.ztk-web-frame-empty.is-hidden { display: none; }
 
-/* ?????Obsidian Modal? */
+/* collapsed bookmark rail */
+#ztk-view-web.is-side-collapsed {
+	grid-template-columns: 58px 1fr;
+}
+#ztk-view-web.is-side-collapsed .ztk-web-side-head {
+	flex-direction: column;
+	gap: 6px;
+	padding: 12px 6px 10px;
+}
+#ztk-view-web.is-side-collapsed .ztk-web-side-head::after {
+	left: 10px;
+	right: 10px;
+}
+#ztk-view-web.is-side-collapsed .ztk-web-side-actions {
+	flex-direction: column;
+}
+#ztk-view-web.is-side-collapsed .ztk-web-side-label,
+#ztk-view-web.is-side-collapsed .ztk-web-hint,
+#ztk-view-web.is-side-collapsed .ztk-web-bm-meta,
+#ztk-view-web.is-side-collapsed .ztk-web-bm-del,
+#ztk-view-web.is-side-collapsed .ztk-web-empty {
+	display: none;
+}
+#ztk-view-web.is-side-collapsed .ztk-web-bm {
+	grid-template-columns: 1fr;
+}
+#ztk-view-web.is-side-collapsed .ztk-web-bm-open {
+	justify-content: center;
+	gap: 0;
+	padding: 12px 0 !important;
+	min-height: 0;
+}
+
+/* Obsidian Modal: bookmark add/remove */
 .modal.ztk-bm-modal .modal-content {
 	padding: 0;
 }

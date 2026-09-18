@@ -121,6 +121,15 @@ export class TaskStore {
 	async deleteLog(task: Task, date: string): Promise<string> {
 		return this.save({ ...task, logs: task.logs.filter((l) => l.date !== date) });
 	}
+
+	/** 删除整条任务笔记文件，并刷新列表。 */
+	async deleteTask(task: Task): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(task.path);
+		if (file instanceof TFile) {
+			await this.app.vault.delete(file);
+		}
+		await this.reload();
+	}
 }
 
 export function isInTaskFolder(file: TAbstractFile | null, root: string): boolean {

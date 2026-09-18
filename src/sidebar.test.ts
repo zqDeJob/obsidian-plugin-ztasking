@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { pickSidebarTasks } from "./sidebar.ts";
+import { mergeSidebarOrder, pickSidebarTasks, reorderSidebarIds } from "./sidebar.ts";
 import type { Task } from "./model.ts";
 
 function task(partial: Partial<Task> & Pick<Task, "id" | "title">): Task {
@@ -66,4 +66,52 @@ test("无 mtime 时用最近进展日期倒序", () => {
 		task({ id: "c", title: "C", logs: [{ date: "2026-08-05", text: "x" }] }),
 	];
 	assert.deepEqual(pickSidebarTasks(tasks, "long", "all").map((t) => t.id), ["b", "c", "a"]);
+});
+
+test("有手动顺序时按 order 排列，忽略时间", () => {
+	const tasks = [
+		task({ id: "a", title: "A", updatedAt: 300 }),
+		task({ id: "b", title: "B", updatedAt: 200 }),
+		task({ id: "c", title: "C", updatedAt: 100 }),
+	];
+	assert.deepEqual(
+		pickSidebarTasks(tasks, "long", "all", ["c", "a", "b"]).map((t) => t.id),
+		["c", "a", "b"],
+	);
+});
+
+test("手动顺序下未入册任务按时间倒序排在最前", () => {
+	const tasks = [
+		task({ id: "a", title: "A", updatedAt: 100 }),
+		task({ id: "b", title: "B", updatedAt: 200 }),
+		task({ id: "new", title: "新", updatedAt: 999 }),
+	];
+	assert.deepEqual(
+		pickSidebarTasks(tasks, "long", "all", ["a", "b"]).map((t) => t.id),
+		["new", "a", "b"],
+	);
+});
+
+test("mergeSidebarOrder：空 saved 返回时间倒序 id", () => {
+	const tasks = [
+		task({ id: "a", title: "A", updatedAt: 1 }),
+		task({ id: "b", title: "B", updatedAt: 3 }),
+		task({ id: "c", title: "C", updatedAt: 2 }),
+	];
+	assert.deepEqual(mergeSidebarOrder(tasks, []), ["b", "c", "a"]);
+});
+
+test("mergeSidebarOrder：新任务插到已保存顺序前面，删掉不存在的 id", () => {
+	const tasks = [
+		task({ id: "a", title: "A", updatedAt: 1 }),
+		task({ id: "b", title: "B", updatedAt: 2 }),
+		task({ id: "n", title: "N", updatedAt: 9 }),
+	];
+	assert.deepEqual(mergeSidebarOrder(tasks, ["gone", "b", "a"]), ["n", "b", "a"]);
+});
+
+test("reorderSidebarIds：把 from 挪到 to 的位置", () => {
+	assert.deepEqual(reorderSidebarIds(["a", "b", "c", "d"], "a", "c"), ["b", "c", "a", "d"]);
+	assert.deepEqual(reorderSidebarIds(["a", "b", "c"], "c", "a"), ["c", "a", "b"]);
+	assert.deepEqual(reorderSidebarIds(["a", "b"], "a", "a"), ["a", "b"]);
 });

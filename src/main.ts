@@ -59,12 +59,17 @@ export default class ZTaskingPlugin extends Plugin {
 
 	async loadSettings(): Promise<void> {
 		const raw = (await this.loadData()) as Partial<ZTaskingSettings> | null;
+		const order = raw?.sidebarOrder;
 		this.settings = {
 			...DEFAULT_SETTINGS,
 			...raw,
 			webBookmarks: Array.isArray(raw?.webBookmarks)
 				? raw!.webBookmarks as WebBookmark[]
 				: DEFAULT_SETTINGS.webBookmarks.map((b) => ({ ...b })),
+			sidebarOrder: {
+				long: Array.isArray(order?.long) ? order!.long.filter((x) => typeof x === "string") : [],
+				temp: Array.isArray(order?.temp) ? order!.temp.filter((x) => typeof x === "string") : [],
+			},
 		};
 	}
 

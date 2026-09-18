@@ -40,7 +40,7 @@ import {
 	sumHours,
 	todayDigestHtml,
 } from "./report";
-import { pickSidebarTasks } from "./sidebar";
+import { mergeSidebarOrder, pickSidebarTasks, reorderSidebarIds } from "./sidebar";
 import { WebPanel } from "./web-panel";
 
 type BoardView = "board" | "list" | "detail" | "cal" | "gantt" | "report" | "web";
@@ -81,9 +81,13 @@ export class ZTaskingView extends ItemView {
 	private mdRoot = new Component();
 	private mdGen = 0;
 	private webPanel: WebPanel;
-	/** 列表栏占「列表+详情」的比例，默认 5:4 → 5/9 */
-	private listPaneRatio = 5 / 9;
+	/** 列表栏占「列表+详情」的比例，默认 4:5 → 4/9 */
+	private listPaneRatio = 4 / 9;
+	/** 今天栏占「今天+列表+详情」的比例，默认约 3:4:5 */
+	private todayPaneRatio = 3 / 12;
 	private resizingList = false;
+	/** 拖拽排序结束后抑制一次 click，避免误选中 */
+	private suppressTaskClick = false;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ZTaskingPlugin) {
 		super(leaf);
@@ -140,6 +144,9 @@ export class ZTaskingView extends ItemView {
 						<button type="button" data-work-mode="board" class="on"><span>工作台</span></button>
 						<button type="button" data-work-mode="list"><span>列表</span></button>
 					</nav>
+					<aside class="ztk-today-pane">
+						<div class="ztk-board-today"></div>
+					</aside>
 					<aside class="ztk-list">
 						<div class="ztk-filters"></div>
 						<div class="ztk-task-list"></div>
@@ -301,7 +308,14 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private sidebarTasks(): Task[] {
-		return pickSidebarTasks(this.tasks(), this.sidebarType, this.sidebarStatus);
+		const saved = this.plugin.settings.sidebarOrder?.[this.sidebarType] ?? [];
+		const order = saved.length
+			? mergeSidebarOrder(
+				this.tasks().filter((t) => t.type === this.sidebarType),
+				saved,
+			)
+			: undefined;
+		return pickSidebarTasks(this.tasks(), this.sidebarType, this.sidebarStatus, order);
 	}
 
 	private topTabFor(view: BoardView): TopTab {
@@ -482,6 +496,10 @@ export class ZTaskingView extends ItemView {
 					}
 					return;
 				}
+				if (a === "del-task" && act.dataset.id) {
+					void this.deleteTaskById(act.dataset.id);
+					return;
+				}
 				if (a === "back-list" || a === "open-list") {
 					this.switchView("list");
 					this.renderAll();
@@ -498,6 +516,7 @@ export class ZTaskingView extends ItemView {
 			}
 			const taskEl = target.closest<HTMLElement>(".ztk-task");
 			if (taskEl?.dataset.id) {
+				if (this.suppressTaskClick || target.closest(".ztk-drag-handle")) return;
 				if (this.selectedId !== taskEl.dataset.id) {
 					this.editingLogDate = null;
 					this.editingDesc = false;
@@ -560,6 +579,96 @@ export class ZTaskingView extends ItemView {
 			void this.createTask(e.target as HTMLFormElement);
 		});
 		this.bindListResize();
+		this.bindListReorder();
+	}
+
+	private bindListReorder(): void {
+		const root = this.contentEl;
+		let dragId = "";
+		const clearMarks = () => {
+			root.querySelectorAll(".ztk-task.is-dragging, .ztk-task.is-drag-over").forEach((el) => {
+				el.classList.remove("is-dragging", "is-drag-over");
+			});
+		};
+		root.addEventListener("dragstart", (e) => {
+			const handle = (e.target as HTMLElement).closest(".ztk-drag-handle");
+			const task = handle?.closest<HTMLElement>(".ztk-task");
+			if (!handle || !task?.dataset.id) {
+				e.preventDefault();
+				return;
+			}
+			dragId = task.dataset.id;
+			task.classList.add("is-dragging");
+			e.dataTransfer?.setData("text/plain", dragId);
+			if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+		});
+		root.addEventListener("dragend", () => {
+			dragId = "";
+			clearMarks();
+			this.suppressTaskClick = true;
+			window.setTimeout(() => { this.suppressTaskClick = false; }, 0);
+		});
+		root.addEventListener("dragover", (e) => {
+			const task = (e.target as HTMLElement).closest<HTMLElement>(".ztk-task");
+			if (!task?.dataset.id || !dragId || task.dataset.id === dragId) return;
+			e.preventDefault();
+			if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+			root.querySelectorAll(".ztk-task.is-drag-over").forEach((el) => {
+				if (el !== task) el.classList.remove("is-drag-over");
+			});
+			task.classList.add("is-drag-over");
+		});
+		root.addEventListener("dragleave", (e) => {
+			const task = (e.target as HTMLElement).closest<HTMLElement>(".ztk-task");
+			const related = e.relatedTarget as HTMLElement | null;
+			if (task && related && task.contains(related)) return;
+			task?.classList.remove("is-drag-over");
+		});
+		root.addEventListener("drop", (e) => {
+			const task = (e.target as HTMLElement).closest<HTMLElement>(".ztk-task");
+			const toId = task?.dataset.id ?? "";
+			const fromId = dragId || e.dataTransfer?.getData("text/plain") || "";
+			clearMarks();
+			if (!fromId || !toId || fromId === toId) return;
+			e.preventDefault();
+			void this.commitSidebarReorder(fromId, toId);
+		});
+	}
+
+	private async commitSidebarReorder(fromId: string, toId: string): Promise<void> {
+		const type = this.sidebarType;
+		if (!this.plugin.settings.sidebarOrder) {
+			this.plugin.settings.sidebarOrder = { long: [], temp: [] };
+		}
+		const ofType = this.tasks().filter((t) => t.type === type);
+		const saved = this.plugin.settings.sidebarOrder[type] ?? [];
+		const next = reorderSidebarIds(mergeSidebarOrder(ofType, saved), fromId, toId);
+		this.plugin.settings.sidebarOrder[type] = next;
+		await this.plugin.saveSettings();
+		this.renderList();
+	}
+
+	private async deleteTaskById(id: string): Promise<void> {
+		const task = this.tasks().find((t) => t.id === id);
+		if (!task) return;
+		if (!confirm(`确定删除任务「${task.title}」？\n将删除笔记文件，此操作不可撤销。`)) return;
+		const type = task.type;
+		await this.plugin.store.deleteTask(task);
+		if (this.plugin.settings.sidebarOrder?.[type]) {
+			this.plugin.settings.sidebarOrder[type] = this.plugin.settings.sidebarOrder[type]
+				.filter((x) => x !== id);
+			await this.plugin.saveSettings();
+		}
+		if (this.selectedId === id) {
+			const next = (this.workMode === "board" ? this.sidebarTasks() : this.catalogFiltered())[0]
+				?? this.tasks()[0];
+			this.selectedId = next?.id ?? "";
+			this.editingLogDate = null;
+			this.editingDesc = false;
+			this.editingTitle = false;
+		}
+		this.renderAll();
+		new Notice(`已删除：${task.title}`);
 	}
 
 	private bindListResize(): void {
@@ -571,10 +680,15 @@ export class ZTaskingView extends ItemView {
 			const rect = board.getBoundingClientRect();
 			const rail = 48;
 			const split = 6;
-			const avail = Math.max(1, rect.width - rail - split);
-			const x = e.clientX - rect.left - rail;
-			const minList = 200;
-			const minDetail = 260;
+			const boardMode = board.dataset.mode === "board";
+			const todayEl = board.querySelector(".ztk-today-pane") as HTMLElement | null;
+			const todayW = boardMode && todayEl && getComputedStyle(todayEl).display !== "none"
+				? todayEl.getBoundingClientRect().width
+				: 0;
+			const avail = Math.max(1, rect.width - rail - split - todayW);
+			const x = e.clientX - rect.left - rail - todayW;
+			const minList = 180;
+			const minDetail = 240;
 			const listW = Math.max(minList, Math.min(avail - minDetail, x));
 			this.listPaneRatio = listW / avail;
 			this.applyBoardLayout();
@@ -605,17 +719,31 @@ export class ZTaskingView extends ItemView {
 		if (!board || !board.classList.contains("on")) return;
 		const rail = 48;
 		const split = 6;
+		const boardMode = board.dataset.mode === "board";
 		const w = board.clientWidth;
+		const minToday = 220;
+		const minList = 180;
+		const minDetail = 240;
 		if (w <= 0) {
-			board.style.gridTemplateColumns = `${rail}px minmax(200px, ${this.listPaneRatio}fr) ${split}px minmax(260px, ${1 - this.listPaneRatio}fr)`;
+			board.style.gridTemplateColumns = boardMode
+				? `${rail}px minmax(${minToday}px, 3fr) minmax(${minList}px, 4fr) ${split}px minmax(${minDetail}px, 5fr)`
+				: `${rail}px minmax(200px, ${this.listPaneRatio}fr) ${split}px minmax(${minDetail}px, ${1 - this.listPaneRatio}fr)`;
+			return;
+		}
+		if (!boardMode) {
+			const avail = Math.max(1, w - rail - split);
+			let listW = Math.round(avail * this.listPaneRatio);
+			listW = Math.max(200, Math.min(avail - minDetail, listW));
+			board.style.gridTemplateColumns = `${rail}px ${listW}px ${split}px minmax(${minDetail}px, 1fr)`;
 			return;
 		}
 		const avail = Math.max(1, w - rail - split);
-		const minList = 200;
-		const minDetail = 260;
-		let listW = Math.round(avail * this.listPaneRatio);
-		listW = Math.max(minList, Math.min(avail - minDetail, listW));
-		board.style.gridTemplateColumns = `${rail}px ${listW}px ${split}px minmax(${minDetail}px, 1fr)`;
+		let todayW = Math.round(avail * this.todayPaneRatio);
+		todayW = Math.max(minToday, Math.min(Math.floor(avail * 0.4), todayW));
+		const rest = Math.max(1, avail - todayW);
+		let listW = Math.round(rest * this.listPaneRatio);
+		listW = Math.max(minList, Math.min(rest - minDetail, listW));
+		board.style.gridTemplateColumns = `${rail}px ${todayW}px ${listW}px ${split}px minmax(${minDetail}px, 1fr)`;
 	}
 
 	private syncPeriodVisibility(): void {
@@ -1019,12 +1147,30 @@ export class ZTaskingView extends ItemView {
 		board.dataset.mode = activeMode;
 		this.renderWorkRail(activeMode);
 		if (activeMode === "board") {
+			this.renderBoardToday();
 			this.renderSidebarChrome();
 			this.renderList();
 		} else {
+			this.renderBoardToday(false);
 			this.renderFilters();
 			this.renderCatalog();
 		}
+	}
+
+	/** 工作台左侧：复用汇总页「我的今天」卡片，放在任务列表上方 */
+	private renderBoardToday(show = true): void {
+		const box = this.contentEl.querySelector<HTMLElement>(".ztk-board-today");
+		if (!box) return;
+		if (!show) {
+			box.innerHTML = "";
+			return;
+		}
+		const today = todayStr();
+		const todayLogs = this.logsOn(today);
+		box.innerHTML = todayDigestHtml(
+			today,
+			todayLogs.map((l) => ({ id: l.task.id, title: l.task.title, path: l.task.path, hours: l.hours })),
+		);
 	}
 
 	private renderWorkRail(mode: WorkMode = this.workMode): void {
@@ -1085,6 +1231,7 @@ export class ZTaskingView extends ItemView {
 		const cards = items.map((t) => {
 			const need = t.status === "doing" && !t.logs.some((l) => l.date === today);
 			return `<div class="ztk-task ${t.id === this.selectedId ? "sel" : ""}" data-id="${esc(t.id)}">
+				<button type="button" class="ztk-drag-handle" draggable="true" title="拖动排序" aria-label="拖动排序">⠿</button>
 				<div class="ztk-rail ${t.type}"></div>
 				<div class="ztk-task-main">
 					<h3>${esc(t.title)}</h3>
@@ -1094,7 +1241,10 @@ export class ZTaskingView extends ItemView {
 						<span>${t.logs.length} 笔</span>
 					</div>
 				</div>
-				${need ? `<div class="ztk-need" title="今天还没记"></div>` : ""}
+				<div class="ztk-task-trail">
+					${need ? `<div class="ztk-need" title="今天还没记"></div>` : ""}
+					<button type="button" class="ztk-task-del" data-act="del-task" data-id="${esc(t.id)}" title="删除任务" aria-label="删除任务">×</button>
+				</div>
 			</div>`;
 		}).join("");
 		this.$(".ztk-task-list").innerHTML = cards
@@ -1110,15 +1260,18 @@ export class ZTaskingView extends ItemView {
 				<td><span class="ztk-st ${t.status}">${STATUS_LABEL[t.status]}</span></td>
 				<td>${esc(t.start)} → ${esc(t.end)}</td>
 				<td>${t.logs.length} 笔</td>
+				<td class="ztk-catalog-actions">
+					<button type="button" class="ztk-task-del" data-act="del-task" data-id="${esc(t.id)}" title="删除任务" aria-label="删除任务">×</button>
+				</td>
 			</tr>
 		`).join("");
 		this.$(".ztk-catalog-body").innerHTML = `
 			<table>
 				<thead>
-					<tr><th>标题</th><th>类型</th><th>状态</th><th>周期</th><th>进展</th></tr>
+					<tr><th>标题</th><th>类型</th><th>状态</th><th>周期</th><th>进展</th><th></th></tr>
 				</thead>
 				<tbody>
-					${rows || `<tr><td colspan="5">没有匹配的任务</td></tr>`}
+					${rows || `<tr><td colspan="6">没有匹配的任务</td></tr>`}
 				</tbody>
 			</table>
 		`;

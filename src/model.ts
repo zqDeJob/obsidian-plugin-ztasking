@@ -52,6 +52,8 @@ export interface ZTaskingSettings {
 	webBookmarks: WebBookmark[];
 	/** 网页页书签侧栏是否折叠 */
 	webSideCollapsed: boolean;
+	/** 工作台侧栏手动顺序（按类型存任务 id）；空数组表示仍用时间倒序 */
+	sidebarOrder: { long: string[]; temp: string[] };
 }
 
 export const DEFAULT_SETTINGS: ZTaskingSettings = {
@@ -61,6 +63,7 @@ export const DEFAULT_SETTINGS: ZTaskingSettings = {
 		{ id: "bm-github", title: "GitHub", url: "https://github.com/" },
 	],
 	webSideCollapsed: false,
+	sidebarOrder: { long: [], temp: [] },
 };
 
 export function pad(n: number): string {

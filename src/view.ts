@@ -17,6 +17,15 @@ import {
 	type TaskType,
 } from "./model";
 import { copyText } from "./clipboard";
+import {
+	assembleDailyReportText,
+	emptyDailyDraft,
+	newPlanItemId,
+	planItemsToText,
+	refreshDailyDraft,
+	textToPlanItems,
+	tomorrowPlanListHtml,
+} from "./daily-report";
 import { descBlockHtml } from "./desc";
 import { iconBtn } from "./icons";
 import {
@@ -146,6 +155,7 @@ export class ZTaskingView extends ItemView {
 					</nav>
 					<aside class="ztk-today-pane">
 						<div class="ztk-board-today"></div>
+						<div class="ztk-board-plan"></div>
 					</aside>
 					<aside class="ztk-list">
 						<div class="ztk-filters"></div>
@@ -456,6 +466,28 @@ export class ZTaskingView extends ItemView {
 					void this.copyReportLogs();
 					return;
 				}
+				if (a === "copy-daily-report") {
+					void this.copyDailyReport();
+					return;
+				}
+				if (a === "reset-daily-work") {
+					void this.resetDailyReportWork();
+					return;
+				}
+				if (a === "reset-daily-plan") {
+					void this.resetDailyReportPlan();
+					return;
+				}
+				if (a === "add-plan-item") {
+					const wrap = act.closest(".ztk-plan-add");
+					const input = wrap?.querySelector<HTMLInputElement>(".ztk-plan-add-input");
+					void this.addTomorrowPlanItem(input?.value);
+					return;
+				}
+				if (a === "del-plan-item" && act.dataset.planId) {
+					void this.removeTomorrowPlanItem(act.dataset.planId);
+					return;
+				}
 				if (a === "edit-log" || a === "save-log" || a === "cancel-log" || a === "del-log") {
 					const date = act.closest<HTMLElement>("[data-date]")?.dataset.date;
 					if (date) void this.handleLogAction(a, date);
@@ -573,6 +605,24 @@ export class ZTaskingView extends ItemView {
 				this.query = (el as HTMLInputElement).value;
 				this.renderCatalog();
 			}
+			if (
+				el.classList.contains("ztk-daily-work")
+				|| el.classList.contains("ztk-daily-plan")
+				|| el.classList.contains("ztk-daily-discuss")
+			) {
+				this.persistDailyReportField(el as HTMLTextAreaElement);
+			}
+			if (el.classList.contains("ztk-plan-item-input")) {
+				this.persistPlanItemInput(el as HTMLInputElement);
+			}
+		});
+		root.addEventListener("keydown", (e) => {
+			const el = e.target as HTMLElement;
+			if (!(el instanceof HTMLInputElement)) return;
+			if (!el.classList.contains("ztk-plan-add-input")) return;
+			if (e.key !== "Enter") return;
+			e.preventDefault();
+			void this.addTomorrowPlanItem(el.value);
 		});
 		this.$(".ztk-modal-card").addEventListener("submit", (e) => {
 			e.preventDefault();
@@ -1148,16 +1198,18 @@ export class ZTaskingView extends ItemView {
 		this.renderWorkRail(activeMode);
 		if (activeMode === "board") {
 			this.renderBoardToday();
+			this.renderBoardPlan();
 			this.renderSidebarChrome();
 			this.renderList();
 		} else {
 			this.renderBoardToday(false);
+			this.renderBoardPlan(false);
 			this.renderFilters();
 			this.renderCatalog();
 		}
 	}
 
-	/** 工作台左侧：复用汇总页「我的今天」卡片，放在任务列表上方 */
+	/** 工作台左侧：复用汇总页「我的今天」卡片 */
 	private renderBoardToday(show = true): void {
 		const box = this.contentEl.querySelector<HTMLElement>(".ztk-board-today");
 		if (!box) return;
@@ -1171,6 +1223,186 @@ export class ZTaskingView extends ItemView {
 			today,
 			todayLogs.map((l) => ({ id: l.task.id, title: l.task.title, path: l.task.path, hours: l.hours })),
 		);
+	}
+
+	/** 工作台左侧：明日计划待办（与汇总日报同步） */
+	private renderBoardPlan(show = true): void {
+		const box = this.contentEl.querySelector<HTMLElement>(".ztk-board-plan");
+		if (!box) return;
+		if (!show) {
+			box.innerHTML = "";
+			return;
+		}
+		const draft = this.syncDailyReportDraft();
+		box.innerHTML = `
+			<div class="ztk-card ztk-tomorrow-plan">
+				<div class="ztk-tomorrow-plan-head">
+					<h2>明日计划</h2>
+				</div>
+				${tomorrowPlanListHtml(draft.planItems)}
+			</div>
+		`;
+	}
+
+	/** 汇总页：「今日日报」卡片 HTML */
+	private dailyReportCardHtml(): string {
+		const draft = this.syncDailyReportDraft();
+		return `
+			<div class="ztk-card ztk-daily-report">
+				<div class="ztk-daily-report-head">
+					<h2>今日日报</h2>
+					<div class="ztk-daily-report-actions">
+						<button type="button" class="ztk-ghost" data-act="reset-daily-work" title="按我的今天重新填充今日工作">重置今日工作</button>
+						<button type="button" class="ztk-ghost" data-act="reset-daily-plan" title="清空明日计划">重置明日计划</button>
+						<button type="button" class="ztk-ghost ztk-daily-copy" data-act="copy-daily-report" title="复制完整日报">复制</button>
+					</div>
+				</div>
+				<label class="ztk-daily-label" for="ztk-daily-work">今日工作</label>
+				<textarea id="ztk-daily-work" class="ztk-daily-work" rows="8" placeholder="根据「我的今天」自动填充，可自行修改">${esc(draft.work)}</textarea>
+				<label class="ztk-daily-label" for="ztk-daily-plan">明日计划</label>
+				<textarea id="ztk-daily-plan" class="ztk-daily-plan" rows="4" placeholder="可自定义明日计划">${esc(draft.plan)}</textarea>
+				<label class="ztk-daily-label" for="ztk-daily-discuss">待讨论</label>
+				<textarea id="ztk-daily-discuss" class="ztk-daily-discuss" rows="2" placeholder="- 无">${esc(draft.discuss)}</textarea>
+			</div>
+		`;
+	}
+
+	private syncDailyReportDraft() {
+		const today = todayStr();
+		const todayLogs = this.logsOn(today).map((l) => ({
+			title: l.task.title,
+			text: l.text,
+		}));
+		const prev = this.plugin.settings.dailyReportDraft ?? emptyDailyDraft(today);
+		const next = refreshDailyDraft(prev, today, todayLogs, this.tasks());
+		this.plugin.settings.dailyReportDraft = next;
+		return next;
+	}
+
+	private persistDailyReportField(el: HTMLTextAreaElement): void {
+		const draft = this.syncDailyReportDraft();
+		if (el.classList.contains("ztk-daily-work")) {
+			draft.work = el.value;
+			draft.workCustom = true;
+		} else if (el.classList.contains("ztk-daily-plan")) {
+			draft.plan = el.value;
+			draft.planItems = textToPlanItems(el.value);
+			draft.planCustom = true;
+			this.plugin.settings.dailyReportDraft = draft;
+			void this.plugin.saveSettings();
+			// 汇总 textarea 编辑后，同步工作台 list（若当前在工作台可见）
+			if (this.contentEl.querySelector(".ztk-board-plan .ztk-tomorrow-plan")) {
+				this.renderBoardPlan();
+			}
+			return;
+		} else if (el.classList.contains("ztk-daily-discuss")) {
+			draft.discuss = el.value;
+		}
+		this.plugin.settings.dailyReportDraft = draft;
+		void this.plugin.saveSettings();
+	}
+
+	private persistPlanItemInput(el: HTMLInputElement): void {
+		const id = el.dataset.planId ?? "";
+		if (!id) return;
+		const draft = this.syncDailyReportDraft();
+		const item = draft.planItems.find((it) => it.id === id);
+		if (!item) return;
+		item.text = el.value;
+		draft.planCustom = true;
+		draft.plan = planItemsToText(draft.planItems);
+		this.plugin.settings.dailyReportDraft = draft;
+		void this.plugin.saveSettings();
+	}
+
+	private async addTomorrowPlanItem(raw?: string): Promise<void> {
+		const draft = this.syncDailyReportDraft();
+		const input = this.contentEl.querySelector<HTMLInputElement>(
+			".ztk-board-plan .ztk-plan-add-input",
+		);
+		const text = (raw ?? input?.value ?? "").trim().replace(/^[-*•]\s+/, "");
+		if (!text) {
+			input?.focus();
+			return;
+		}
+		draft.planItems.push({ id: newPlanItemId(), text });
+		draft.planCustom = true;
+		draft.plan = planItemsToText(draft.planItems);
+		this.plugin.settings.dailyReportDraft = draft;
+		await this.plugin.saveSettings();
+		this.refreshPlanSurfaces();
+	}
+
+	private async removeTomorrowPlanItem(id: string): Promise<void> {
+		const draft = this.syncDailyReportDraft();
+		draft.planItems = draft.planItems.filter((it) => it.id !== id);
+		draft.planCustom = true;
+		draft.plan = planItemsToText(draft.planItems);
+		this.plugin.settings.dailyReportDraft = draft;
+		await this.plugin.saveSettings();
+		this.refreshPlanSurfaces();
+	}
+
+	/** 同步刷新工作台与汇总上的明日计划 UI */
+	private refreshPlanSurfaces(): void {
+		if (this.view === "board" || this.workMode === "board") this.renderBoardPlan();
+		const planArea = this.contentEl.querySelector<HTMLTextAreaElement>(".ztk-daily-plan");
+		if (planArea && document.activeElement !== planArea) {
+			const draft = this.syncDailyReportDraft();
+			planArea.value = draft.plan;
+		}
+	}
+
+	private async resetDailyReportWork(): Promise<void> {
+		const today = todayStr();
+		const draft = this.syncDailyReportDraft();
+		draft.workCustom = false;
+		draft.work = "";
+		this.plugin.settings.dailyReportDraft = refreshDailyDraft(
+			draft,
+			today,
+			this.logsOn(today).map((l) => ({ title: l.task.title, text: l.text })),
+			this.tasks(),
+		);
+		await this.plugin.saveSettings();
+		this.mdGen += 1;
+		const gen = this.mdGen;
+		this.renderReport();
+		void this.paintMarkdown(gen);
+		new Notice("已重置今日工作");
+	}
+
+	private async resetDailyReportPlan(): Promise<void> {
+		const draft = this.syncDailyReportDraft();
+		draft.planItems = [];
+		draft.plan = "";
+		draft.planCustom = false;
+		this.plugin.settings.dailyReportDraft = draft;
+		await this.plugin.saveSettings();
+		this.refreshPlanSurfaces();
+		if (this.view === "report") {
+			this.mdGen += 1;
+			const gen = this.mdGen;
+			this.renderReport();
+			void this.paintMarkdown(gen);
+		}
+		new Notice("已重置明日计划");
+	}
+
+	private async copyDailyReport(): Promise<void> {
+		const draft = this.syncDailyReportDraft();
+		const work = this.contentEl.querySelector<HTMLTextAreaElement>(".ztk-daily-work")?.value
+			?? draft.work
+			?? "";
+		const plan = this.contentEl.querySelector<HTMLTextAreaElement>(".ztk-daily-plan")?.value
+			?? draft.plan
+			?? planItemsToText(draft.planItems);
+		const discuss = this.contentEl.querySelector<HTMLTextAreaElement>(".ztk-daily-discuss")?.value
+			?? draft.discuss
+			?? "- 无";
+		const text = assembleDailyReportText(work, plan, discuss);
+		const ok = await copyText(text);
+		new Notice(ok ? "已复制今日日报" : "复制失败，请手动全选复制");
 	}
 
 	private renderWorkRail(mode: WorkMode = this.workMode): void {
@@ -1510,27 +1742,32 @@ export class ZTaskingView extends ItemView {
 			? taskGroups.map((g) => reportMergedGroupHtml(g)).join("")
 			: logItems.map((l) => reportLogRowHtml(l)).join("");
 		this.$("#ztk-view-report").innerHTML = `
-			<div class="ztk-report-main">
+			<div class="ztk-report-top">
 				${todayDigestHtml(today, todayLogs.map((l) => ({ id: l.task.id, title: l.task.title, path: l.task.path, hours: l.hours })))}
-				<div class="ztk-card ztk-report-logs">
-					${reportLogsHeadHtml(r.label, this.reportByTask)}
-					<div class="ztk-report-list">
-						${listHtml || `<p class="ztk-muted">这个周期还没有记录</p>`}
-					</div>
-				</div>
+				${this.dailyReportCardHtml()}
 			</div>
-			<aside class="ztk-report-side">
-				<div class="ztk-card ztk-report-overview">
-					<h2>活跃分布</h2>
-					<div class="ztk-heat">${heat}</div>
-				</div>
-				<div class="ztk-card ztk-report-overview">
-					<h2>按任务计数</h2>
-					<div class="ztk-count-list">
-						${taskGroups.map((g) => reportTaskCountRowHtml(g.title, g.count, g.hours)).join("") || `<p class="ztk-muted">暂无</p>`}
+			<div class="ztk-report-body">
+				<div class="ztk-report-main">
+					<div class="ztk-card ztk-report-logs">
+						${reportLogsHeadHtml(r.label, this.reportByTask)}
+						<div class="ztk-report-list">
+							${listHtml || `<p class="ztk-muted">这个周期还没有记录</p>`}
+						</div>
 					</div>
 				</div>
-			</aside>
+				<aside class="ztk-report-side">
+					<div class="ztk-card ztk-report-overview">
+						<h2>活跃分布</h2>
+						<div class="ztk-heat">${heat}</div>
+					</div>
+					<div class="ztk-card ztk-report-overview">
+						<h2>按任务计数</h2>
+						<div class="ztk-count-list">
+							${taskGroups.map((g) => reportTaskCountRowHtml(g.title, g.count, g.hours)).join("") || `<p class="ztk-muted">暂无</p>`}
+						</div>
+					</div>
+				</aside>
+			</div>
 		`;
 	}
 }

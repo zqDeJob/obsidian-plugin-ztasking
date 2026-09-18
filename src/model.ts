@@ -46,6 +46,21 @@ export interface WebBookmark {
 	url: string;
 }
 
+export interface TomorrowPlanItemSettings {
+	id: string;
+	text: string;
+}
+
+export interface DailyReportDraftSettings {
+	date: string;
+	work: string;
+	plan: string;
+	planItems: TomorrowPlanItemSettings[];
+	discuss: string;
+	workCustom: boolean;
+	planCustom: boolean;
+}
+
 export interface ZTaskingSettings {
 	rootFolder: string;
 	/** 常见网页书签 */
@@ -54,6 +69,8 @@ export interface ZTaskingSettings {
 	webSideCollapsed: boolean;
 	/** 工作台侧栏手动顺序（按类型存任务 id）；空数组表示仍用时间倒序 */
 	sidebarOrder: { long: string[]; temp: string[] };
+	/** 汇总「今日日报」草稿（含明日计划待办） */
+	dailyReportDraft: DailyReportDraftSettings;
 }
 
 export const DEFAULT_SETTINGS: ZTaskingSettings = {
@@ -64,6 +81,15 @@ export const DEFAULT_SETTINGS: ZTaskingSettings = {
 	],
 	webSideCollapsed: false,
 	sidebarOrder: { long: [], temp: [] },
+	dailyReportDraft: {
+		date: "",
+		work: "",
+		plan: "",
+		planItems: [],
+		discuss: "- 无",
+		workCustom: false,
+		planCustom: false,
+	},
 };
 
 export function pad(n: number): string {

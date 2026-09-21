@@ -69,6 +69,8 @@ export interface ZTaskingSettings {
 	webBookmarks: WebBookmark[];
 	/** 网页页书签侧栏是否折叠 */
 	webSideCollapsed: boolean;
+	/** 日历页右侧「当日详情」是否折叠 */
+	calDayPaneCollapsed: boolean;
 	/** 工作台侧栏手动顺序（按类型存任务 id）；空数组表示仍用时间倒序 */
 	sidebarOrder: { long: string[]; temp: string[]; bug: string[] };
 	/** 汇总「今日日报」草稿（含明日计划待办） */
@@ -82,6 +84,7 @@ export const DEFAULT_SETTINGS: ZTaskingSettings = {
 		{ id: "bm-github", title: "GitHub", url: "https://github.com/" },
 	],
 	webSideCollapsed: false,
+	calDayPaneCollapsed: false,
 	sidebarOrder: { long: [], temp: [], bug: [] },
 	dailyReportDraft: {
 		date: "",

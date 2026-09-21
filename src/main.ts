@@ -67,6 +67,8 @@ export default class ZTaskingPlugin extends Plugin {
 			webBookmarks: Array.isArray(raw?.webBookmarks)
 				? raw!.webBookmarks as WebBookmark[]
 				: DEFAULT_SETTINGS.webBookmarks.map((b) => ({ ...b })),
+			webSideCollapsed: raw?.webSideCollapsed === true,
+			calDayPaneCollapsed: raw?.calDayPaneCollapsed === true,
 			sidebarOrder: {
 				long: Array.isArray(order?.long) ? order!.long.filter((x) => typeof x === "string") : [],
 				temp: Array.isArray(order?.temp) ? order!.temp.filter((x) => typeof x === "string") : [],

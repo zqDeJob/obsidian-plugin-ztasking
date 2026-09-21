@@ -186,10 +186,13 @@ export class ZTaskingView extends ItemView {
 							<button class="ztk-ghost" data-act="cal-next" type="button">下一月</button>
 							<button class="ztk-ghost" data-act="cal-today" type="button">今天</button>
 							<span class="ztk-spacer"></span>
+							<button class="ztk-ghost ztk-cal-day-toggle ztk-cal-day-toggle--bar" data-act="toggle-cal-day" type="button">折叠详情</button>
 							<button class="ztk-ghost" data-act="goto-gantt" type="button">甘特图</button>
 						</div>
-						<div class="ztk-weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
-						<div class="ztk-days"></div>
+						<div class="ztk-cal-body">
+							<div class="ztk-weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+							<div class="ztk-days"></div>
+						</div>
 					</div>
 					<aside class="ztk-day-pane"></aside>
 				</div>
@@ -467,6 +470,10 @@ export class ZTaskingView extends ItemView {
 					this.calCursor = new Date();
 					this.selectedDay = todayStr();
 					this.refreshCalendar();
+				}
+				if (a === "toggle-cal-day") {
+					void this.toggleCalDayPane();
+					return;
 				}
 				if (a === "add-log") void this.addTodayLog();
 				if (a === "report-view-mode") {
@@ -1713,6 +1720,7 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private renderCalendar(): void {
+		this.syncCalDayPane();
 		const y = this.calCursor.getFullYear();
 		const m = this.calCursor.getMonth();
 		this.$(".ztk-cal-title").textContent = `${y} 年 ${m + 1} 月`;
@@ -1740,15 +1748,46 @@ export class ZTaskingView extends ItemView {
 		const dayLogs = this.logsOn(this.selectedDay);
 		const paneTotal = sumHours(dayLogs);
 		const paneHours = paneTotal > 0 ? ` · ${formatHours(paneTotal)}` : "";
-		this.$(".ztk-day-pane").innerHTML = `<h2>${this.selectedDay}${esc(paneHours)}</h2>` + (dayLogs.length
-			? dayLogs.map((l) => `<div class="ztk-log ztk-day-log">
-				<div class="ztk-day-log-head">
-					<button class="ztk-ghost" data-act="goto-task" data-id="${esc(l.task.id)}" type="button">${esc(l.task.title)}</button>
-					${hoursBadgeHtml(l.hours)}
-				</div>
-				<div class="ztk-log-body">${this.mdSlot(l.task.path, l.date)}</div>
-			</div>`).join("")
-			: `<p class="ztk-muted">这天还没有进展记录</p>`);
+		const collapsed = this.plugin.settings.calDayPaneCollapsed === true;
+		this.$(".ztk-day-pane").innerHTML = `
+			<div class="ztk-day-pane-head">
+				<h2>${this.selectedDay}${esc(paneHours)}</h2>
+				<button class="ztk-ghost ztk-cal-day-toggle" data-act="toggle-cal-day" type="button" title="${collapsed ? "展开详情" : "折叠详情"}">${collapsed ? "›" : "‹"}</button>
+			</div>
+			${dayLogs.length
+				? dayLogs.map((l) => `<div class="ztk-log ztk-day-log">
+					<div class="ztk-day-log-head">
+						<button class="ztk-ghost" data-act="goto-task" data-id="${esc(l.task.id)}" type="button">${esc(l.task.title)}</button>
+						${hoursBadgeHtml(l.hours)}
+					</div>
+					<div class="ztk-log-body">${this.mdSlot(l.task.path, l.date)}</div>
+				</div>`).join("")
+				: `<p class="ztk-muted">这天还没有进展记录</p>`}
+		`;
+		this.syncCalDayPane();
+	}
+
+	private syncCalDayPane(): void {
+		const cal = this.contentEl.querySelector("#ztk-view-cal");
+		if (!cal) return;
+		const collapsed = this.plugin.settings.calDayPaneCollapsed === true;
+		cal.classList.toggle("is-day-collapsed", collapsed);
+		cal.querySelectorAll<HTMLButtonElement>(".ztk-cal-day-toggle").forEach((btn) => {
+			const isBar = btn.classList.contains("ztk-cal-day-toggle--bar");
+			if (isBar) {
+				btn.textContent = collapsed ? "展开详情" : "折叠详情";
+				btn.title = btn.textContent;
+			} else {
+				btn.textContent = collapsed ? "›" : "‹";
+				btn.title = collapsed ? "展开详情" : "折叠详情";
+			}
+		});
+	}
+
+	private async toggleCalDayPane(): Promise<void> {
+		this.plugin.settings.calDayPaneCollapsed = !this.plugin.settings.calDayPaneCollapsed;
+		this.syncCalDayPane();
+		await this.plugin.saveSettings();
 	}
 
 	private refreshCalendar(): void {

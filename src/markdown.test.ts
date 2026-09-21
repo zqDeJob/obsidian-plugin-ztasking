@@ -92,3 +92,31 @@ test("appendTaskLog 当日正文为空时直接写入新内容", () => {
 	assert.equal(next[0]?.text, "补记");
 	assert.equal(next[0]?.hours, 1.25);
 });
+
+test("parseTaskMarkdown 从路径识别缺陷类型", () => {
+	const task = parseTaskMarkdown(
+		"Z-Tasking/缺陷/某缺陷.md",
+		"---\nstatus: todo\nstart: 2026-09-21\nend: 2026-09-30\n---\n\n说明\n",
+	);
+	assert.equal(task.type, "bug");
+	assert.equal(task.title, "某缺陷");
+});
+
+test("serialize / parse 缺陷类型往返", () => {
+	const md = serializeTaskMarkdown({
+		id: "p",
+		path: "Z-Tasking/缺陷/某缺陷.md",
+		title: "某缺陷",
+		type: "bug",
+		status: "doing",
+		start: "2026-09-21",
+		end: "2026-10-01",
+		desc: "修显示",
+		logs: [],
+		updatedAt: 1,
+	});
+	assert.match(md, /type: bug/);
+	const task = parseTaskMarkdown("Z-Tasking/缺陷/某缺陷.md", md);
+	assert.equal(task.type, "bug");
+	assert.equal(task.status, "doing");
+});

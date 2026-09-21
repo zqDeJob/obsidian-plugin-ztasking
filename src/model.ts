@@ -9,11 +9,13 @@ export const STATUS_LABEL = {
 export const TYPE_LABEL = {
 	long: "长期",
 	temp: "临时",
+	bug: "缺陷",
 } as const;
 
 export const TYPE_DIR = {
 	long: "长期",
 	temp: "临时",
+	bug: "缺陷",
 } as const;
 
 export type TaskType = keyof typeof TYPE_DIR;
@@ -68,7 +70,7 @@ export interface ZTaskingSettings {
 	/** 网页页书签侧栏是否折叠 */
 	webSideCollapsed: boolean;
 	/** 工作台侧栏手动顺序（按类型存任务 id）；空数组表示仍用时间倒序 */
-	sidebarOrder: { long: string[]; temp: string[] };
+	sidebarOrder: { long: string[]; temp: string[]; bug: string[] };
 	/** 汇总「今日日报」草稿（含明日计划待办） */
 	dailyReportDraft: DailyReportDraftSettings;
 }
@@ -80,7 +82,7 @@ export const DEFAULT_SETTINGS: ZTaskingSettings = {
 		{ id: "bm-github", title: "GitHub", url: "https://github.com/" },
 	],
 	webSideCollapsed: false,
-	sidebarOrder: { long: [], temp: [] },
+	sidebarOrder: { long: [], temp: [], bug: [] },
 	dailyReportDraft: {
 		date: "",
 		work: "",
@@ -153,5 +155,5 @@ export function isStatus(v: string): v is TaskStatus {
 }
 
 export function isType(v: string): v is TaskType {
-	return v === "long" || v === "temp";
+	return v === "long" || v === "temp" || v === "bug";
 }

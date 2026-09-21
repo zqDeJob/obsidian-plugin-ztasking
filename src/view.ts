@@ -214,6 +214,7 @@ export class ZTaskingView extends ItemView {
 							<select name="type">
 								<option value="long">长期任务</option>
 								<option value="temp">临时任务</option>
+								<option value="bug">缺陷</option>
 							</select>
 							<select name="status">
 								<option value="todo">未开始</option>
@@ -596,7 +597,7 @@ export class ZTaskingView extends ItemView {
 			}
 			if (el.classList.contains("ztk-side-type")) {
 				const v = (el as HTMLSelectElement).value;
-				if (v === "long" || v === "temp") {
+				if (v === "long" || v === "temp" || v === "bug") {
 					this.sidebarType = v;
 					this.renderList();
 				}
@@ -714,7 +715,7 @@ export class ZTaskingView extends ItemView {
 	private async commitSidebarReorder(fromId: string, toId: string): Promise<void> {
 		const type = this.sidebarType;
 		if (!this.plugin.settings.sidebarOrder) {
-			this.plugin.settings.sidebarOrder = { long: [], temp: [] };
+			this.plugin.settings.sidebarOrder = { long: [], temp: [], bug: [] };
 		}
 		const ofType = this.tasks().filter((t) => t.type === type);
 		const saved = this.plugin.settings.sidebarOrder[type] ?? [];
@@ -1505,6 +1506,7 @@ export class ZTaskingView extends ItemView {
 			<button class="ztk-chip ${this.typeFilter === "all" ? "on" : ""}" data-k="all" type="button">全部</button>
 			<button class="ztk-chip ${this.typeFilter === "long" ? "on" : ""}" data-k="long" type="button">长期</button>
 			<button class="ztk-chip ${this.typeFilter === "temp" ? "on" : ""}" data-k="temp" type="button">临时</button>
+			<button class="ztk-chip ${this.typeFilter === "bug" ? "on" : ""}" data-k="bug" type="button">缺陷</button>
 			<select class="ztk-status-filter">
 				<option value="all">全部状态</option>
 				<option value="todo">未开始</option>
@@ -1521,6 +1523,7 @@ export class ZTaskingView extends ItemView {
 				<select class="ztk-side-type" aria-label="类型筛选">
 					<option value="long">长期</option>
 					<option value="temp">临时</option>
+					<option value="bug">缺陷</option>
 				</select>
 				<select class="ztk-side-status" aria-label="状态筛选">
 					<option value="all">全部状态</option>
@@ -1643,6 +1646,7 @@ export class ZTaskingView extends ItemView {
 						<select class="ztk-task-type">
 							<option value="long">长期</option>
 							<option value="temp">临时</option>
+							<option value="bug">缺陷</option>
 						</select>
 					</label>
 					<label>状态

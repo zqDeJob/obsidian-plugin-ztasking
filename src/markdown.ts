@@ -21,8 +21,9 @@ function parseFrontmatter(content: string): { fields: Record<string, string>; bo
 }
 
 function typeFromPath(path: string, fallback: TaskType): TaskType {
+	if (path.includes(`/${TYPE_DIR.bug}/`) || path.endsWith(`/${TYPE_DIR.bug}`)) return "bug";
 	if (path.includes(`/${TYPE_DIR.temp}/`) || path.endsWith(`/${TYPE_DIR.temp}`)) return "temp";
-	if (path.includes(`/${TYPE_DIR.long}/`)) return "long";
+	if (path.includes(`/${TYPE_DIR.long}/`) || path.endsWith(`/${TYPE_DIR.long}`)) return "long";
 	return fallback;
 }
 

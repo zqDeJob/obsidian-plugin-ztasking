@@ -38,7 +38,8 @@ export class TaskStore {
 	}
 
 	async ensureFolders(): Promise<void> {
-		for (const path of [this.root(), this.dir("long"), this.dir("temp")]) {
+		const paths = [this.root(), ...((Object.keys(TYPE_DIR) as TaskType[]).map((t) => this.dir(t)))];
+		for (const path of paths) {
 			if (!this.app.vault.getAbstractFileByPath(path)) {
 				await this.app.vault.createFolder(path);
 			}
@@ -54,11 +55,9 @@ export class TaskStore {
 	}
 
 	isTaskFile(path: string): boolean {
-		const root = this.root();
 		const dailyPrefix = `${this.dailyDir()}/`;
 		if (path.startsWith(dailyPrefix)) return false;
-		return path.startsWith(`${this.dir("long")}/`) || path.startsWith(`${this.dir("temp")}/`)
-			|| (path.startsWith(`${root}/`) && path.endsWith(".md"));
+		return (Object.keys(TYPE_DIR) as TaskType[]).some((t) => path.startsWith(`${this.dir(t)}/`));
 	}
 
 	/** 将日报草稿写入 vault：根目录/日报/YYYY-MM-DD.md（有内容才写） */

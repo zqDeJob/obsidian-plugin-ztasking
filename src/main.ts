@@ -70,6 +70,7 @@ export default class ZTaskingPlugin extends Plugin {
 			sidebarOrder: {
 				long: Array.isArray(order?.long) ? order!.long.filter((x) => typeof x === "string") : [],
 				temp: Array.isArray(order?.temp) ? order!.temp.filter((x) => typeof x === "string") : [],
+				bug: Array.isArray(order?.bug) ? order!.bug.filter((x) => typeof x === "string") : [],
 			},
 			dailyReportDraft: {
 				date: typeof draft?.date === "string" ? draft.date : "",

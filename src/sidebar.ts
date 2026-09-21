@@ -1,4 +1,19 @@
-import type { Task, TaskStatus, TaskType } from "./model.ts";
+import { isStatus, type Task, type TaskStatus, type TaskType } from "./model.ts";
+
+/** 侧栏状态筛选：全部 / 单状态 / 排除某状态（如 !done） */
+export type SidebarStatusFilter = "all" | TaskStatus | `!${TaskStatus}`;
+
+export function isSidebarStatusFilter(v: string): v is SidebarStatusFilter {
+	if (v === "all") return true;
+	if (v.startsWith("!")) return isStatus(v.slice(1));
+	return isStatus(v);
+}
+
+export function matchSidebarStatus(status: TaskStatus, filter: SidebarStatusFilter): boolean {
+	if (filter === "all") return true;
+	if (filter.startsWith("!")) return status !== filter.slice(1);
+	return status === filter;
+}
 
 /** 侧边栏排序键：优先笔记 mtime，否则取最近进展日期。 */
 export function sidebarUpdatedAt(task: Task): number {
@@ -53,12 +68,12 @@ export function reorderSidebarIds(order: string[], fromId: string, toId: string)
 export function pickSidebarTasks(
 	tasks: Task[],
 	type: TaskType,
-	statusFilter: "all" | TaskStatus = "all",
+	statusFilter: SidebarStatusFilter = "all",
 	orderIds?: string[],
 ): Task[] {
 	const filtered = tasks.filter((t) =>
 		t.type === type
-		&& (statusFilter === "all" || t.status === statusFilter)
+		&& matchSidebarStatus(t.status, statusFilter)
 	);
 	if (!orderIds?.length) {
 		return [...filtered].sort(byTimeDesc);

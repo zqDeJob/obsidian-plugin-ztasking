@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mergeSidebarOrder, pickSidebarTasks, reorderSidebarIds } from "./sidebar.ts";
+import { matchSidebarStatus, mergeSidebarOrder, pickSidebarTasks, reorderSidebarIds } from "./sidebar.ts";
 import type { Task } from "./model.ts";
 
 function task(partial: Partial<Task> & Pick<Task, "id" | "title">): Task {
@@ -47,6 +47,33 @@ test("状态筛选只保留对应状态", () => {
 	];
 	assert.deepEqual(pickSidebarTasks(tasks, "long", "doing").map((t) => t.id), ["a"]);
 	assert.deepEqual(pickSidebarTasks(tasks, "long", "done").map((t) => t.id), ["d"]);
+});
+
+test("状态排除：不包括已完结", () => {
+	const tasks = [
+		task({ id: "d", title: "完", status: "done", updatedAt: 3 }),
+		task({ id: "a", title: "做", status: "doing", updatedAt: 2 }),
+		task({ id: "t", title: "未", status: "todo", updatedAt: 1 }),
+	];
+	assert.deepEqual(pickSidebarTasks(tasks, "long", "!done").map((t) => t.id), ["a", "t"]);
+});
+
+test("状态排除：不包括未开始 / 不包括进行中", () => {
+	const tasks = [
+		task({ id: "d", title: "完", status: "done", updatedAt: 3 }),
+		task({ id: "a", title: "做", status: "doing", updatedAt: 2 }),
+		task({ id: "t", title: "未", status: "todo", updatedAt: 1 }),
+	];
+	assert.deepEqual(pickSidebarTasks(tasks, "long", "!todo").map((t) => t.id), ["d", "a"]);
+	assert.deepEqual(pickSidebarTasks(tasks, "long", "!doing").map((t) => t.id), ["d", "t"]);
+});
+
+test("matchSidebarStatus 识别全部、单状态与排除", () => {
+	assert.equal(matchSidebarStatus("done", "all"), true);
+	assert.equal(matchSidebarStatus("done", "done"), true);
+	assert.equal(matchSidebarStatus("doing", "done"), false);
+	assert.equal(matchSidebarStatus("done", "!done"), false);
+	assert.equal(matchSidebarStatus("todo", "!done"), true);
 });
 
 test("只取当前类型 Tab，不截断数量", () => {

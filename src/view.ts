@@ -53,7 +53,7 @@ import {
 	sumHours,
 	todayDigestHtml,
 } from "./report";
-import { mergeSidebarOrder, pickSidebarTasks, reorderSidebarIds } from "./sidebar";
+import { mergeSidebarOrder, pickSidebarTasks, reorderSidebarIds, isSidebarStatusFilter, type SidebarStatusFilter } from "./sidebar";
 import { WebPanel } from "./web-panel";
 
 type BoardView = "board" | "list" | "detail" | "cal" | "gantt" | "report" | "web";
@@ -79,8 +79,8 @@ export class ZTaskingView extends ItemView {
 	statusFilter: "all" | TaskStatus = "all";
 	/** 侧边栏当前类型 Tab */
 	sidebarType: TaskType = "long";
-	/** 侧边栏状态筛选 */
-	sidebarStatus: "all" | TaskStatus = "all";
+	/** 侧边栏状态筛选（默认不包括已完结） */
+	sidebarStatus: SidebarStatusFilter = "!done";
 	query = "";
 	selectedId = "";
 	calCursor = new Date();
@@ -610,8 +610,11 @@ export class ZTaskingView extends ItemView {
 				}
 			}
 			if (el.classList.contains("ztk-side-status")) {
-				this.sidebarStatus = (el as HTMLSelectElement).value as "all" | TaskStatus;
-				this.renderList();
+				const v = (el as HTMLSelectElement).value;
+				if (isSidebarStatusFilter(v)) {
+					this.sidebarStatus = v;
+					this.renderList();
+				}
 			}
 			if (el.classList.contains("ztk-task-status")) {
 				void this.changeStatus((el as HTMLSelectElement).value as TaskStatus);
@@ -1537,6 +1540,9 @@ export class ZTaskingView extends ItemView {
 					<option value="todo">未开始</option>
 					<option value="doing">进行中</option>
 					<option value="done">已完结</option>
+					<option value="!done">不包括已完结</option>
+					<option value="!todo">不包括未开始</option>
+					<option value="!doing">不包括进行中</option>
 				</select>
 			</div>
 		`;

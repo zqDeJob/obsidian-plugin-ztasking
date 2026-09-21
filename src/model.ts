@@ -74,7 +74,7 @@ export interface ZTaskingSettings {
 }
 
 export const DEFAULT_SETTINGS: ZTaskingSettings = {
-	rootFolder: "z-tasking",
+	rootFolder: "Z-Tasking",
 	webBookmarks: [
 		{ id: "bm-google", title: "Google", url: "https://www.google.com/" },
 		{ id: "bm-github", title: "GitHub", url: "https://github.com/" },

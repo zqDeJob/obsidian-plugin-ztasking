@@ -117,10 +117,10 @@ class ZTaskingSettingTab extends PluginSettingTab {
 			.setName("任务根目录")
 			.setDesc("任务笔记会写到 根目录/长期 与 根目录/临时。")
 			.addText((text) => {
-				text.setPlaceholder("z-tasking")
+				text.setPlaceholder("Z-Tasking")
 					.setValue(this.plugin.settings.rootFolder)
 					.onChange(async (value) => {
-						const next = value.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "") || "z-tasking";
+						const next = value.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "") || "Z-Tasking";
 						this.plugin.settings.rootFolder = next;
 						await this.plugin.saveSettings();
 						await this.plugin.store.reload();

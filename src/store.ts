@@ -1,8 +1,19 @@
 import { TAbstractFile, TFile, type App } from "obsidian";
+import {
+	DAILY_REPORT_DIR,
+	dailyReportNotePath,
+	draftToArchivePayload,
+	extractTomorrowPlanLines,
+	isDailyDraftWorthArchiving,
+	prevDateStr,
+	serializeDailyReportNote,
+} from "./daily-archive";
 import { appendTaskLog, parseTaskMarkdown, serializeTaskMarkdown } from "./markdown";
 import {
 	TYPE_DIR,
 	sanitizeFileName,
+	todayStr,
+	type DailyReportDraftSettings,
 	type Task,
 	type TaskStatus,
 	type TaskType,
@@ -22,6 +33,10 @@ export class TaskStore {
 		return `${this.root()}/${TYPE_DIR[type]}`;
 	}
 
+	dailyDir(): string {
+		return `${this.root()}/${DAILY_REPORT_DIR}`;
+	}
+
 	async ensureFolders(): Promise<void> {
 		for (const path of [this.root(), this.dir("long"), this.dir("temp")]) {
 			if (!this.app.vault.getAbstractFileByPath(path)) {
@@ -30,10 +45,45 @@ export class TaskStore {
 		}
 	}
 
+	async ensureDailyFolder(): Promise<void> {
+		await this.ensureFolders();
+		const path = this.dailyDir();
+		if (!this.app.vault.getAbstractFileByPath(path)) {
+			await this.app.vault.createFolder(path);
+		}
+	}
+
 	isTaskFile(path: string): boolean {
 		const root = this.root();
+		const dailyPrefix = `${this.dailyDir()}/`;
+		if (path.startsWith(dailyPrefix)) return false;
 		return path.startsWith(`${this.dir("long")}/`) || path.startsWith(`${this.dir("temp")}/`)
 			|| (path.startsWith(`${root}/`) && path.endsWith(".md"));
+	}
+
+	/** 将日报草稿写入 vault：根目录/日报/YYYY-MM-DD.md（有内容才写） */
+	async upsertDailyReportArchive(draft: DailyReportDraftSettings): Promise<string | null> {
+		if (!draft.date || !isDailyDraftWorthArchiving(draft)) return null;
+		await this.ensureDailyFolder();
+		const path = dailyReportNotePath(this.root(), draft.date);
+		const content = serializeDailyReportNote(draftToArchivePayload(draft));
+		const existing = this.app.vault.getAbstractFileByPath(path);
+		if (existing instanceof TFile) {
+			await this.app.vault.modify(existing, content);
+		} else if (!existing) {
+			await this.app.vault.create(path, content);
+		}
+		return path;
+	}
+
+	/** 读取昨日日报中的「明日计划」条目 */
+	async readYesterdayPlan(): Promise<{ path: string | null; items: string[] }> {
+		const date = prevDateStr(todayStr());
+		const path = dailyReportNotePath(this.root(), date);
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) return { path: null, items: [] };
+		const md = await this.app.vault.read(file);
+		return { path, items: extractTomorrowPlanLines(md) };
 	}
 
 	async reload(): Promise<void> {

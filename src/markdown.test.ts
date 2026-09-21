@@ -36,7 +36,7 @@ test("parseLogHeading 支持带工时与旧格式", () => {
 test("serialize / parse 往返保留工时", () => {
 	const md = serializeTaskMarkdown({
 		id: "p",
-		path: "z-tasking/长期/demo.md",
+		path: "Z-Tasking/长期/demo.md",
 		title: "demo",
 		type: "long",
 		status: "doing",
@@ -47,7 +47,7 @@ test("serialize / parse 往返保留工时", () => {
 		updatedAt: 0,
 	});
 	assert.match(md, /### \[\[2026-08-20\]\] 1\.5h/);
-	const task = parseTaskMarkdown("z-tasking/长期/demo.md", md);
+	const task = parseTaskMarkdown("Z-Tasking/长期/demo.md", md);
 	assert.equal(task.logs[0]?.hours, 1.5);
 	assert.equal(task.logs[0]?.text, "- 做了 A");
 });

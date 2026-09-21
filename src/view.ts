@@ -454,8 +454,10 @@ export class ZTaskingView extends ItemView {
 					this.refreshCalendar();
 				}
 				if (a === "add-log") void this.addTodayLog();
-				if (a === "toggle-report-by-task") {
-					this.reportByTask = !this.reportByTask;
+				if (a === "report-view-mode") {
+					const next = act.dataset.mode === "task";
+					if (this.reportByTask === next) return;
+					this.reportByTask = next;
 					this.mdGen += 1;
 					const gen = this.mdGen;
 					this.renderReport();

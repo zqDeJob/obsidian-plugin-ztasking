@@ -1443,11 +1443,35 @@
 .ztk-report-logs-head .ztk-report-copy {
 	margin-left: auto;
 }
-.ztk-view button.ztk-report-by-task.on,
-.ztk-report-by-task.on {
+.ztk-report-view-tabs {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px;
+	border-radius: 10px;
+	background: color-mix(in srgb, var(--ztk-line) 35%, transparent);
+}
+.ztk-view button.ztk-report-view-tab,
+.ztk-report-view-tab {
+	border: 0;
+	border-radius: 8px;
+	padding: 4px 10px;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--ztk-muted);
+	background: transparent;
+	cursor: pointer;
+	box-shadow: none;
+}
+.ztk-view button.ztk-report-view-tab:hover,
+.ztk-report-view-tab:hover {
+	color: var(--ztk-teal-deep);
+	background: color-mix(in srgb, #fff 70%, transparent);
+}
+.ztk-view button.ztk-report-view-tab.on,
+.ztk-report-view-tab.on {
 	color: #fff;
 	background: var(--ztk-teal);
-	border-color: var(--ztk-teal);
 	box-shadow: 0 1px 2px rgba(209, 122, 69, .22);
 }
 .ztk-report-group-meta {

@@ -54,7 +54,7 @@ test("我的今天列出今日任务、工时徽章与合计，不含笔数", ()
 	assert.match(html, /ztk-hours-badge/);
 	assert.match(html, /1\.5h/);
 	assert.match(html, /data-act="goto-task"/);
-	assert.match(html, /data-act="copy-md"/);
+	assert.equal(html.includes('data-act="copy-md"'), false);
 	assert.match(html, /data-src="z-tasking\/长期\/插件开发.md"/);
 	assert.match(html, /data-date="2026-08-13"/);
 });
@@ -101,21 +101,26 @@ test("按任务查看：同 path 归为一组，组内日期倒序，组间按�
 	assert.equal(second.hours, 1.5);
 });
 
-test("进展明细表头：按任务在标题后，复制在右侧", () => {
-	const off = reportLogsHeadHtml("本周", false);
-	assert.match(off, /本周进展明细/);
-	assert.match(off, /data-act="toggle-report-by-task"/);
-	assert.match(off, /data-act="copy-report-logs"/);
-	assert.match(off, />按任务</);
-	assert.match(off, />复制</);
-	const byTaskIdx = off.indexOf('data-act="toggle-report-by-task"');
-	const copyIdx = off.indexOf('data-act="copy-report-logs"');
-	const titleIdx = off.indexOf("进展明细");
-	assert.ok(titleIdx < byTaskIdx && byTaskIdx < copyIdx);
-	assert.equal(/\bon\b/.test(off.match(/data-act="toggle-report-by-task"[^>]*>/)?.[0] ?? ""), false);
+test("进展明细表头：时间/任务 Tab，复制在右侧", () => {
+	const byTime = reportLogsHeadHtml("本周", false);
+	assert.match(byTime, /本周进展明细/);
+	assert.match(byTime, /data-act="report-view-mode"/);
+	assert.match(byTime, /data-mode="time"/);
+	assert.match(byTime, /data-mode="task"/);
+	assert.match(byTime, /按时间展示/);
+	assert.match(byTime, /按任务展示/);
+	assert.match(byTime, /data-act="copy-report-logs"/);
+	assert.match(byTime, />复制</);
+	const tabsIdx = byTime.indexOf("ztk-report-view-tabs");
+	const copyIdx = byTime.indexOf('data-act="copy-report-logs"');
+	const titleIdx = byTime.indexOf("进展明细");
+	assert.ok(titleIdx < tabsIdx && tabsIdx < copyIdx);
+	assert.match(byTime, /class="ztk-report-view-tab on"[^>]*data-mode="time"/);
+	assert.match(byTime, /class="ztk-report-view-tab"[^>]*data-mode="task"/);
 
-	const on = reportLogsHeadHtml("本周", true);
-	assert.match(on, /class="[^"]*\bon\b/);
+	const byTask = reportLogsHeadHtml("本周", true);
+	assert.match(byTask, /class="ztk-report-view-tab"[^>]*data-mode="time"/);
+	assert.match(byTask, /class="ztk-report-view-tab on"[^>]*data-mode="task"/);
 });
 
 test("复制明细：按日期导出标题工时与正文", () => {

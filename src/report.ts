@@ -72,7 +72,10 @@ export function groupReportLogsByTask(logs: ReportLogItem[]): ReportLogGroup[] {
 export function reportLogsHeadHtml(label: string, byTask: boolean): string {
 	return `<div class="ztk-report-logs-head">
 		<h2>${esc(label)}进展明细</h2>
-		<button type="button" class="ztk-ghost ztk-report-by-task${byTask ? " on" : ""}" data-act="toggle-report-by-task">按任务</button>
+		<div class="ztk-report-view-tabs" role="tablist" aria-label="进展明细视图">
+			<button type="button" role="tab" class="ztk-report-view-tab${!byTask ? " on" : ""}" data-act="report-view-mode" data-mode="time" aria-selected="${!byTask}">按时间展示</button>
+			<button type="button" role="tab" class="ztk-report-view-tab${byTask ? " on" : ""}" data-act="report-view-mode" data-mode="task" aria-selected="${byTask}">按任务展示</button>
+		</div>
 		<button type="button" class="ztk-ghost ztk-report-copy" data-act="copy-report-logs">复制</button>
 	</div>`;
 }
@@ -163,7 +166,6 @@ export function todayDigestHtml(
 					<button class="ztk-ghost" data-act="goto-task" data-id="${esc(it.id)}" type="button">${esc(it.title)}</button>
 					${hoursBadgeHtml(it.hours)}
 				</div>
-				<button class="ztk-ghost" data-act="copy-md" data-path="${esc(it.path)}" data-date="${esc(today)}" type="button">复制</button>
 			</div>
 			${mdSlotHtml(it.path, today)}
 		</div>`).join("")

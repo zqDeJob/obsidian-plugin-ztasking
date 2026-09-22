@@ -38,6 +38,7 @@ test("serialize / parse 往返保留工时", () => {
 		id: "p",
 		path: "Z-Tasking/长期/demo.md",
 		title: "demo",
+		project: "KVAD",
 		type: "long",
 		status: "doing",
 		start: "2026-01-01",
@@ -50,6 +51,9 @@ test("serialize / parse 往返保留工时", () => {
 	const task = parseTaskMarkdown("Z-Tasking/长期/demo.md", md);
 	assert.equal(task.logs[0]?.hours, 1.5);
 	assert.equal(task.logs[0]?.text, "- 做了 A");
+	assert.equal(task.project, "KVAD");
+	const nested = parseTaskMarkdown("Z-Tasking/KVAD/长期/demo.md", md);
+	assert.equal(nested.project, "KVAD");
 });
 
 test("serializeLogHeading 无工时时不写 h", () => {
@@ -107,6 +111,7 @@ test("serialize / parse 缺陷类型往返", () => {
 		id: "p",
 		path: "Z-Tasking/缺陷/某缺陷.md",
 		title: "某缺陷",
+		project: "KVAD",
 		type: "bug",
 		status: "doing",
 		start: "2026-09-21",
@@ -119,4 +124,5 @@ test("serialize / parse 缺陷类型往返", () => {
 	const task = parseTaskMarkdown("Z-Tasking/缺陷/某缺陷.md", md);
 	assert.equal(task.type, "bug");
 	assert.equal(task.status, "doing");
+	assert.equal(task.project, "KVAD");
 });

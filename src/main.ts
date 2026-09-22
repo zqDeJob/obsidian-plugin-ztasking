@@ -25,6 +25,7 @@ export default class ZTaskingPlugin extends Plugin {
 		this.addSettingTab(new ZTaskingSettingTab(this.app, this));
 
 		const refresh = this.debounce(() => {
+			if (this.store.isMuted) return;
 			for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
 				const view = leaf.view;
 				if (view instanceof ZTaskingView) void view.refresh();
@@ -32,15 +33,19 @@ export default class ZTaskingPlugin extends Plugin {
 		}, 250);
 
 		this.registerEvent(this.app.vault.on("create", (f) => {
+			if (this.store.isMuted) return;
 			if (f instanceof TFile && this.store.isTaskFile(f.path)) refresh();
 		}));
 		this.registerEvent(this.app.vault.on("modify", (f) => {
+			if (this.store.isMuted) return;
 			if (f instanceof TFile && this.store.isTaskFile(f.path)) refresh();
 		}));
 		this.registerEvent(this.app.vault.on("delete", (f) => {
+			if (this.store.isMuted) return;
 			if (isInTaskFolder(f, this.settings.rootFolder)) refresh();
 		}));
 		this.registerEvent(this.app.vault.on("rename", (f) => {
+			if (this.store.isMuted) return;
 			if (isInTaskFolder(f, this.settings.rootFolder)) refresh();
 		}));
 	}
@@ -69,6 +74,7 @@ export default class ZTaskingPlugin extends Plugin {
 				: DEFAULT_SETTINGS.webBookmarks.map((b) => ({ ...b })),
 			webSideCollapsed: raw?.webSideCollapsed === true,
 			calDayPaneCollapsed: raw?.calDayPaneCollapsed === true,
+			todayGroupByProject: raw?.todayGroupByProject === true,
 			sidebarOrder: {
 				long: Array.isArray(order?.long) ? order!.long.filter((x) => typeof x === "string") : [],
 				temp: Array.isArray(order?.temp) ? order!.temp.filter((x) => typeof x === "string") : [],
@@ -118,7 +124,7 @@ class ZTaskingSettingTab extends PluginSettingTab {
 		containerEl.createEl("h2", { text: "Z-Tasking" });
 		new Setting(containerEl)
 			.setName("任务根目录")
-			.setDesc("任务笔记会写到 根目录/长期 与 根目录/临时。")
+			.setDesc("任务笔记写到 根目录/项目/长期|临时|缺陷；日报在 根目录/日报。")
 			.addText((text) => {
 				text.setPlaceholder("Z-Tasking")
 					.setValue(this.plugin.settings.rootFolder)
@@ -127,7 +133,7 @@ class ZTaskingSettingTab extends PluginSettingTab {
 						this.plugin.settings.rootFolder = next;
 						await this.plugin.saveSettings();
 						await this.plugin.store.reload();
-						new Notice(`任务目录：${next}/长期 、 ${next}/临时`);
+						new Notice(`任务目录：${next}/项目/长期|临时|缺陷`);
 					});
 			});
 

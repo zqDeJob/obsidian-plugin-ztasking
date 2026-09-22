@@ -8,6 +8,7 @@ import {
 	type TaskStatus,
 	type TaskType,
 } from "./model.ts";
+import { projectFromPath } from "./project.ts";
 
 function parseFrontmatter(content: string): { fields: Record<string, string>; body: string } {
 	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
@@ -62,7 +63,7 @@ function parseLogs(progressBody: string): TaskLog[] {
 	return logs;
 }
 
-export function parseTaskMarkdown(path: string, content: string): Task {
+export function parseTaskMarkdown(path: string, content: string, root = "Z-Tasking"): Task {
 	const { fields, body } = parseFrontmatter(content);
 	const type = typeFromPath(path, isType(fields.type ?? "") ? fields.type as TaskType : "long");
 	const status: TaskStatus = isStatus(fields.status ?? "") ? fields.status as TaskStatus : "todo";
@@ -74,6 +75,7 @@ export function parseTaskMarkdown(path: string, content: string): Task {
 		id: path,
 		path,
 		title: file.replace(/\.md$/i, ""),
+		project: projectFromPath(root, path),
 		type,
 		status,
 		start: fields.start || "",

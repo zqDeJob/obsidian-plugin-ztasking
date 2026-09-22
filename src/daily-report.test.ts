@@ -73,7 +73,7 @@ test("planItems 与文本互转；默认明日计划为空", () => {
 
 test("refreshDailyDraft：换日清空明日计划；未定制保持空", () => {
 	const tasks = [{
-		id: "a", path: "a.md", title: "A", type: "long" as const, status: "doing" as const,
+		id: "a", path: "a.md", title: "A", project: "KVAD", type: "long" as const, status: "doing" as const,
 		start: "", end: "", desc: "推进 A", logs: [], updatedAt: 1,
 	}] satisfies Task[];
 	const draft = refreshDailyDraft(

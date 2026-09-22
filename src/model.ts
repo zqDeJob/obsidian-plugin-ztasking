@@ -32,6 +32,8 @@ export interface Task {
 	id: string;
 	path: string;
 	title: string;
+	/** 业务项目（路径 根/项目/类型/ 中的项目段） */
+	project: string;
 	type: TaskType;
 	status: TaskStatus;
 	start: string;
@@ -71,6 +73,8 @@ export interface ZTaskingSettings {
 	webSideCollapsed: boolean;
 	/** 日历页右侧「当日详情」是否折叠 */
 	calDayPaneCollapsed: boolean;
+	/** 「我的今天」是否按项目标记分组展示 */
+	todayGroupByProject: boolean;
 	/** 工作台侧栏手动顺序（按类型存任务 id）；空数组表示仍用时间倒序 */
 	sidebarOrder: { long: string[]; temp: string[]; bug: string[] };
 	/** 汇总「今日日报」草稿（含明日计划待办） */
@@ -85,6 +89,7 @@ export const DEFAULT_SETTINGS: ZTaskingSettings = {
 	],
 	webSideCollapsed: false,
 	calDayPaneCollapsed: false,
+	todayGroupByProject: false,
 	sidebarOrder: { long: [], temp: [], bug: [] },
 	dailyReportDraft: {
 		date: "",

@@ -42,11 +42,18 @@ import {
 	type PeriodRange,
 } from "./period";
 import {
+	DEFAULT_PROJECT,
+	filterByProject,
+	normalizeProjectName,
+	resolveNewTaskProject,
+} from "./project";
+import {
 	formatReportLogsCopyText,
 	groupReportLogsByTask,
 	highlightElementText,
 	hoursBadgeHtml,
 	mdSlotHtml,
+	projectBadgeHtml,
 	reportLogRowHtml,
 	reportLogsHeadHtml,
 	reportMergedGroupHtml,
@@ -73,21 +80,29 @@ function askConfirm(app: App, title: string, message: string, okLabel = "确定"
 			settled = true;
 			resolve(ok);
 		};
+		const danger = /删|删除|清空|重置/.test(okLabel);
 		const modal = new class extends Modal {
 			onOpen(): void {
+				this.modalEl.addClass("ztk-bm-modal");
+				this.contentEl.empty();
+				this.contentEl.addClass("ztk-bm-modal-body");
+				this.contentEl.createDiv({ cls: "ztk-bm-modal-eyebrow", text: "Z-Tasking" });
 				this.contentEl.createEl("h2", { text: title });
-				this.contentEl.createEl("p", { text: message });
-				const actions = this.contentEl.createDiv({ cls: "modal-button-container" });
-				actions.createEl("button", { type: "button", text: "取消" })
+				this.contentEl.createEl("p", { cls: "ztk-bm-modal-lead", text: message });
+				const actions = this.contentEl.createDiv({ cls: "ztk-bm-modal-actions" });
+				actions.createEl("button", { type: "button", cls: "ztk-ghost", text: "取消" })
 					.addEventListener("click", () => {
 						done(false);
 						this.close();
 					});
-				actions.createEl("button", { type: "button", cls: "mod-warning", text: okLabel })
-					.addEventListener("click", () => {
-						done(true);
-						this.close();
-					});
+				actions.createEl("button", {
+					type: "button",
+					cls: danger ? "ztk-btn ztk-btn-danger" : "ztk-btn",
+					text: okLabel,
+				}).addEventListener("click", () => {
+					done(true);
+					this.close();
+				});
 			}
 			onClose(): void {
 				this.contentEl.empty();
@@ -128,6 +143,8 @@ export class ZTaskingView extends ItemView {
 	reportByTask = false;
 	/** 汇总进展明细：搜索关键字（高亮，不筛选） */
 	reportQuery = "";
+	/** 业务项目筛选：all = 全部 */
+	projectFilter = "all";
 	private mdRoot = new Component();
 	private mdGen = 0;
 	private webPanel: WebPanel;
@@ -161,7 +178,6 @@ export class ZTaskingView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
-		await this.plugin.store.reload();
 		this.selectedId = "";
 		this.detailOpen = false;
 		this.contentEl.empty();
@@ -176,6 +192,9 @@ export class ZTaskingView extends ItemView {
 					${Platform.isDesktopApp ? `<button data-tab="web" type="button">网页</button>` : ""}
 				</div>
 				<div class="ztk-spacer"></div>
+				<select class="ztk-project-filter" aria-label="业务项目">
+					<option value="all" selected>全部项目</option>
+				</select>
 				<div class="ztk-period">
 					<div class="ztk-period-presets" role="group" aria-label="周期快捷">
 						<button data-p="week" class="on" type="button">周</button>
@@ -190,7 +209,8 @@ export class ZTaskingView extends ItemView {
 						<input type="date" class="ztk-range-end" aria-label="结束日期" />
 					</div>
 				</div>
-				<button class="ztk-btn" data-act="new">新建任务</button>
+				<button class="ztk-btn" data-act="new-project" type="button">新建项目</button>
+				<button class="ztk-btn" data-act="new" type="button">新建任务</button>
 			</header>
 			<main class="ztk-main">
 				<div class="ztk-page" id="ztk-view-board" data-mode="board" data-detail-open="0">
@@ -250,6 +270,11 @@ export class ZTaskingView extends ItemView {
 					<div class="ztk-form">
 						<input name="title" required placeholder="任务标题" />
 						<textarea name="desc" placeholder="说明：这件事项要达成什么"></textarea>
+						<label class="ztk-field">
+							<span>业务项目</span>
+							<input name="project" list="ztk-project-options" required placeholder="如 KVAD" />
+							<datalist id="ztk-project-options"></datalist>
+						</label>
 						<div class="ztk-two">
 							<select name="type">
 								<option value="long">长期任务</option>
@@ -273,9 +298,31 @@ export class ZTaskingView extends ItemView {
 					</div>
 				</form>
 			</div>
+			<div class="ztk-modal ztk-project-modal">
+				<form class="ztk-modal-card ztk-project-modal-card">
+					<h2>新建项目</h2>
+					<div class="ztk-form">
+						<label class="ztk-field">
+							<span>项目名称</span>
+							<input name="projectName" required placeholder="例如 终端安全" autocomplete="off" />
+						</label>
+						<p class="ztk-muted ztk-modal-hint">将创建 Z-Tasking/项目名/长期|临时|缺陷</p>
+					</div>
+					<div class="ztk-modal-actions">
+						<button type="button" class="ztk-ghost" data-act="cancel-project">取消</button>
+						<button class="ztk-btn" type="submit">创建</button>
+					</div>
+				</form>
+			</div>
 		`;
 		this.bind();
 		this.applyPeriodShortcut("week");
+		try {
+			await this.plugin.store.reload();
+		} catch (err) {
+			console.error("Z-Tasking reload", err);
+			new Notice("Z-Tasking 加载失败，请查看控制台");
+		}
 		this.renderAll();
 	}
 
@@ -295,6 +342,22 @@ export class ZTaskingView extends ItemView {
 
 	private tasks(): Task[] {
 		return this.plugin.store.tasks;
+	}
+
+	private projectTasks(): Task[] {
+		return filterByProject(this.tasks(), this.projectFilter);
+	}
+
+	private syncProjectFilterOptions(): void {
+		const sel = this.contentEl.querySelector(".ztk-project-filter") as HTMLSelectElement | null;
+		if (!sel) return;
+		const projects = this.plugin.store.projects;
+		const cur = this.projectFilter;
+		sel.innerHTML = `<option value="all">全部项目</option>${
+			projects.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join("")
+		}`;
+		sel.value = cur === "all" || projects.includes(cur) ? cur : "all";
+		if (sel.value !== this.projectFilter) this.projectFilter = sel.value;
 	}
 
 	private $(sel: string): HTMLElement {
@@ -359,7 +422,7 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private filtered(): Task[] {
-		return this.tasks().filter((t) =>
+		return this.projectTasks().filter((t) =>
 			(this.typeFilter === "all" || t.type === this.typeFilter) &&
 			(this.statusFilter === "all" || t.status === this.statusFilter)
 		);
@@ -373,14 +436,15 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private sidebarTasks(): Task[] {
+		const pool = this.projectTasks();
 		const saved = this.plugin.settings.sidebarOrder?.[this.sidebarType] ?? [];
 		const order = saved.length
 			? mergeSidebarOrder(
-				this.tasks().filter((t) => t.type === this.sidebarType),
+				pool.filter((t) => t.type === this.sidebarType),
 				saved,
 			)
 			: undefined;
-		return pickSidebarTasks(this.tasks(), this.sidebarType, this.sidebarStatus, order);
+		return pickSidebarTasks(pool, this.sidebarType, this.sidebarStatus, order);
 	}
 
 	private topTabFor(view: BoardView): TopTab {
@@ -433,13 +497,16 @@ export class ZTaskingView extends ItemView {
 		return view;
 	}
 
-	private logsInPeriod() {
+	/** scope=project：随顶栏项目筛选；scope=all：全部项目（今天/日报/侧栏统计用） */
+	private logsInPeriod(scope: "project" | "all" = "project") {
 		const r = this.periodRange();
-		return this.tasks().flatMap((t) => t.logs.filter((l) => this.inRange(l.date, r)).map((l) => ({ ...l, task: t })));
+		const pool = scope === "all" ? this.tasks() : this.projectTasks();
+		return pool.flatMap((t) => t.logs.filter((l) => this.inRange(l.date, r)).map((l) => ({ ...l, task: t })));
 	}
 
-	private logsOn(day: string) {
-		return this.tasks().flatMap((t) => t.logs.filter((l) => l.date === day).map((l) => ({ ...l, task: t })));
+	private logsOn(day: string, scope: "project" | "all" = "project") {
+		const pool = scope === "all" ? this.tasks() : this.projectTasks();
+		return pool.flatMap((t) => t.logs.filter((l) => l.date === day).map((l) => ({ ...l, task: t })));
 	}
 
 	private bind(): void {
@@ -486,7 +553,9 @@ export class ZTaskingView extends ItemView {
 			if (act?.dataset.act) {
 				const a = act.dataset.act;
 				if (a === "new") this.openModal();
+				if (a === "new-project") this.openProjectModal();
 				if (a === "cancel") this.closeModal();
+				if (a === "cancel-project") this.closeProjectModal();
 				if (a === "goto-gantt") {
 					this.switchView("gantt");
 					return;
@@ -634,6 +703,24 @@ export class ZTaskingView extends ItemView {
 		});
 		root.addEventListener("change", (e) => {
 			const el = e.target as HTMLElement;
+			if (el.classList.contains("ztk-project-filter")) {
+				this.projectFilter = (el as HTMLSelectElement).value || "all";
+				this.mdGen += 1;
+				const gen = this.mdGen;
+				this.renderAll();
+				void this.paintMarkdown(gen);
+				return;
+			}
+			if (el.classList.contains("ztk-today-group-by-project")) {
+				this.plugin.settings.todayGroupByProject = (el as HTMLInputElement).checked;
+				void this.plugin.saveSettings();
+				this.mdGen += 1;
+				const gen = this.mdGen;
+				this.renderBoardToday(this.workMode === "board");
+				if (this.view === "report") this.renderReport();
+				void this.paintMarkdown(gen);
+				return;
+			}
 			if (el.classList.contains("ztk-status-filter")) {
 				this.statusFilter = (el as HTMLSelectElement).value as "all" | TaskStatus;
 				this.renderFilters();
@@ -658,6 +745,9 @@ export class ZTaskingView extends ItemView {
 			}
 			if (el.classList.contains("ztk-task-type")) {
 				void this.changeType((el as HTMLSelectElement).value as TaskType);
+			}
+			if (el.classList.contains("ztk-task-project")) {
+				void this.changeProject((el as HTMLInputElement | HTMLSelectElement).value);
 			}
 			if (el.classList.contains("ztk-range-start") || el.classList.contains("ztk-range-end")) {
 				this.applyCustomRangeFromInputs();
@@ -703,6 +793,10 @@ export class ZTaskingView extends ItemView {
 		this.$(".ztk-modal-card").addEventListener("submit", (e) => {
 			e.preventDefault();
 			void this.createTask(e.target as HTMLFormElement);
+		});
+		this.$(".ztk-project-modal-card").addEventListener("submit", (e) => {
+			e.preventDefault();
+			void this.createProject(e.target as HTMLFormElement);
 		});
 		this.bindListReorder();
 		window.addEventListener("resize", () => {
@@ -888,29 +982,73 @@ export class ZTaskingView extends ItemView {
 		if (newBtn) {
 			newBtn.classList.toggle("is-hidden", this.view === "web");
 		}
+		const newProjectBtn = this.contentEl.querySelector<HTMLElement>("[data-act=\"new-project\"]");
+		if (newProjectBtn) {
+			newProjectBtn.classList.toggle("is-hidden", this.view === "web");
+		}
 	}
 
 	private openModal(): void {
+		this.closeProjectModal();
 		const form = this.$(".ztk-modal-card") as HTMLFormElement;
 		const start = form.elements.namedItem("start") as HTMLInputElement;
 		const end = form.elements.namedItem("end") as HTMLInputElement;
 		start.value = todayStr();
 		end.value = fmt(addDays(new Date(), 14));
-		this.$(".ztk-modal").classList.add("on");
+		const projectInput = form.elements.namedItem("project") as HTMLInputElement;
+		projectInput.value = resolveNewTaskProject(this.projectFilter);
+		const list = form.querySelector("#ztk-project-options");
+		if (list) {
+			list.innerHTML = this.plugin.store.projects
+				.map((p) => `<option value="${esc(p)}"></option>`)
+				.join("");
+		}
+		this.$(".ztk-modal:not(.ztk-project-modal)").classList.add("on");
 	}
 
 	private closeModal(): void {
-		this.$(".ztk-modal").classList.remove("on");
+		this.$(".ztk-modal:not(.ztk-project-modal)").classList.remove("on");
+	}
+
+	private openProjectModal(): void {
+		this.closeModal();
+		const form = this.$(".ztk-project-modal-card") as HTMLFormElement;
+		form.reset();
+		this.$(".ztk-project-modal").classList.add("on");
+		(form.elements.namedItem("projectName") as HTMLInputElement | null)?.focus();
+	}
+
+	private closeProjectModal(): void {
+		this.$(".ztk-project-modal").classList.remove("on");
+	}
+
+	private async createProject(form: HTMLFormElement): Promise<void> {
+		const raw = (form.elements.namedItem("projectName") as HTMLInputElement).value;
+		if (!normalizeProjectName(raw)) {
+			new Notice("请填写有效项目名（不能是日报/长期/临时/缺陷）");
+			return;
+		}
+		const result = await this.plugin.store.createProject(raw);
+		if (!result.ok) {
+			new Notice(result.reason);
+			return;
+		}
+		this.projectFilter = result.name;
+		this.closeProjectModal();
+		this.renderAll();
+		new Notice(`已创建项目「${result.name}」`);
 	}
 
 	private async createTask(form: HTMLFormElement): Promise<void> {
 		const title = (form.elements.namedItem("title") as HTMLInputElement).value.trim();
 		const desc = (form.elements.namedItem("desc") as HTMLTextAreaElement).value.trim();
+		const project = (form.elements.namedItem("project") as HTMLInputElement).value.trim()
+			|| resolveNewTaskProject(this.projectFilter);
 		const type = (form.elements.namedItem("type") as HTMLSelectElement).value as TaskType;
 		const status = (form.elements.namedItem("status") as HTMLSelectElement).value as TaskStatus;
 		const start = (form.elements.namedItem("start") as HTMLInputElement).value;
 		const end = (form.elements.namedItem("end") as HTMLInputElement).value;
-		const task = await this.plugin.store.create({ title, desc, type, status, start, end });
+		const task = await this.plugin.store.create({ title, desc, project, type, status, start, end });
 		this.openTaskDetail(task.id);
 		this.switchView("board");
 		this.closeModal();
@@ -966,6 +1104,16 @@ export class ZTaskingView extends ItemView {
 		this.selectedId = await this.plugin.store.setType(t, type);
 		this.renderAll();
 		new Notice(`类型已改为「${TYPE_LABEL[type]}」`);
+		this.restoreInputFocus(this.contentEl.querySelector("#ztk-log-text") as HTMLTextAreaElement | null);
+	}
+
+	private async changeProject(raw: string): Promise<void> {
+		const t = this.tasks().find((x) => x.id === this.selectedId);
+		const next = raw.trim() || DEFAULT_PROJECT;
+		if (!t || t.project === next) return;
+		this.selectedId = await this.plugin.store.setProject(t, next);
+		this.renderAll();
+		new Notice(`项目已改为「${next}」`);
 		this.restoreInputFocus(this.contentEl.querySelector("#ztk-log-text") as HTMLTextAreaElement | null);
 	}
 
@@ -1239,6 +1387,7 @@ export class ZTaskingView extends ItemView {
 		}
 		this.syncPeriodVisibility();
 		this.syncPeriodControls();
+		this.syncProjectFilterOptions();
 		this.syncWorkShell();
 		this.syncDetailDrawer();
 		this.renderDetail();
@@ -1336,10 +1485,17 @@ export class ZTaskingView extends ItemView {
 			return;
 		}
 		const today = todayStr();
-		const todayLogs = this.logsOn(today);
+		const todayLogs = this.logsOn(today, "all");
 		box.innerHTML = todayDigestHtml(
 			today,
-			todayLogs.map((l) => ({ id: l.task.id, title: l.task.title, path: l.task.path, hours: l.hours })),
+			todayLogs.map((l) => ({
+				id: l.task.id,
+				title: l.task.title,
+				path: l.task.path,
+				project: l.task.project,
+				hours: l.hours,
+			})),
+			{ groupByProject: this.plugin.settings.todayGroupByProject === true },
 		);
 	}
 
@@ -1407,7 +1563,7 @@ export class ZTaskingView extends ItemView {
 
 	private syncDailyReportDraft() {
 		const today = todayStr();
-		const todayLogs = this.logsOn(today).map((l) => ({
+		const todayLogs = this.logsOn(today, "all").map((l) => ({
 			title: l.task.title,
 			text: l.text,
 		}));
@@ -1521,7 +1677,7 @@ export class ZTaskingView extends ItemView {
 		this.plugin.settings.dailyReportDraft = refreshDailyDraft(
 			draft,
 			today,
-			this.logsOn(today).map((l) => ({ title: l.task.title, text: l.text })),
+			this.logsOn(today, "all").map((l) => ({ title: l.task.title, text: l.text })),
 			this.tasks(),
 		);
 		await this.plugin.saveSettings();
@@ -1622,7 +1778,7 @@ export class ZTaskingView extends ItemView {
 	private renderFilters(): void {
 		this.$(".ztk-filters").innerHTML = this.filterBarHtml(
 			`<input class="ztk-search" type="search" placeholder="搜索标题或说明" value="${esc(this.query)}" />
-			<span class="ztk-catalog-count">${this.catalogFiltered().length} / ${this.tasks().length}</span>`,
+			<span class="ztk-catalog-count">${this.catalogFiltered().length} / ${this.projectTasks().length}</span>`,
 		);
 		this.contentEl.querySelectorAll<HTMLSelectElement>(".ztk-status-filter").forEach((el) => {
 			el.value = this.statusFilter;
@@ -1640,6 +1796,7 @@ export class ZTaskingView extends ItemView {
 				<div class="ztk-task-main">
 					<h3>${esc(t.title)}</h3>
 					<div class="ztk-meta">
+						${projectBadgeHtml(t.project)}
 						<span class="ztk-st ${t.status}">${STATUS_LABEL[t.status]}</span>
 						<span>${esc(t.start)} → ${esc(t.end)}</span>
 						<span>${t.logs.length} 笔</span>
@@ -1660,6 +1817,7 @@ export class ZTaskingView extends ItemView {
 		const rows = items.map((t) => `
 			<tr data-act="goto-task" data-id="${esc(t.id)}" class="${t.id === this.selectedId && this.detailOpen ? "sel" : ""}">
 				<td><span class="ztk-rail-dot ${t.type}"></span>${esc(t.title)}</td>
+				<td>${projectBadgeHtml(t.project)}</td>
 				<td>${TYPE_LABEL[t.type]}</td>
 				<td><span class="ztk-st ${t.status}">${STATUS_LABEL[t.status]}</span></td>
 				<td>${esc(t.start)} → ${esc(t.end)}</td>
@@ -1672,15 +1830,15 @@ export class ZTaskingView extends ItemView {
 		this.$(".ztk-catalog-body").innerHTML = `
 			<table>
 				<thead>
-					<tr><th>标题</th><th>类型</th><th>状态</th><th>周期</th><th>进展</th><th></th></tr>
+					<tr><th>标题</th><th>项目</th><th>类型</th><th>状态</th><th>周期</th><th>进展</th><th></th></tr>
 				</thead>
 				<tbody>
-					${rows || `<tr><td colspan="6">没有匹配的任务</td></tr>`}
+					${rows || `<tr><td colspan="7">没有匹配的任务</td></tr>`}
 				</tbody>
 			</table>
 		`;
 		const count = this.contentEl.querySelector(".ztk-catalog-count");
-		if (count) count.textContent = `${items.length} / ${this.tasks().length}`;
+		if (count) count.textContent = `${items.length} / ${this.projectTasks().length}`;
 	}
 
 	private activeDetail(): HTMLElement {
@@ -1722,6 +1880,12 @@ export class ZTaskingView extends ItemView {
 					<button type="button" class="ztk-ghost ztk-detail-close" data-act="close-detail" title="关闭" aria-label="关闭">×</button>
 				</div>
 				<div class="ztk-meta-fields">
+					<label>项目
+						<select class="ztk-task-project">
+							${this.plugin.store.projects.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join("")}
+							${this.plugin.store.projects.includes(t.project) ? "" : `<option value="${esc(t.project)}">${esc(t.project)}</option>`}
+						</select>
+					</label>
 					<label>类型
 						<select class="ztk-task-type">
 							<option value="long">长期</option>
@@ -1754,8 +1918,10 @@ export class ZTaskingView extends ItemView {
 				${logs.map((l) => this.logRowHtml(l)).join("") || `<p class="ztk-muted">还没有进展，从上面记第一笔。</p>`}
 			</div>
 		`;
+		const projectEl = el.querySelector(".ztk-task-project") as HTMLSelectElement | null;
 		const typeEl = el.querySelector(".ztk-task-type") as HTMLSelectElement | null;
 		const statusEl = el.querySelector(".ztk-task-status") as HTMLSelectElement | null;
+		if (projectEl) projectEl.value = t.project;
 		if (typeEl) typeEl.value = t.type;
 		if (statusEl) statusEl.value = t.status;
 	}
@@ -1937,7 +2103,7 @@ export class ZTaskingView extends ItemView {
 	private renderReport(): void {
 		const r = this.periodRange();
 		const today = todayStr();
-		const todayLogs = this.logsOn(today);
+		const todayLogs = this.logsOn(today, "all");
 		const logs = this.logsInPeriod().sort((a, b) => b.date.localeCompare(a.date));
 		const countByDay: Record<string, number> = {};
 		for (const l of logs) countByDay[l.date] = (countByDay[l.date] ?? 0) + 1;
@@ -1948,19 +2114,32 @@ export class ZTaskingView extends ItemView {
 			const n = countByDay[d] ?? 0;
 			heat += `<i class="${n >= 3 ? "l3" : n === 2 ? "l2" : n === 1 ? "l1" : ""}" title="${d} · ${n} 笔"></i>`;
 		}
+		const showProject = this.projectFilter === "all";
 		const logItems = logs.map((l) => ({
 			date: l.date,
 			title: l.task.title,
 			path: l.task.path,
+			project: l.task.project,
 			hours: l.hours,
+			showProject,
 		}));
 		const taskGroups = groupReportLogsByTask(logItems);
 		const listHtml = this.reportByTask
-			? taskGroups.map((g) => reportMergedGroupHtml(g)).join("")
+			? taskGroups.map((g) => reportMergedGroupHtml(g, showProject)).join("")
 			: logItems.map((l) => reportLogRowHtml(l)).join("");
 		this.$("#ztk-view-report").innerHTML = `
 			<div class="ztk-report-top">
-				${todayDigestHtml(today, todayLogs.map((l) => ({ id: l.task.id, title: l.task.title, path: l.task.path, hours: l.hours })))}
+				${todayDigestHtml(
+					today,
+					todayLogs.map((l) => ({
+						id: l.task.id,
+						title: l.task.title,
+						path: l.task.path,
+						project: l.task.project,
+						hours: l.hours,
+					})),
+					{ groupByProject: this.plugin.settings.todayGroupByProject === true },
+				)}
 				${this.dailyReportCardHtml()}
 			</div>
 			<div class="ztk-report-body">

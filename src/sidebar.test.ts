@@ -6,6 +6,7 @@ import type { Task } from "./model.ts";
 function task(partial: Partial<Task> & Pick<Task, "id" | "title">): Task {
 	return {
 		path: partial.path ?? partial.id,
+		project: "KVAD",
 		type: "long",
 		status: "doing",
 		start: "2026-01-01",

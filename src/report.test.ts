@@ -68,10 +68,33 @@ test("我的今天无工时时标题不带小时", () => {
 	assert.equal(html.includes("ztk-hours-badge"), false);
 });
 
-test("今天没有记一笔时显示空状态", () => {
-	const html = todayDigestHtml("2026-08-13", []);
-	assert.match(html, /今天还没有记一笔/);
-	assert.equal(html.includes("ztk-md"), false);
+test("我的今天按项目标记：开关与分组标题", () => {
+	const html = todayDigestHtml("2026-09-22", [
+		{ id: "a", title: "xxx", path: "Z-Tasking/KVAD/长期/a.md", project: "KVAD", hours: 1 },
+		{ id: "b", title: "3000M终端选型", path: "Z-Tasking/公共类/临时/b.md", project: "公共类", hours: 0.5 },
+		{ id: "c", title: "另一笔", path: "Z-Tasking/KVAD/临时/c.md", project: "KVAD" },
+	], { groupByProject: true });
+	assert.match(html, /ztk-today-group-by-project/);
+	assert.match(html, /checked/);
+	assert.match(html, /【KVAD】/);
+	assert.match(html, /【公共类】/);
+	assert.match(html, /1、xxx/);
+	assert.match(html, /2、另一笔/);
+	assert.match(html, /1、3000M终端选型/);
+	const kvadIdx = html.indexOf("【KVAD】");
+	const pubIdx = html.indexOf("【公共类】");
+	assert.ok(kvadIdx >= 0 && pubIdx > kvadIdx);
+});
+
+test("我的今天关闭按项目时无分组标题，仍有开关", () => {
+	const html = todayDigestHtml("2026-09-22", [
+		{ id: "a", title: "xxx", path: "a.md", project: "KVAD" },
+	], { groupByProject: false });
+	assert.match(html, /ztk-today-group-by-project/);
+	assert.equal(html.includes("checked"), false);
+	assert.equal(html.includes("【KVAD】"), false);
+	assert.equal(html.includes("1、xxx"), false);
+	assert.match(html, />xxx</);
 });
 
 test("sumHours / hoursBadgeHtml", () => {

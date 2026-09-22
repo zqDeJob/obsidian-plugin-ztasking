@@ -3,7 +3,7 @@
 	"name": "Z-Tasking",
 	"version": "0.1.0",
 	"minAppVersion": "1.5.0",
-	"description": "Track long-term and ad-hoc tasks with daily logs, calendar, and Gantt. Each task is a Markdown note.",
+	"description": "Multi-project task board (long / ad-hoc / bug) with daily logs, calendar, Gantt, and period reports. Each task is a Markdown note.",
 	"author": "kylin",
 	"isDesktopOnly": false
 }

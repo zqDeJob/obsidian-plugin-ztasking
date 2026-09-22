@@ -1,7 +1,7 @@
 {
 	"name": "z-tasking",
 	"version": "0.1.0",
-	"description": "Long-term and ad-hoc task board with daily logs, calendar, and Gantt for Obsidian.",
+	"description": "Multi-project Obsidian task board with long/ad-hoc/bug notes, daily logs, calendar, Gantt, and reports.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
@@ -13,7 +13,10 @@
 	"keywords": [
 		"obsidian",
 		"plugin",
-		"task"
+		"task",
+		"project",
+		"gantt",
+		"daily-report"
 	],
 	"license": "MIT",
 	"devDependencies": {

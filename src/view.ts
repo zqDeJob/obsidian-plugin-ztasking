@@ -1,4 +1,4 @@
-import { Component, ItemView, MarkdownRenderer, Menu, Notice, Platform, TFile, type WorkspaceLeaf } from "obsidian";
+import { Component, ItemView, MarkdownRenderer, Menu, Modal, Notice, Platform, TFile, type App, type WorkspaceLeaf } from "obsidian";
 import type ZTaskingPlugin from "./main";
 import {
 	STATUS_LABEL,
@@ -44,6 +44,7 @@ import {
 import {
 	formatReportLogsCopyText,
 	groupReportLogsByTask,
+	highlightElementText,
 	hoursBadgeHtml,
 	mdSlotHtml,
 	reportLogRowHtml,
@@ -62,6 +63,40 @@ type WorkMode = "board" | "list";
 type ScheduleMode = "cal" | "gantt";
 const VIEWS: BoardView[] = ["board", "list", "detail", "cal", "gantt", "report", "web"];
 const PERIOD_SHORTCUTS = ["week", "month", "quarter", "year"] as const;
+
+/** Obsidian Modal 确认，避免 window.confirm 在 Electron 里弄丢输入焦点 */
+function askConfirm(app: App, title: string, message: string, okLabel = "确定"): Promise<boolean> {
+	return new Promise((resolve) => {
+		let settled = false;
+		const done = (ok: boolean) => {
+			if (settled) return;
+			settled = true;
+			resolve(ok);
+		};
+		const modal = new class extends Modal {
+			onOpen(): void {
+				this.contentEl.createEl("h2", { text: title });
+				this.contentEl.createEl("p", { text: message });
+				const actions = this.contentEl.createDiv({ cls: "modal-button-container" });
+				actions.createEl("button", { type: "button", text: "取消" })
+					.addEventListener("click", () => {
+						done(false);
+						this.close();
+					});
+				actions.createEl("button", { type: "button", cls: "mod-warning", text: okLabel })
+					.addEventListener("click", () => {
+						done(true);
+						this.close();
+					});
+			}
+			onClose(): void {
+				this.contentEl.empty();
+				done(false);
+			}
+		}(app);
+		modal.open();
+	});
+}
 
 export class ZTaskingView extends ItemView {
 	plugin: ZTaskingPlugin;
@@ -91,6 +126,8 @@ export class ZTaskingView extends ItemView {
 	editingTitle = false;
 	/** 汇总进展明细：按任务聚合查看 */
 	reportByTask = false;
+	/** 汇总进展明细：搜索关键字（高亮，不筛选） */
+	reportQuery = "";
 	private mdRoot = new Component();
 	private mdGen = 0;
 	private webPanel: WebPanel;
@@ -633,6 +670,10 @@ export class ZTaskingView extends ItemView {
 				this.query = (el as HTMLInputElement).value;
 				this.renderCatalog();
 			}
+			if (el.classList.contains("ztk-report-search")) {
+				this.reportQuery = (el as HTMLInputElement).value;
+				this.applyReportHighlight();
+			}
 			if (
 				el.classList.contains("ztk-daily-work")
 				|| el.classList.contains("ztk-daily-plan")
@@ -738,7 +779,13 @@ export class ZTaskingView extends ItemView {
 	private async deleteTaskById(id: string): Promise<void> {
 		const task = this.tasks().find((t) => t.id === id);
 		if (!task) return;
-		if (!confirm(`确定删除任务「${task.title}」？\n将删除笔记文件，此操作不可撤销。`)) return;
+		const ok = await askConfirm(
+			this.app,
+			"删除任务",
+			`确定删除「${task.title}」？将删除笔记文件，此操作不可撤销。`,
+			"删除",
+		);
+		if (!ok) return;
 		const type = task.type;
 		await this.plugin.store.deleteTask(task);
 		if (this.plugin.settings.sidebarOrder?.[type]) {
@@ -874,44 +921,52 @@ export class ZTaskingView extends ItemView {
 
 	private async addTodayLog(): Promise<void> {
 		const t = this.tasks().find((x) => x.id === this.selectedId);
-		const text = (this.contentEl.querySelector("#ztk-log-text") as HTMLTextAreaElement | null)?.value.trim();
-		const hoursRaw = (this.contentEl.querySelector("#ztk-log-hours") as HTMLInputElement | null)?.value ?? "";
+		const textEl = this.contentEl.querySelector("#ztk-log-text") as HTMLTextAreaElement | null;
+		const hoursEl = this.contentEl.querySelector("#ztk-log-hours") as HTMLInputElement | null;
+		const text = textEl?.value.trim();
+		const hoursRaw = hoursEl?.value ?? "";
 		const hours = parseHoursInput(hoursRaw);
 		if (!t || !text) {
 			new Notice("请填写进展内容");
+			this.restoreInputFocus(textEl ?? hoursEl);
 			return;
 		}
 		if (hours === null) {
 			new Notice("请填写有效工时（小时，须大于 0）");
+			this.restoreInputFocus(hoursEl);
 			return;
 		}
 		this.selectedId = await this.plugin.store.addLog(t, todayStr(), text, hours);
 		this.renderAll();
 		new Notice("已写入今日进展");
+		this.restoreInputFocus(this.contentEl.querySelector("#ztk-log-text") as HTMLTextAreaElement | null);
+	}
+
+	/** Notice 后恢复可编辑焦点，避免 Electron 吃掉键盘输入 */
+	private restoreInputFocus(el: HTMLElement | null | undefined): void {
+		const win = this.contentEl.ownerDocument.defaultView;
+		requestAnimationFrame(() => {
+			win?.focus();
+			el?.focus({ preventScroll: true });
+		});
 	}
 
 	private async changeStatus(status: TaskStatus): Promise<void> {
 		const t = this.tasks().find((x) => x.id === this.selectedId);
 		if (!t || t.status === status) return;
-		if (!confirm(`确认将状态改为「${STATUS_LABEL[status]}」？`)) {
-			this.rerenderDetail();
-			return;
-		}
 		this.selectedId = await this.plugin.store.setStatus(t, status);
 		this.renderAll();
 		new Notice(`状态已改为「${STATUS_LABEL[status]}」`);
+		this.restoreInputFocus(this.contentEl.querySelector("#ztk-log-text") as HTMLTextAreaElement | null);
 	}
 
 	private async changeType(type: TaskType): Promise<void> {
 		const t = this.tasks().find((x) => x.id === this.selectedId);
 		if (!t || t.type === type) return;
-		if (!confirm(`确认将类型改为「${TYPE_LABEL[type]}」？\n笔记会移到对应目录。`)) {
-			this.rerenderDetail();
-			return;
-		}
 		this.selectedId = await this.plugin.store.setType(t, type);
 		this.renderAll();
 		new Notice(`类型已改为「${TYPE_LABEL[type]}」`);
+		this.restoreInputFocus(this.contentEl.querySelector("#ztk-log-text") as HTMLTextAreaElement | null);
 	}
 
 	private async handleTitleAction(act: string): Promise<void> {
@@ -1139,15 +1194,19 @@ export class ZTaskingView extends ItemView {
 		}
 		if (act === "save-log") {
 			const row = this.contentEl.querySelector(`.ztk-log[data-date="${CSS.escape(date)}"]`);
-			const text = (row?.querySelector("textarea") as HTMLTextAreaElement | null)?.value.trim() ?? "";
-			const hoursRaw = (row?.querySelector(".ztk-log-hours-edit") as HTMLInputElement | null)?.value ?? "";
+			const textEl = row?.querySelector("textarea") as HTMLTextAreaElement | null;
+			const hoursEl = row?.querySelector(".ztk-log-hours-edit") as HTMLInputElement | null;
+			const text = textEl?.value.trim() ?? "";
+			const hoursRaw = hoursEl?.value ?? "";
 			const hours = parseHoursInput(hoursRaw);
 			if (!text) {
 				new Notice("进展内容不能为空");
+				this.restoreInputFocus(textEl);
 				return;
 			}
 			if (hours === null) {
 				new Notice("请填写有效工时（小时，须大于 0）");
+				this.restoreInputFocus(hoursEl);
 				return;
 			}
 			this.selectedId = await this.plugin.store.updateLog(t, date, text, hours);
@@ -1157,7 +1216,8 @@ export class ZTaskingView extends ItemView {
 			return;
 		}
 		if (act === "del-log") {
-			if (!confirm(`删除 ${date} 这条进展？`)) return;
+			const ok = await askConfirm(this.app, "删除进展", `确定删除 ${date} 这条进展？`, "删除");
+			if (!ok) return;
 			this.selectedId = await this.plugin.store.deleteLog(t, date);
 			if (this.editingLogDate === date) this.editingLogDate = null;
 			this.renderAll();
@@ -1219,6 +1279,13 @@ export class ZTaskingView extends ItemView {
 			box.empty();
 			await MarkdownRenderer.render(this.app, text, box, path, this.mdRoot);
 		}
+		if (gen === this.mdGen) this.applyReportHighlight();
+	}
+
+	private applyReportHighlight(): void {
+		const list = this.contentEl.querySelector<HTMLElement>(".ztk-report-list");
+		if (!list) return;
+		highlightElementText(list, this.reportQuery);
 	}
 
 	private syncWorkShell(): void {
@@ -1899,7 +1966,7 @@ export class ZTaskingView extends ItemView {
 			<div class="ztk-report-body">
 				<div class="ztk-report-main">
 					<div class="ztk-card ztk-report-logs">
-						${reportLogsHeadHtml(r.label, this.reportByTask)}
+						${reportLogsHeadHtml(r.label, this.reportByTask, this.reportQuery)}
 						<div class="ztk-report-list">
 							${listHtml || `<p class="ztk-muted">这个周期还没有记录</p>`}
 						</div>

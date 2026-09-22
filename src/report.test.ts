@@ -101,20 +101,23 @@ test("按任务查看：同 path 归为一组，组内日期倒序，组间按�
 	assert.equal(second.hours, 1.5);
 });
 
-test("进展明细表头：时间/任务 Tab，复制在右侧", () => {
-	const byTime = reportLogsHeadHtml("本周", false);
+test("进展明细表头：时间/任务 Tab，搜索在复制左侧", () => {
+	const byTime = reportLogsHeadHtml("本周", false, "任务");
 	assert.match(byTime, /本周进展明细/);
 	assert.match(byTime, /data-act="report-view-mode"/);
 	assert.match(byTime, /data-mode="time"/);
 	assert.match(byTime, /data-mode="task"/);
 	assert.match(byTime, /按时间展示/);
 	assert.match(byTime, /按任务展示/);
+	assert.match(byTime, /class="ztk-report-search"/);
+	assert.match(byTime, /value="任务"/);
 	assert.match(byTime, /data-act="copy-report-logs"/);
 	assert.match(byTime, />复制</);
 	const tabsIdx = byTime.indexOf("ztk-report-view-tabs");
+	const searchIdx = byTime.indexOf("ztk-report-search");
 	const copyIdx = byTime.indexOf('data-act="copy-report-logs"');
 	const titleIdx = byTime.indexOf("进展明细");
-	assert.ok(titleIdx < tabsIdx && tabsIdx < copyIdx);
+	assert.ok(titleIdx < tabsIdx && tabsIdx < searchIdx && searchIdx < copyIdx);
 	assert.match(byTime, /class="ztk-report-view-tab on"[^>]*data-mode="time"/);
 	assert.match(byTime, /class="ztk-report-view-tab"[^>]*data-mode="task"/);
 

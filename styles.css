@@ -23,6 +23,15 @@
 	-webkit-user-select: text !important;
 	cursor: text;
 }
+/* 输入控件必须可点可选，不被父级 cursor/user-select 干扰 */
+.ztk-view input,
+.ztk-view textarea,
+.ztk-view select {
+	pointer-events: auto !important;
+	user-select: text !important;
+	-webkit-user-select: text !important;
+	cursor: text;
+}
 
 .ztk-view {
 	--ztk-bg: #fbf7f3;
@@ -400,27 +409,30 @@
 .ztk-detail-drawer {
 	position: absolute;
 	inset: 0;
-	z-index: 30;
+	z-index: 40;
 	display: none;
+	/* 容器本身不接事件，避免全屏透明层吞掉输入框点击 */
 	pointer-events: none;
 }
 #ztk-view-board.is-detail-open .ztk-detail-drawer,
 #ztk-view-board[data-detail-open="1"] .ztk-detail-drawer {
 	display: block;
-	pointer-events: auto;
 }
 .ztk-detail-backdrop {
 	position: absolute;
 	inset: 0;
+	z-index: 0;
 	background: color-mix(in srgb, #1a1410 28%, transparent);
 	border: 0;
 	cursor: pointer;
+	pointer-events: auto;
 }
 .ztk-detail-drawer .ztk-detail {
 	position: absolute;
 	top: 0;
 	right: 0;
 	bottom: 0;
+	z-index: 1;
 	width: min(640px, 88%);
 	max-width: 100%;
 	pointer-events: auto;
@@ -1024,6 +1036,8 @@
 .ztk-desc-edit { min-height: 88px; }
 .ztk-desc .ztk-muted { margin: 0; }
 .ztk-composer {
+	position: relative;
+	z-index: 2;
 	background: linear-gradient(180deg, var(--ztk-teal-soft), #faf6f2);
 	border: 0;
 	border-radius: 14px;
@@ -1620,8 +1634,32 @@
 	flex: 0 1 auto;
 	min-width: 0;
 }
-.ztk-report-logs-head .ztk-report-copy {
+.ztk-report-logs-head .ztk-report-search {
 	margin-left: auto;
+	width: 148px;
+	min-width: 100px;
+	max-width: 220px;
+	padding: 4px 10px;
+	font-size: 12px;
+	border-radius: 8px;
+	border: 1px solid color-mix(in srgb, var(--ztk-line) 70%, transparent);
+	background: var(--background-primary);
+	color: var(--ztk-ink);
+}
+.ztk-report-logs-head .ztk-report-search:focus {
+	outline: none;
+	border-color: color-mix(in srgb, var(--interactive-accent) 55%, var(--ztk-line));
+}
+.ztk-report-logs-head .ztk-report-copy {
+	margin-left: 0;
+	flex: 0 0 auto;
+}
+.ztk-report-list mark.ztk-hl {
+	padding: 0 1px;
+	border-radius: 2px;
+	background: color-mix(in srgb, var(--text-highlight-bg, #ffe566) 85%, transparent);
+	color: inherit;
+	box-shadow: none;
 }
 .ztk-report-view-tabs {
 	display: inline-flex;
@@ -1846,7 +1884,7 @@
 	background: rgba(26, 40, 38, .38);
 	display: none;
 	place-items: center;
-	z-index: 20;
+	z-index: 50;
 	backdrop-filter: blur(2px);
 }
 .ztk-modal.on { display: grid; }

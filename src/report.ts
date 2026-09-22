@@ -69,13 +69,80 @@ export function groupReportLogsByTask(logs: ReportLogItem[]): ReportLogGroup[] {
 	});
 }
 
-export function reportLogsHeadHtml(label: string, byTask: boolean): string {
+/** 纯文本转义并按关键字包 mark；空关键字只转义。大小写不敏感，保留原文大小写。 */
+export function highlightPlainText(text: string, query: string): string {
+	const q = query.trim();
+	if (!q) return esc(text);
+	const lower = text.toLowerCase();
+	const qLower = q.toLowerCase();
+	let out = "";
+	let i = 0;
+	while (i < text.length) {
+		const idx = lower.indexOf(qLower, i);
+		if (idx < 0) {
+			out += esc(text.slice(i));
+			break;
+		}
+		out += esc(text.slice(i, idx));
+		out += `<mark class="ztk-hl">${esc(text.slice(idx, idx + q.length))}</mark>`;
+		i = idx + q.length;
+	}
+	return out;
+}
+
+/** 去掉 root 内既有高亮 mark，合并相邻文本节点。 */
+export function clearTextHighlights(root: HTMLElement): void {
+	root.querySelectorAll("mark.ztk-hl").forEach((mark) => {
+		const parent = mark.parentNode;
+		if (!parent) return;
+		while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+		parent.removeChild(mark);
+		parent.normalize();
+	});
+}
+
+/** 在 DOM 文本节点中高亮关键字（先清旧 mark）。空关键字只清不标。 */
+export function highlightElementText(root: HTMLElement, query: string): void {
+	clearTextHighlights(root);
+	const q = query.trim();
+	if (!q) return;
+	const qLower = q.toLowerCase();
+	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+	const nodes: Text[] = [];
+	let node: Node | null;
+	while ((node = walker.nextNode())) nodes.push(node as Text);
+	for (const textNode of nodes) {
+		const text = textNode.nodeValue ?? "";
+		if (!text) continue;
+		const lower = text.toLowerCase();
+		if (!lower.includes(qLower)) continue;
+		const frag = document.createDocumentFragment();
+		let i = 0;
+		while (i < text.length) {
+			const idx = lower.indexOf(qLower, i);
+			if (idx < 0) {
+				frag.appendChild(document.createTextNode(text.slice(i)));
+				break;
+			}
+			if (idx > i) frag.appendChild(document.createTextNode(text.slice(i, idx)));
+			const mark = document.createElement("mark");
+			mark.className = "ztk-hl";
+			mark.textContent = text.slice(idx, idx + q.length);
+			frag.appendChild(mark);
+			i = idx + q.length;
+		}
+		textNode.parentNode?.replaceChild(frag, textNode);
+	}
+}
+
+export function reportLogsHeadHtml(label: string, byTask: boolean, query = ""): string {
 	return `<div class="ztk-report-logs-head">
 		<h2>${esc(label)}进展明细</h2>
 		<div class="ztk-report-view-tabs" role="tablist" aria-label="进展明细视图">
 			<button type="button" role="tab" class="ztk-report-view-tab${!byTask ? " on" : ""}" data-act="report-view-mode" data-mode="time" aria-selected="${!byTask}">按时间展示</button>
 			<button type="button" role="tab" class="ztk-report-view-tab${byTask ? " on" : ""}" data-act="report-view-mode" data-mode="task" aria-selected="${byTask}">按任务展示</button>
 		</div>
+		<input class="ztk-report-search" type="search" placeholder="搜索明细" value="${esc(query)}" aria-label="搜索进展明细" />
 		<button type="button" class="ztk-ghost ztk-report-copy" data-act="copy-report-logs">复制</button>
 	</div>`;
 }

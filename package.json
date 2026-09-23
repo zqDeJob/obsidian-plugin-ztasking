@@ -1,13 +1,13 @@
 {
 	"name": "z-tasking",
 	"version": "0.1.0",
-	"description": "Multi-project Obsidian task board with long/ad-hoc/bug notes, daily logs, calendar, Gantt, and reports.",
+	"description": "多项目 Obsidian 任务台：长期 / 临时 / 缺陷笔记，每日进展、日历、甘特图与汇总。",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"test": "node --experimental-strip-types --test src/sidebar.test.ts src/report.test.ts src/highlight.test.ts src/project.test.ts src/desc.test.ts src/clipboard.test.ts src/period.test.ts src/markdown.test.ts src/daily-report.test.ts src/daily-archive.test.ts",
+		"test": "node --experimental-strip-types --test src/catalog.test.ts src/sidebar.test.ts src/report.test.ts src/highlight.test.ts src/project.test.ts src/desc.test.ts src/clipboard.test.ts src/period.test.ts src/markdown.test.ts src/daily-report.test.ts src/daily-archive.test.ts",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [

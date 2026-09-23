@@ -66,12 +66,40 @@ export function needsLegacyMigration(rootChildren: string[]): boolean {
 	return rootChildren.some((name) => isLegacyRootTypeFolder(name));
 }
 
-/** 根下项目文件夹名；排除日报与旧类型目录；默认项目始终首位 */
+/** 根下项目文件夹名；排除日报与旧类型目录；默认项目始终首位；输入可含重复 */
 export function listProjectNames(rootChildren: string[]): string[] {
-	const others = rootChildren
-		.filter((name) => name && !isReservedRootName(name) && name !== DEFAULT_PROJECT)
-		.sort((a, b) => a.localeCompare(b, "zh"));
+	const seen = new Set<string>();
+	const others: string[] = [];
+	for (const raw of rootChildren) {
+		const name = typeof raw === "string" ? raw.trim() : "";
+		if (!name || isReservedRootName(name) || name === DEFAULT_PROJECT) continue;
+		if (seen.has(name)) continue;
+		seen.add(name);
+		others.push(name);
+	}
+	others.sort((a, b) => a.localeCompare(b, "zh"));
 	return [DEFAULT_PROJECT, ...others];
+}
+
+/**
+ * 从 vault.adapter.list 返回的文件夹路径中，取出「根目录下一级」子文件夹名。
+ * 用于空项目夹在 Obsidian 索引里丢失时，仍能从磁盘发现。
+ */
+export function rootFolderNamesFromListing(root: string, folderPaths: string[]): string[] {
+	const r = normalizeRoot(root);
+	const prefix = `${r}/`;
+	const names: string[] = [];
+	const seen = new Set<string>();
+	for (const raw of folderPaths) {
+		const path = raw.replace(/\\/g, "/").replace(/\/+$/, "");
+		if (!path.startsWith(prefix)) continue;
+		const rest = path.slice(prefix.length);
+		if (!rest || rest.includes("/")) continue;
+		if (seen.has(rest)) continue;
+		seen.add(rest);
+		names.push(rest);
+	}
+	return names;
 }
 
 export function filterByProject<T extends { project: string }>(

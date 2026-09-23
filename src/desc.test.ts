@@ -24,3 +24,12 @@ test("空描述浏览态给占位文案", () => {
 	assert.equal(html.includes("ztk-md"), false);
 	assert.match(html, /data-act="edit-desc"/);
 });
+
+test("无 path 时浏览态用纯文本，仍有编辑和复制", () => {
+	const html = descBlockHtml({ editing: false, desc: "昨日<计划>", path: "" });
+	assert.match(html, /ztk-desc-plain/);
+	assert.match(html, /昨日&lt;计划&gt;/);
+	assert.equal(html.includes("ztk-md"), false);
+	assert.match(html, /data-act="edit-desc"/);
+	assert.match(html, /data-act="copy-desc"/);
+});

@@ -10,6 +10,7 @@ import {
 	normalizeProjectName,
 	projectFromPath,
 	resolveNewTaskProject,
+	rootFolderNamesFromListing,
 	taskDir,
 } from "./project.ts";
 
@@ -52,6 +53,13 @@ test("listProjectNames：子目录去保留名与旧类型，默认含 KVAD", ()
 	assert.deepEqual(listProjectNames(["日报"]), [DEFAULT_PROJECT]);
 });
 
+test("listProjectNames：文件夹与任务来源重复时去重", () => {
+	assert.deepEqual(
+		listProjectNames(["公共类项目", "KVAD", "公共类项目", "终端", "终端"]),
+		[DEFAULT_PROJECT, "公共类项目", "终端"],
+	);
+});
+
 test("filterByProject：全部不过滤，指定项目只留同名", () => {
 	const items = [
 		{ project: "KVAD", title: "a" },
@@ -73,4 +81,21 @@ test("normalizeProjectName：去空白与非法名", () => {
 	assert.equal(normalizeProjectName("日报"), null);
 	assert.equal(normalizeProjectName("长期"), null);
 	assert.equal(normalizeProjectName("a/b"), "ab");
+});
+
+test("rootFolderNamesFromListing：从 adapter.list 的文件夹路径取根下子目录名", () => {
+	assert.deepEqual(
+		rootFolderNamesFromListing("Z-Tasking", [
+			"Z-Tasking/KVAD",
+			"Z-Tasking/日报",
+			"Z-Tasking/公共类项目",
+			"Z-Tasking/KVAD/长期",
+		]),
+		["KVAD", "日报", "公共类项目"],
+	);
+	assert.deepEqual(
+		rootFolderNamesFromListing("Z-Tasking/", ["Z-Tasking/终端", "其他/忽略"]),
+		["终端"],
+	);
+	assert.deepEqual(rootFolderNamesFromListing("Z-Tasking", []), []);
 });

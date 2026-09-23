@@ -196,7 +196,7 @@ export function tomorrowPlanListHtml(items: TomorrowPlanItem[], opts?: { compact
 		<ul class="ztk-plan-list${opts?.compact ? " is-compact" : ""}">${list}</ul>
 		<div class="ztk-plan-add">
 			<input type="text" class="ztk-plan-add-input" placeholder="新建明日计划，回车添加" />
-			<button type="button" class="ztk-ghost ztk-plan-add-btn" data-act="add-plan-item">添加</button>
+			<button type="button" class="ztk-ghost ztk-plan-add-btn" data-act="add-plan-item" title="添加" aria-label="添加">+</button>
 		</div>
 	`;
 }

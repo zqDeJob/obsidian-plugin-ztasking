@@ -111,6 +111,30 @@ export function appendTaskLog(
 	);
 }
 
+/**
+ * 编辑/挪动进展：从 source 去掉 oldDate，再写入目标日（有则合并）。
+ * 不传 targetLogs 表示同任务；跨任务时传入目标任务的 logs。
+ */
+export function relocateTaskLog(
+	sourceLogs: TaskLog[],
+	oldDate: string,
+	next: { date: string; text: string; hours: number },
+	targetLogs?: TaskLog[],
+): { sourceLogs: TaskLog[]; targetLogs: TaskLog[] } {
+	const date = next.date.trim();
+	const text = next.text.trim();
+	const hours = next.hours;
+	const without = sourceLogs.filter((l) => l.date !== oldDate);
+	if (targetLogs === undefined) {
+		const merged = appendTaskLog(without, date, text, hours);
+		return { sourceLogs: merged, targetLogs: merged };
+	}
+	return {
+		sourceLogs: without,
+		targetLogs: appendTaskLog(targetLogs, date, text, hours),
+	};
+}
+
 export function serializeTaskMarkdown(task: Task): string {
 	const logs = [...task.logs].sort((a, b) => b.date.localeCompare(a.date));
 	const logBlock = logs.length

@@ -5,6 +5,7 @@ import {
 	appendTaskLog,
 	parseLogHeading,
 	parseTaskMarkdown,
+	relocateTaskLog,
 	serializeLogHeading,
 	serializeTaskMarkdown,
 } from "./markdown.ts";
@@ -95,6 +96,72 @@ test("appendTaskLog 当日正文为空时直接写入新内容", () => {
 	);
 	assert.equal(next[0]?.text, "补记");
 	assert.equal(next[0]?.hours, 1.25);
+});
+
+test("relocateTaskLog：同任务改日期，目标日无内容则挪过去", () => {
+	const { sourceLogs, targetLogs } = relocateTaskLog(
+		[
+			{ date: "2026-09-10", text: "记错了", hours: 2 },
+			{ date: "2026-09-08", text: "更早", hours: 1 },
+		],
+		"2026-09-10",
+		{ date: "2026-09-09", text: "记错了", hours: 2 },
+	);
+	assert.equal(sourceLogs, targetLogs);
+	assert.deepEqual(
+		sourceLogs.map((l) => l.date).sort(),
+		["2026-09-08", "2026-09-09"],
+	);
+	assert.equal(sourceLogs.find((l) => l.date === "2026-09-09")?.hours, 2);
+});
+
+test("relocateTaskLog：同任务改日期，目标日已有则合并", () => {
+	const { sourceLogs } = relocateTaskLog(
+		[
+			{ date: "2026-09-10", text: "B", hours: 1 },
+			{ date: "2026-09-09", text: "A", hours: 0.5 },
+		],
+		"2026-09-10",
+		{ date: "2026-09-09", text: "B", hours: 1 },
+	);
+	assert.equal(sourceLogs.length, 1);
+	assert.equal(sourceLogs[0]?.date, "2026-09-09");
+	assert.equal(sourceLogs[0]?.text, "A\n\nB");
+	assert.equal(sourceLogs[0]?.hours, 1.5);
+});
+
+test("relocateTaskLog：同任务同日期只更新正文工时", () => {
+	const { sourceLogs } = relocateTaskLog(
+		[{ date: "2026-09-10", text: "旧", hours: 1 }],
+		"2026-09-10",
+		{ date: "2026-09-10", text: "新", hours: 2 },
+	);
+	assert.deepEqual(sourceLogs, [{ date: "2026-09-10", text: "新", hours: 2 }]);
+});
+
+test("relocateTaskLog：跨任务移动，目标日无内容", () => {
+	const { sourceLogs, targetLogs } = relocateTaskLog(
+		[{ date: "2026-09-10", text: "应在 A2", hours: 1.5 }],
+		"2026-09-10",
+		{ date: "2026-09-10", text: "应在 A2", hours: 1.5 },
+		[{ date: "2026-09-01", text: "别的", hours: 1 }],
+	);
+	assert.equal(sourceLogs.length, 0);
+	assert.equal(targetLogs.length, 2);
+	assert.equal(targetLogs.find((l) => l.date === "2026-09-10")?.text, "应在 A2");
+});
+
+test("relocateTaskLog：跨任务移动，目标日已有则合并", () => {
+	const { sourceLogs, targetLogs } = relocateTaskLog(
+		[{ date: "2026-09-10", text: "挪过来", hours: 1 }],
+		"2026-09-10",
+		{ date: "2026-09-10", text: "挪过来", hours: 1 },
+		[{ date: "2026-09-10", text: "原有", hours: 2 }],
+	);
+	assert.equal(sourceLogs.length, 0);
+	assert.equal(targetLogs.length, 1);
+	assert.equal(targetLogs[0]?.text, "原有\n\n挪过来");
+	assert.equal(targetLogs[0]?.hours, 3);
 });
 
 test("parseTaskMarkdown 从路径识别缺陷类型", () => {

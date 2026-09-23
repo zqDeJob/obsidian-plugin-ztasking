@@ -54,9 +54,23 @@ test("我的今天列出今日任务、工时徽章与合计，不含笔数", ()
 	assert.match(html, /ztk-hours-badge/);
 	assert.match(html, /1\.5h/);
 	assert.match(html, /data-act="goto-task"/);
+	assert.match(html, /data-act="del-log"/);
+	assert.match(html, /删除今日进展/);
 	assert.equal(html.includes('data-act="copy-md"'), false);
 	assert.match(html, /data-src="Z-Tasking\/长期\/插件开发.md"/);
 	assert.match(html, /data-date="2026-08-13"/);
+	assert.doesNotMatch(html, /data-act="toggle-board-section"/);
+});
+
+test("我的今天可折叠：工作台传入 collapsible 时显示折叠按钮", () => {
+	const open = todayDigestHtml("2026-08-13", [], { collapsible: true });
+	assert.match(open, /data-act="toggle-board-section"/);
+	assert.match(open, /data-section="today"/);
+	assert.match(open, /aria-expanded="true"/);
+	assert.doesNotMatch(open, /is-collapsed/);
+	const folded = todayDigestHtml("2026-08-13", [], { collapsible: true, collapsed: true });
+	assert.match(folded, /is-collapsed/);
+	assert.match(folded, /aria-expanded="false"/);
 });
 
 test("我的今天无工时时标题不带小时", () => {

@@ -18,8 +18,14 @@ import {
 } from "./model";
 import { copyText } from "./clipboard";
 import {
+	newYesterdayPlanItemId,
+	parseYesterdayPlanQuickLines,
 	prevDateStr,
+	resolveYpDefaultProject,
+	withYpNoProjectOption,
 	yesterdayPlanBlockHtml,
+	YP_NO_PROJECT,
+	type YesterdayPlanItem,
 } from "./daily-archive";
 import {
 	assembleDailyReportText,
@@ -61,15 +67,22 @@ import {
 	sumHours,
 	todayDigestHtml,
 } from "./report";
-import { mergeSidebarOrder, pickSidebarTasks, reorderSidebarIds, isSidebarStatusFilter, type SidebarStatusFilter } from "./sidebar";
+import {
+	applyCatalogSort,
+	nextCatalogSort,
+	taskPeriodOverlaps,
+	type CatalogSort,
+	type CatalogSortKey,
+} from "./catalog";
+import { isSidebarStatusFilter, matchSidebarStatus, mergeSidebarOrder, reorderSidebarIds, type SidebarStatusFilter } from "./sidebar";
 import { WebPanel } from "./web-panel";
 
-type BoardView = "board" | "list" | "detail" | "cal" | "gantt" | "report" | "web";
+type BoardView = "board" | "detail" | "cal" | "gantt" | "report" | "web";
 type TopTab = "report" | "work" | "schedule" | "web";
-type WorkMode = "board" | "list";
 type ScheduleMode = "cal" | "gantt";
-const VIEWS: BoardView[] = ["board", "list", "detail", "cal", "gantt", "report", "web"];
+const VIEWS: BoardView[] = ["board", "detail", "cal", "gantt", "report", "web"];
 const PERIOD_SHORTCUTS = ["week", "month", "quarter", "year"] as const;
+const YP_DRAWER_NEW = "__new__";
 
 /** Obsidian Modal 确认，避免 window.confirm 在 Electron 里弄丢输入焦点 */
 function askConfirm(app: App, title: string, message: string, okLabel = "确定"): Promise<boolean> {
@@ -113,30 +126,109 @@ function askConfirm(app: App, title: string, message: string, okLabel = "确定"
 	});
 }
 
+/** 昨日计划批量新增：多行标题 + 所属项目 */
+function askYpQuickAdd(
+	app: App,
+	projects: string[],
+	defaultProject: string,
+): Promise<{ text: string; project: string } | null> {
+	return new Promise((resolve) => {
+		let settled = false;
+		const done = (v: { text: string; project: string } | null) => {
+			if (settled) return;
+			settled = true;
+			resolve(v);
+		};
+		const modal = new class extends Modal {
+			onOpen(): void {
+				this.modalEl.addClass("ztk-bm-modal");
+				this.modalEl.addClass("ztk-yp-quick-modal");
+				this.contentEl.empty();
+				this.contentEl.addClass("ztk-bm-modal-body");
+				this.contentEl.createDiv({ cls: "ztk-bm-modal-eyebrow", text: "Z-Tasking" });
+				this.contentEl.createEl("h2", { text: "批量新增昨日计划" });
+				this.contentEl.createEl("p", {
+					cls: "ztk-bm-modal-lead",
+					text: "一行一条标题，保存后批量写入昨日计划。",
+				});
+				const projectLabel = this.contentEl.createEl("label", {
+					cls: "ztk-yp-quick-field",
+					text: "所属项目",
+				});
+				const projectSel = projectLabel.createEl("select", { cls: "ztk-yp-quick-project" });
+				const opts = withYpNoProjectOption(
+					projects.includes(defaultProject) ? projects : [...projects, defaultProject],
+				);
+				for (const p of opts) {
+					projectSel.createEl("option", { value: p, text: p });
+				}
+				projectSel.value = defaultProject || YP_NO_PROJECT;
+
+				const textLabel = this.contentEl.createEl("label", {
+					cls: "ztk-yp-quick-field",
+					text: "计划标题",
+				});
+				const textArea = textLabel.createEl("textarea", {
+					cls: "ztk-yp-quick-input",
+					attr: {
+						rows: "8",
+						placeholder: "一行一条，例如：\n写单测\n改 UI",
+					},
+				});
+
+				const actions = this.contentEl.createDiv({ cls: "ztk-bm-modal-actions" });
+				actions.createEl("button", { type: "button", cls: "ztk-ghost", text: "取消" })
+					.addEventListener("click", () => {
+						done(null);
+						this.close();
+					});
+				actions.createEl("button", {
+					type: "button",
+					cls: "ztk-btn",
+					text: "保存",
+				}).addEventListener("click", () => {
+					done({
+						text: textArea.value,
+						project: projectSel.value.trim() || YP_NO_PROJECT,
+					});
+					this.close();
+				});
+				requestAnimationFrame(() => textArea.focus());
+			}
+			onClose(): void {
+				this.contentEl.empty();
+				done(null);
+			}
+		}(app);
+		modal.open();
+	});
+}
+
 export class ZTaskingView extends ItemView {
 	plugin: ZTaskingPlugin;
 	view: BoardView = "report";
-	/** 工作台顶栏下的子模式（列表 / 工作台） */
-	workMode: WorkMode = "board";
 	/** 日历顶栏下的子模式（日历 / 甘特） */
 	scheduleMode: ScheduleMode = "cal";
 	period: PeriodPreset = "week";
 	rangeStart = "";
 	rangeEnd = "";
-	/** 列表页类型筛选（含全部） */
+	/** 任务表类型筛选（含全部） */
 	typeFilter: "all" | TaskType = "all";
-	/** 列表页状态筛选 */
-	statusFilter: "all" | TaskStatus = "all";
-	/** 侧边栏当前类型 Tab */
-	sidebarType: TaskType = "long";
-	/** 侧边栏状态筛选（默认不包括已完结） */
-	sidebarStatus: SidebarStatusFilter = "!done";
+	/** 任务表状态筛选（含「不包括」） */
+	statusFilter: SidebarStatusFilter = "all";
 	query = "";
+	/** 任务表日期范围（空 = 不限） */
+	catalogDateStart = "";
+	catalogDateEnd = "";
+	/** 任务表列排序；null = 拖拽手动序 */
+	catalogSort: CatalogSort = null;
 	selectedId = "";
 	calCursor = new Date();
 	selectedDay = todayStr();
 	ganttTaskId = "";
 	editingLogDate: string | null = null;
+	/** 昨日计划笔记编辑下标（item.notes 原数组） */
+	private editingYpNoteIdx: number | null = null;
 	editingDesc = false;
 	editingTitle = false;
 	/** 汇总进展明细：按任务聚合查看 */
@@ -148,15 +240,23 @@ export class ZTaskingView extends ItemView {
 	private mdRoot = new Component();
 	private mdGen = 0;
 	private webPanel: WebPanel;
-	/** 工作台三列：昨日 / 中间(今天+明日) / 列表 的相对宽度 */
-	private yesterdayPaneRatio = 0.22;
-	private todayPaneRatio = 0.38;
+	/** 工作台两列：左侧三卡 / 右侧任务表 的相对宽度 */
+	private leftPaneRatio = 0.38;
+	private boardSplittersBound = false;
 	/** 拖拽排序结束后抑制一次 click，避免误选中 */
 	private suppressTaskClick = false;
+	/** 工作台左栏三卡折叠（会话内） */
+	private boardCollapsed = { yesterday: false, today: false, plan: false };
 	/** 任务详情抽屉是否打开（默认关闭） */
 	private detailOpen = false;
+	/** 昨日计划抽屉：null 关闭；YP_DRAWER_NEW 新增；否则为条目 id */
+	private ypDrawerId: string | null = null;
 	/** 昨日计划缓存（按「相对今天的昨日」日期键） */
-	private yesterdayPlanCache: { path: string | null; items: string[] } = { path: null, items: [] };
+	private yesterdayPlanCache: {
+		path: string | null;
+		items: YesterdayPlanItem[];
+		baseline: YesterdayPlanItem[];
+	} = { path: null, items: [], baseline: [] };
 	private yesterdayPlanLoadedFor = "";
 
 	constructor(leaf: WorkspaceLeaf, plugin: ZTaskingPlugin) {
@@ -209,25 +309,19 @@ export class ZTaskingView extends ItemView {
 						<input type="date" class="ztk-range-end" aria-label="结束日期" />
 					</div>
 				</div>
-				<button class="ztk-btn" data-act="new-project" type="button">新建项目</button>
-				<button class="ztk-btn" data-act="new" type="button">新建任务</button>
+				<button class="ztk-btn is-hidden" data-act="new-project" type="button">新建项目</button>
+				<button class="ztk-btn is-hidden" data-act="new" type="button">新建任务</button>
 			</header>
 			<main class="ztk-main">
-				<div class="ztk-page" id="ztk-view-board" data-mode="board" data-detail-open="0">
-					<nav class="ztk-work-rail" aria-label="工作模式">
-						<button type="button" data-work-mode="board" class="on"><span>工作台</span></button>
-						<button type="button" data-work-mode="list"><span>列表</span></button>
-					</nav>
-					<aside class="ztk-yesterday-pane">
+				<div class="ztk-page" id="ztk-view-board" data-detail-open="0">
+					<aside class="ztk-board-left">
 						<div class="ztk-board-yesterday"></div>
-					</aside>
-					<aside class="ztk-today-pane">
 						<div class="ztk-board-today"></div>
 						<div class="ztk-board-plan"></div>
 					</aside>
+					<div class="ztk-splitter" data-split="left-list" title="拖拽调整宽度"></div>
 					<aside class="ztk-list">
 						<div class="ztk-filters"></div>
-						<div class="ztk-task-list"></div>
 						<div class="ztk-catalog-body"></div>
 					</aside>
 					<div class="ztk-detail-drawer" aria-hidden="true">
@@ -316,6 +410,7 @@ export class ZTaskingView extends ItemView {
 			</div>
 		`;
 		this.bind();
+		this.bindBoardSplitters();
 		this.applyPeriodShortcut("week");
 		try {
 			await this.plugin.store.reload();
@@ -324,6 +419,7 @@ export class ZTaskingView extends ItemView {
 			new Notice("Z-Tasking 加载失败，请查看控制台");
 		}
 		this.renderAll();
+		requestAnimationFrame(() => this.applyBoardLayout());
 	}
 
 	async onClose(): Promise<void> {
@@ -424,27 +520,31 @@ export class ZTaskingView extends ItemView {
 	private filtered(): Task[] {
 		return this.projectTasks().filter((t) =>
 			(this.typeFilter === "all" || t.type === this.typeFilter) &&
-			(this.statusFilter === "all" || t.status === this.statusFilter)
+			matchSidebarStatus(t.status, this.statusFilter)
 		);
 	}
 
 	private catalogFiltered(): Task[] {
 		const q = this.query.trim().toLowerCase();
-		return this.filtered().filter((t) =>
-			!q || t.title.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q)
-		);
-	}
-
-	private sidebarTasks(): Task[] {
-		const pool = this.projectTasks();
-		const saved = this.plugin.settings.sidebarOrder?.[this.sidebarType] ?? [];
-		const order = saved.length
-			? mergeSidebarOrder(
-				pool.filter((t) => t.type === this.sidebarType),
-				saved,
-			)
-			: undefined;
-		return pickSidebarTasks(pool, this.sidebarType, this.sidebarStatus, order);
+		const base = this.filtered().filter((t) => {
+			if (q && !t.title.toLowerCase().includes(q) && !t.desc.toLowerCase().includes(q)) return false;
+			return taskPeriodOverlaps(t, this.catalogDateStart, this.catalogDateEnd);
+		});
+		if (this.catalogSort) return applyCatalogSort(base, this.catalogSort);
+		const byType: Record<TaskType, Task[]> = { long: [], temp: [], bug: [] };
+		for (const t of base) byType[t.type].push(t);
+		const out: Task[] = [];
+		for (const type of ["long", "temp", "bug"] as const) {
+			const group = byType[type];
+			if (!group.length) continue;
+			const saved = this.plugin.settings.sidebarOrder?.[type] ?? [];
+			const ids = mergeSidebarOrder(group, saved);
+			for (const id of ids) {
+				const t = group.find((x) => x.id === id);
+				if (t) out.push(t);
+			}
+		}
+		return out;
 	}
 
 	private topTabFor(view: BoardView): TopTab {
@@ -456,16 +556,15 @@ export class ZTaskingView extends ItemView {
 
 	private switchTopTab(tab: TopTab): void {
 		if (tab === "report") this.switchView("report");
-		else if (tab === "work") this.switchView(this.workMode);
+		else if (tab === "work") this.switchView("board");
 		else if (tab === "schedule") this.switchView(this.scheduleMode);
 		else if (tab === "web") this.switchView("web");
 	}
 
 	private switchView(view: BoardView): void {
-		// 详情并入工作壳右侧，不再单独占页
-		if (view === "detail") view = "list";
+		// 详情并入工作壳右侧抽屉，不再单独占页
+		if (view === "detail" || (view as string) === "list") view = "board";
 		this.view = view;
-		if (view === "board" || view === "list") this.workMode = view;
 		if (view === "cal" || view === "gantt") this.scheduleMode = view;
 		const topTab = this.topTabFor(view);
 		this.contentEl.querySelectorAll(".ztk-tabs button").forEach((b) =>
@@ -480,7 +579,7 @@ export class ZTaskingView extends ItemView {
 		this.syncPeriodControls();
 		this.mdGen += 1;
 		const gen = this.mdGen;
-		if (view === "board" || view === "list") {
+		if (view === "board") {
 			this.syncWorkShell();
 			this.renderDetail();
 			requestAnimationFrame(() => this.applyBoardLayout());
@@ -493,7 +592,7 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private pageIdFor(view: BoardView): string {
-		if (view === "list" || view === "detail") return "board";
+		if (view === "detail") return "board";
 		return view;
 	}
 
@@ -538,11 +637,6 @@ export class ZTaskingView extends ItemView {
 				this.switchTopTab(tab.dataset.tab);
 				return;
 			}
-			const workMode = target.closest<HTMLElement>("[data-work-mode]");
-			if (workMode?.dataset.workMode === "board" || workMode?.dataset.workMode === "list") {
-				this.switchView(workMode.dataset.workMode);
-				return;
-			}
 			const p = target.closest<HTMLButtonElement>(".ztk-period button[data-p]");
 			if (p?.dataset.p && (PERIOD_SHORTCUTS as readonly string[]).includes(p.dataset.p)) {
 				this.applyPeriodShortcut(p.dataset.p as (typeof PERIOD_SHORTCUTS)[number]);
@@ -579,6 +673,24 @@ export class ZTaskingView extends ItemView {
 				}
 				if (a === "toggle-cal-day") {
 					void this.toggleCalDayPane();
+					return;
+				}
+				if (a === "toggle-board-section") {
+					const section = act.dataset.section;
+					if (section === "yesterday" || section === "today" || section === "plan") {
+						this.boardCollapsed[section] = !this.boardCollapsed[section];
+						if (section === "yesterday") this.renderBoardYesterday();
+						else if (section === "today") this.renderBoardToday();
+						else this.renderBoardPlan();
+					}
+					return;
+				}
+				if (a === "catalog-sort") {
+					const key = act.dataset.key as CatalogSortKey | undefined;
+					if (key === "type" || key === "status") {
+						this.catalogSort = nextCatalogSort(this.catalogSort, key);
+						this.renderCatalog();
+					}
 					return;
 				}
 				if (a === "add-log") void this.addTodayLog();
@@ -618,8 +730,36 @@ export class ZTaskingView extends ItemView {
 					void this.removeTomorrowPlanItem(act.dataset.planId);
 					return;
 				}
-				if (a === "open-yesterday-plan" && act.dataset.path) {
-					void this.openYesterdayPlan(act.dataset.path);
+				if (a === "add-yesterday-plan") {
+					void this.openYpDrawer(null);
+					return;
+				}
+				if (a === "yp-quick-add") {
+					void this.ypQuickAdd();
+					return;
+				}
+				if (a === "reset-yesterday-plan") {
+					void this.resetYesterdayPlan();
+					return;
+				}
+				if (a === "edit-yesterday-plan" && act.dataset.ypId) {
+					void this.openYpDrawer(act.dataset.ypId);
+					return;
+				}
+				if (a === "toggle-yesterday-plan" && act.dataset.ypId) {
+					void this.toggleYesterdayPlanDone(act.dataset.ypId);
+					return;
+				}
+				if (a === "del-yesterday-plan" && act.dataset.ypId) {
+					void this.deleteYesterdayPlanItem(act.dataset.ypId);
+					return;
+				}
+				if (a === "yp-drawer-add-log") {
+					void this.ypDrawerAddLog();
+					return;
+				}
+				if (a === "yp-drawer-save") {
+					void this.ypDrawerSaveFields();
 					return;
 				}
 				if (a === "close-detail") {
@@ -627,11 +767,25 @@ export class ZTaskingView extends ItemView {
 					return;
 				}
 				if (a === "edit-log" || a === "save-log" || a === "cancel-log" || a === "del-log") {
-					const date = act.closest<HTMLElement>("[data-date]")?.dataset.date;
+					if (this.ypDrawerId) {
+						const idxRaw = act.closest<HTMLElement>("[data-yp-note-idx]")?.dataset.ypNoteIdx;
+						const idx = idxRaw !== undefined ? Number(idxRaw) : NaN;
+						if (Number.isInteger(idx) && idx >= 0) void this.handleYpNoteAction(a, idx);
+						return;
+					}
+					const id = act.dataset.id || act.closest<HTMLElement>("[data-id]")?.dataset.id;
+					if (id) this.selectedId = id;
+					const date = act.dataset.date || act.closest<HTMLElement>("[data-date]")?.dataset.date;
 					if (date) void this.handleLogAction(a, date);
 					return;
 				}
 				if (a === "copy-log") {
+					if (this.ypDrawerId) {
+						const idxRaw = act.closest<HTMLElement>("[data-yp-note-idx]")?.dataset.ypNoteIdx;
+						const idx = idxRaw !== undefined ? Number(idxRaw) : NaN;
+						if (Number.isInteger(idx) && idx >= 0) void this.copyYpNote(idx);
+						return;
+					}
 					const date = act.closest<HTMLElement>("[data-date]")?.dataset.date;
 					if (date) void this.copyLog(date);
 					return;
@@ -653,13 +807,14 @@ export class ZTaskingView extends ItemView {
 					return;
 				}
 				if (a === "goto-task" && act.dataset.id) {
+					if (this.suppressTaskClick || target.closest(".ztk-drag-handle")) return;
 					this.openTaskDetail(act.dataset.id);
-					if (this.view === "board" || this.view === "list") {
+					if (this.view === "board") {
 						this.syncWorkShell();
 						this.syncDetailDrawer();
 						this.rerenderDetail();
 					} else {
-						this.switchView("list");
+						this.switchView("board");
 						this.renderAll();
 					}
 					return;
@@ -669,7 +824,7 @@ export class ZTaskingView extends ItemView {
 					return;
 				}
 				if (a === "back-list" || a === "open-list") {
-					this.switchView("list");
+					this.switchView("board");
 					this.renderAll();
 					return;
 				}
@@ -716,29 +871,28 @@ export class ZTaskingView extends ItemView {
 				void this.plugin.saveSettings();
 				this.mdGen += 1;
 				const gen = this.mdGen;
-				this.renderBoardToday(this.workMode === "board");
+				this.renderBoardToday(this.view === "board");
 				if (this.view === "report") this.renderReport();
 				void this.paintMarkdown(gen);
 				return;
 			}
-			if (el.classList.contains("ztk-status-filter")) {
-				this.statusFilter = (el as HTMLSelectElement).value as "all" | TaskStatus;
-				this.renderFilters();
-				this.renderCatalog();
-			}
-			if (el.classList.contains("ztk-side-type")) {
+			if (el.classList.contains("ztk-type-filter")) {
 				const v = (el as HTMLSelectElement).value;
-				if (v === "long" || v === "temp" || v === "bug") {
-					this.sidebarType = v;
-					this.renderList();
+				if (v === "all" || v === "long" || v === "temp" || v === "bug") {
+					this.typeFilter = v;
+					this.renderFilters();
+					this.renderCatalog();
 				}
+				return;
 			}
-			if (el.classList.contains("ztk-side-status")) {
+			if (el.classList.contains("ztk-status-filter")) {
 				const v = (el as HTMLSelectElement).value;
 				if (isSidebarStatusFilter(v)) {
-					this.sidebarStatus = v;
-					this.renderList();
+					this.statusFilter = v;
+					this.renderFilters();
+					this.renderCatalog();
 				}
+				return;
 			}
 			if (el.classList.contains("ztk-task-status")) {
 				void this.changeStatus((el as HTMLSelectElement).value as TaskStatus);
@@ -749,9 +903,22 @@ export class ZTaskingView extends ItemView {
 			if (el.classList.contains("ztk-task-project")) {
 				void this.changeProject((el as HTMLInputElement | HTMLSelectElement).value);
 			}
+			if (el.classList.contains("ztk-yp-project")) {
+				void this.ypDrawerSaveFields();
+			}
 			if (el.classList.contains("ztk-range-start") || el.classList.contains("ztk-range-end")) {
 				this.applyCustomRangeFromInputs();
 				this.refreshPeriodViews();
+			}
+			if (el.classList.contains("ztk-catalog-date-start")) {
+				this.catalogDateStart = (el as HTMLInputElement).value;
+				this.renderFilters();
+				this.renderCatalog();
+			}
+			if (el.classList.contains("ztk-catalog-date-end")) {
+				this.catalogDateEnd = (el as HTMLInputElement).value;
+				this.renderFilters();
+				this.renderCatalog();
 			}
 		});
 		root.addEventListener("input", (e) => {
@@ -800,27 +967,29 @@ export class ZTaskingView extends ItemView {
 		});
 		this.bindListReorder();
 		window.addEventListener("resize", () => {
-			if (this.view === "board" || this.view === "list") this.applyBoardLayout();
+			if (this.view === "board") this.applyBoardLayout();
 		});
 	}
 
 	private bindListReorder(): void {
 		const root = this.contentEl;
 		let dragId = "";
+		const rowOf = (el: HTMLElement | null) =>
+			el?.closest<HTMLElement>("tr[data-id], .ztk-task[data-id]") ?? null;
 		const clearMarks = () => {
-			root.querySelectorAll(".ztk-task.is-dragging, .ztk-task.is-drag-over").forEach((el) => {
+			root.querySelectorAll(".is-dragging, .is-drag-over").forEach((el) => {
 				el.classList.remove("is-dragging", "is-drag-over");
 			});
 		};
 		root.addEventListener("dragstart", (e) => {
-			const handle = (e.target as HTMLElement).closest(".ztk-drag-handle");
-			const task = handle?.closest<HTMLElement>(".ztk-task");
-			if (!handle || !task?.dataset.id) {
+			const handle = (e.target as HTMLElement).closest(".ztk-drag-handle") as HTMLElement | null;
+			const row = rowOf(handle);
+			if (!handle || !row?.dataset.id) {
 				e.preventDefault();
 				return;
 			}
-			dragId = task.dataset.id;
-			task.classList.add("is-dragging");
+			dragId = row.dataset.id;
+			row.classList.add("is-dragging");
 			e.dataTransfer?.setData("text/plain", dragId);
 			if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
 		});
@@ -831,24 +1000,24 @@ export class ZTaskingView extends ItemView {
 			window.setTimeout(() => { this.suppressTaskClick = false; }, 0);
 		});
 		root.addEventListener("dragover", (e) => {
-			const task = (e.target as HTMLElement).closest<HTMLElement>(".ztk-task");
-			if (!task?.dataset.id || !dragId || task.dataset.id === dragId) return;
+			const row = rowOf(e.target as HTMLElement);
+			if (!row?.dataset.id || !dragId || row.dataset.id === dragId) return;
 			e.preventDefault();
 			if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-			root.querySelectorAll(".ztk-task.is-drag-over").forEach((el) => {
-				if (el !== task) el.classList.remove("is-drag-over");
+			root.querySelectorAll(".is-drag-over").forEach((el) => {
+				if (el !== row) el.classList.remove("is-drag-over");
 			});
-			task.classList.add("is-drag-over");
+			row.classList.add("is-drag-over");
 		});
 		root.addEventListener("dragleave", (e) => {
-			const task = (e.target as HTMLElement).closest<HTMLElement>(".ztk-task");
+			const row = rowOf(e.target as HTMLElement);
 			const related = e.relatedTarget as HTMLElement | null;
-			if (task && related && task.contains(related)) return;
-			task?.classList.remove("is-drag-over");
+			if (row && related && row.contains(related)) return;
+			row?.classList.remove("is-drag-over");
 		});
 		root.addEventListener("drop", (e) => {
-			const task = (e.target as HTMLElement).closest<HTMLElement>(".ztk-task");
-			const toId = task?.dataset.id ?? "";
+			const row = rowOf(e.target as HTMLElement);
+			const toId = row?.dataset.id ?? "";
 			const fromId = dragId || e.dataTransfer?.getData("text/plain") || "";
 			clearMarks();
 			if (!fromId || !toId || fromId === toId) return;
@@ -858,7 +1027,10 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private async commitSidebarReorder(fromId: string, toId: string): Promise<void> {
-		const type = this.sidebarType;
+		const from = this.tasks().find((t) => t.id === fromId);
+		const to = this.tasks().find((t) => t.id === toId);
+		if (!from || !to || from.type !== to.type) return;
+		const type = from.type;
 		if (!this.plugin.settings.sidebarOrder) {
 			this.plugin.settings.sidebarOrder = { long: [], temp: [], bug: [] };
 		}
@@ -867,7 +1039,7 @@ export class ZTaskingView extends ItemView {
 		const next = reorderSidebarIds(mergeSidebarOrder(ofType, saved), fromId, toId);
 		this.plugin.settings.sidebarOrder[type] = next;
 		await this.plugin.saveSettings();
-		this.renderList();
+		this.renderCatalog();
 	}
 
 	private async deleteTaskById(id: string): Promise<void> {
@@ -888,8 +1060,7 @@ export class ZTaskingView extends ItemView {
 			await this.plugin.saveSettings();
 		}
 		if (this.selectedId === id) {
-			const next = (this.workMode === "board" ? this.sidebarTasks() : this.catalogFiltered())[0]
-				?? this.tasks()[0];
+			const next = this.catalogFiltered()[0] ?? this.tasks()[0];
 			this.selectedId = next?.id ?? "";
 			this.editingLogDate = null;
 			this.editingDesc = false;
@@ -903,40 +1074,57 @@ export class ZTaskingView extends ItemView {
 	private applyBoardLayout(): void {
 		const board = this.contentEl.querySelector("#ztk-view-board") as HTMLElement | null;
 		if (!board || !board.classList.contains("on")) return;
-		const rail = 48;
-		const boardMode = board.dataset.mode === "board";
+		const split = 6;
 		const w = board.clientWidth;
-		const minY = 160;
-		const minToday = 220;
-		const minList = 200;
+		const minLeft = 280;
+		const minList = 320;
+		const splitter = board.querySelector<HTMLElement>(".ztk-splitter");
+		if (splitter) splitter.style.display = "";
 		if (w <= 0) {
-			board.style.gridTemplateColumns = boardMode
-				? `${rail}px minmax(${minY}px, 1.1fr) minmax(${minToday}px, 1.5fr) minmax(${minList}px, 1.3fr)`
-				: `${rail}px minmax(0, 1fr)`;
+			board.style.gridTemplateColumns = `minmax(${minLeft}px, 0.38fr) ${split}px minmax(${minList}px, 1fr)`;
 			return;
 		}
-		if (!boardMode) {
-			board.style.gridTemplateColumns = `${rail}px minmax(0, 1fr)`;
-			return;
-		}
-		const avail = Math.max(1, w - rail);
-		let yW = Math.round(avail * this.yesterdayPaneRatio);
-		let todayW = Math.round(avail * this.todayPaneRatio);
-		yW = Math.max(minY, Math.min(Math.floor(avail * 0.32), yW));
-		todayW = Math.max(minToday, Math.min(Math.floor(avail * 0.45), todayW));
-		let listW = avail - yW - todayW;
+		const avail = Math.max(1, w - split);
+		let leftW = Math.round(avail * this.leftPaneRatio);
+		leftW = Math.max(minLeft, Math.min(Math.floor(avail * 0.55), leftW));
+		let listW = avail - leftW;
 		if (listW < minList) {
-			const deficit = minList - listW;
-			const shrinkToday = Math.min(deficit, Math.max(0, todayW - minToday));
-			todayW -= shrinkToday;
-			listW = avail - yW - todayW;
-			if (listW < minList) {
-				const deficit2 = minList - listW;
-				yW = Math.max(minY, yW - deficit2);
-				listW = avail - yW - todayW;
-			}
+			leftW = Math.max(minLeft, avail - minList);
+			listW = avail - leftW;
 		}
-		board.style.gridTemplateColumns = `${rail}px ${yW}px ${todayW}px ${Math.max(minList, listW)}px`;
+		board.style.gridTemplateColumns = `${leftW}px ${split}px ${listW}px`;
+		this.leftPaneRatio = leftW / avail;
+	}
+
+	private bindBoardSplitters(): void {
+		if (this.boardSplittersBound) return;
+		const board = this.contentEl.querySelector("#ztk-view-board");
+		if (!board) return;
+		this.boardSplittersBound = true;
+		board.querySelectorAll<HTMLElement>(".ztk-splitter").forEach((el) => {
+			el.addEventListener("pointerdown", (ev) => {
+				if (el.dataset.split !== "left-list") return;
+				ev.preventDefault();
+				const startX = ev.clientX;
+				const startLeft = this.leftPaneRatio;
+				this.contentEl.classList.add("is-resizing");
+				el.classList.add("is-active");
+				const onMove = (e: PointerEvent) => {
+					const avail = Math.max(1, board.clientWidth - 6);
+					const dRatio = (e.clientX - startX) / avail;
+					this.leftPaneRatio = Math.min(0.55, Math.max(0.28, startLeft + dRatio));
+					this.applyBoardLayout();
+				};
+				const onUp = () => {
+					this.contentEl.classList.remove("is-resizing");
+					el.classList.remove("is-active");
+					window.removeEventListener("pointermove", onMove);
+					window.removeEventListener("pointerup", onUp);
+				};
+				window.addEventListener("pointermove", onMove);
+				window.addEventListener("pointerup", onUp);
+			});
+		});
 	}
 
 	private openTaskDetail(id: string): void {
@@ -945,24 +1133,28 @@ export class ZTaskingView extends ItemView {
 			this.editingDesc = false;
 			this.editingTitle = false;
 		}
+		this.ypDrawerId = null;
+		this.editingYpNoteIdx = null;
 		this.selectedId = id;
 		this.detailOpen = true;
 	}
 
 	private closeDetailDrawer(): void {
 		this.detailOpen = false;
+		this.ypDrawerId = null;
+		this.editingYpNoteIdx = null;
 		this.editingLogDate = null;
 		this.editingDesc = false;
 		this.editingTitle = false;
 		this.syncDetailDrawer();
-		this.renderList();
-		if (this.workMode === "list" || this.view === "list") this.renderCatalog();
+		this.renderBoardYesterday();
+		this.renderCatalog();
 	}
 
 	private syncDetailDrawer(): void {
 		const board = this.contentEl.querySelector("#ztk-view-board") as HTMLElement | null;
 		if (!board) return;
-		const open = this.detailOpen && !!this.selectedId;
+		const open = this.detailOpen && (!!this.selectedId || !!this.ypDrawerId);
 		board.dataset.detailOpen = open ? "1" : "0";
 		board.classList.toggle("is-detail-open", open);
 		const drawer = board.querySelector(".ztk-detail-drawer");
@@ -973,18 +1165,17 @@ export class ZTaskingView extends ItemView {
 		this.$(".ztk-period").classList.toggle(
 			"is-hidden",
 			this.view === "board"
-				|| this.view === "list"
 				|| this.view === "detail"
 				|| this.view === "cal"
 				|| this.view === "web",
 		);
 		const newBtn = this.contentEl.querySelector<HTMLElement>("[data-act=\"new\"]");
 		if (newBtn) {
-			newBtn.classList.toggle("is-hidden", this.view === "web");
+			newBtn.classList.toggle("is-hidden", this.view !== "board");
 		}
 		const newProjectBtn = this.contentEl.querySelector<HTMLElement>("[data-act=\"new-project\"]");
 		if (newProjectBtn) {
-			newProjectBtn.classList.toggle("is-hidden", this.view === "web");
+			newProjectBtn.classList.toggle("is-hidden", this.view !== "board");
 		}
 	}
 
@@ -1118,6 +1309,10 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private async handleTitleAction(act: string): Promise<void> {
+		if (this.ypDrawerId) {
+			await this.handleYpTitleAction(act);
+			return;
+		}
 		const t = this.tasks().find((x) => x.id === this.selectedId);
 		if (!t) return;
 		if (act === "edit-title") {
@@ -1141,6 +1336,54 @@ export class ZTaskingView extends ItemView {
 			this.selectedId = await this.plugin.store.setTitle(t, title);
 			this.editingTitle = false;
 			this.renderAll();
+			new Notice("已更新标题");
+		}
+	}
+
+	private async handleYpTitleAction(act: string): Promise<void> {
+		if (act === "edit-title") {
+			this.editingTitle = true;
+			this.rerenderDetail();
+			(this.contentEl.querySelector("#ztk-title-input") as HTMLInputElement | null)?.focus();
+			return;
+		}
+		if (act === "cancel-title") {
+			if (this.ypDrawerId === YP_DRAWER_NEW) {
+				const box = this.contentEl.querySelector("#ztk-title-input") as HTMLInputElement | null;
+				if (!(box?.value.trim())) {
+					this.closeDetailDrawer();
+					return;
+				}
+			}
+			this.editingTitle = false;
+			this.rerenderDetail();
+			return;
+		}
+		if (act === "save-title") {
+			const box = this.contentEl.querySelector("#ztk-title-input") as HTMLInputElement | null;
+			const title = box?.value.trim() ?? "";
+			if (!title) {
+				new Notice("标题不能为空");
+				return;
+			}
+			const projectEl = this.contentEl.querySelector<HTMLSelectElement>(".ztk-yp-project");
+			const project = projectEl?.value.trim() || YP_NO_PROJECT;
+			const desc = this.readYpDescValue();
+			const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
+			if (this.ypDrawerId === YP_DRAWER_NEW) {
+				const id = newYesterdayPlanItemId();
+				const item: YesterdayPlanItem = { id, title, project, desc, notes: [], done: false };
+				await this.persistYesterdayPlan([...this.yesterdayPlanCache.items, item], baseline);
+				this.ypDrawerId = id;
+			} else {
+				const items = this.yesterdayPlanCache.items.map((it) =>
+					it.id === this.ypDrawerId ? { ...it, title, project, desc } : it,
+				);
+				await this.persistYesterdayPlan(items, baseline);
+			}
+			this.editingTitle = false;
+			this.rerenderDetail();
+			this.renderBoardYesterday();
 			new Notice("已更新标题");
 		}
 	}
@@ -1192,6 +1435,11 @@ export class ZTaskingView extends ItemView {
 		}
 		const desc = el.closest<HTMLElement>(".ztk-desc");
 		if (desc) {
+			if (this.ypDrawerId) {
+				const text = this.readYpDescValue();
+				if (text.trim()) return text;
+				return desc.innerText || "";
+			}
 			const t = this.tasks().find((x) => x.id === this.selectedId);
 			if (t?.desc?.trim()) return t.desc;
 			return desc.innerText || "";
@@ -1276,6 +1524,15 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private async copyDesc(): Promise<void> {
+		if (this.ypDrawerId) {
+			const desc = this.readYpDescValue();
+			if (!desc.trim()) {
+				new Notice("没有可复制的说明");
+				return;
+			}
+			await this.copyToClipboard(desc);
+			return;
+		}
 		const t = this.tasks().find((x) => x.id === this.selectedId);
 		if (!t?.desc.trim()) {
 			new Notice("没有可复制的说明");
@@ -1304,6 +1561,10 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private async handleDescAction(act: string): Promise<void> {
+		if (this.ypDrawerId) {
+			await this.handleYpDescAction(act);
+			return;
+		}
 		const t = this.tasks().find((x) => x.id === this.selectedId);
 		if (!t) return;
 		if (act === "edit-desc") {
@@ -1327,6 +1588,52 @@ export class ZTaskingView extends ItemView {
 		}
 	}
 
+	private async handleYpDescAction(act: string): Promise<void> {
+		if (act === "edit-desc") {
+			this.editingDesc = true;
+			this.rerenderDetail();
+			(this.contentEl.querySelector("#ztk-desc-text") as HTMLTextAreaElement | null)?.focus();
+			return;
+		}
+		if (act === "cancel-desc") {
+			this.editingDesc = false;
+			this.rerenderDetail();
+			return;
+		}
+		if (act === "save-desc") {
+			const box = this.contentEl.querySelector("#ztk-desc-text") as HTMLTextAreaElement | null;
+			const desc = box?.value.trim() ?? "";
+			if (this.ypDrawerId === YP_DRAWER_NEW) {
+				const fields = this.readYpDrawerFields();
+				fields.desc = desc;
+				if (!fields.title) {
+					new Notice("请先填写标题");
+					this.editingTitle = true;
+					this.rerenderDetail();
+					this.contentEl.querySelector<HTMLInputElement>("#ztk-title-input")?.focus();
+					return;
+				}
+				const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
+				const id = newYesterdayPlanItemId();
+				await this.persistYesterdayPlan(
+					[...this.yesterdayPlanCache.items, { id, ...fields, notes: [], done: false }],
+					baseline,
+				);
+				this.ypDrawerId = id;
+			} else {
+				const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
+				const items = this.yesterdayPlanCache.items.map((it) =>
+					it.id === this.ypDrawerId ? { ...it, desc } : it,
+				);
+				await this.persistYesterdayPlan(items, baseline);
+			}
+			this.editingDesc = false;
+			this.rerenderDetail();
+			this.renderBoardYesterday();
+			new Notice("已更新说明");
+		}
+	}
+
 	private async handleLogAction(act: string, date: string): Promise<void> {
 		const t = this.tasks().find((x) => x.id === this.selectedId);
 		if (!t) return;
@@ -1344,9 +1651,14 @@ export class ZTaskingView extends ItemView {
 			const row = this.contentEl.querySelector(`.ztk-log[data-date="${CSS.escape(date)}"]`);
 			const textEl = row?.querySelector("textarea") as HTMLTextAreaElement | null;
 			const hoursEl = row?.querySelector(".ztk-log-hours-edit") as HTMLInputElement | null;
+			const dateEl = row?.querySelector(".ztk-log-date-edit") as HTMLInputElement | null;
+			const taskEl = row?.querySelector(".ztk-log-task-edit") as HTMLSelectElement | null;
 			const text = textEl?.value.trim() ?? "";
 			const hoursRaw = hoursEl?.value ?? "";
 			const hours = parseHoursInput(hoursRaw);
+			const nextDate = (dateEl?.value ?? date).trim();
+			const targetId = taskEl?.value || t.id;
+			const target = this.tasks().find((x) => x.id === targetId) ?? t;
 			if (!text) {
 				new Notice("进展内容不能为空");
 				this.restoreInputFocus(textEl);
@@ -1357,10 +1669,25 @@ export class ZTaskingView extends ItemView {
 				this.restoreInputFocus(hoursEl);
 				return;
 			}
-			this.selectedId = await this.plugin.store.updateLog(t, date, text, hours);
+			if (!/^\d{4}-\d{2}-\d{2}$/.test(nextDate)) {
+				new Notice("请填写有效日期");
+				this.restoreInputFocus(dateEl);
+				return;
+			}
+			this.selectedId = await this.plugin.store.saveLogEdit(
+				t,
+				date,
+				{ date: nextDate, text, hours: hours ?? 0 },
+				target,
+			);
+			this.detailOpen = true;
 			this.editingLogDate = null;
 			this.renderAll();
-			new Notice("已更新进展");
+			new Notice(
+				target.id === t.id && nextDate === date
+					? "已更新进展"
+					: `已保存到「${target.project} · ${target.title}」· ${nextDate}`,
+			);
 			return;
 		}
 		if (act === "del-log") {
@@ -1440,32 +1767,20 @@ export class ZTaskingView extends ItemView {
 	private syncWorkShell(): void {
 		const board = this.contentEl.querySelector("#ztk-view-board") as HTMLElement | null;
 		if (!board) return;
-		const mode: WorkMode = this.view === "board" ? "board" : "list";
-		// 非工作页时仍按 workMode 预渲染，便于切回
-		const activeMode = (this.view === "board" || this.view === "list") ? mode : this.workMode;
-		board.dataset.mode = activeMode;
-		this.renderWorkRail(activeMode);
-		if (activeMode === "board") {
-			this.renderBoardYesterday();
-			this.renderBoardToday();
-			this.renderBoardPlan();
-			this.renderSidebarChrome();
-			this.renderList();
-		} else {
-			this.renderBoardYesterday(false);
-			this.renderBoardToday(false);
-			this.renderBoardPlan(false);
-			this.renderFilters();
-			this.renderCatalog();
-		}
+		this.renderBoardYesterday();
+		this.renderBoardToday();
+		this.renderBoardPlan();
+		this.renderFilters();
+		this.renderCatalog();
 	}
 
-	/** 工作台最左：昨日计划（只读） */
+	/** 工作台最左：昨日计划（可编辑） */
 	private renderBoardYesterday(show = true): void {
 		const box = this.contentEl.querySelector<HTMLElement>(".ztk-board-yesterday");
 		if (!box) return;
 		if (!show) {
 			box.innerHTML = "";
+			box.classList.remove("is-collapsed");
 			return;
 		}
 		const yKey = prevDateStr(todayStr());
@@ -1473,7 +1788,13 @@ export class ZTaskingView extends ItemView {
 			this.yesterdayPlanLoadedFor = yKey;
 			void this.refreshYesterdayPlanCache();
 		}
-		box.innerHTML = yesterdayPlanBlockHtml(this.yesterdayPlanCache);
+		const collapsed = this.boardCollapsed.yesterday;
+		box.classList.toggle("is-collapsed", collapsed);
+		box.innerHTML = yesterdayPlanBlockHtml({
+			items: this.yesterdayPlanCache.items,
+			selectedId: this.ypDrawerId && this.ypDrawerId !== YP_DRAWER_NEW ? this.ypDrawerId : null,
+			collapsed,
+		});
 	}
 
 	/** 工作台中间上：复用汇总页「我的今天」卡片 */
@@ -1482,10 +1803,13 @@ export class ZTaskingView extends ItemView {
 		if (!box) return;
 		if (!show) {
 			box.innerHTML = "";
+			box.classList.remove("is-collapsed");
 			return;
 		}
 		const today = todayStr();
 		const todayLogs = this.logsOn(today, "all");
+		const collapsed = this.boardCollapsed.today;
+		box.classList.toggle("is-collapsed", collapsed);
 		box.innerHTML = todayDigestHtml(
 			today,
 			todayLogs.map((l) => ({
@@ -1495,7 +1819,11 @@ export class ZTaskingView extends ItemView {
 				project: l.task.project,
 				hours: l.hours,
 			})),
-			{ groupByProject: this.plugin.settings.todayGroupByProject === true },
+			{
+				groupByProject: this.plugin.settings.todayGroupByProject === true,
+				collapsible: true,
+				collapsed,
+			},
 		);
 	}
 
@@ -1505,15 +1833,23 @@ export class ZTaskingView extends ItemView {
 		if (!box) return;
 		if (!show) {
 			box.innerHTML = "";
+			box.classList.remove("is-collapsed");
 			return;
 		}
 		const draft = this.syncDailyReportDraft();
+		const collapsed = this.boardCollapsed.plan;
+		box.classList.toggle("is-collapsed", collapsed);
 		box.innerHTML = `
-			<div class="ztk-card ztk-tomorrow-plan">
+			<div class="ztk-card ztk-tomorrow-plan${collapsed ? " is-collapsed" : ""}">
 				<div class="ztk-tomorrow-plan-head">
-					<h2>明日计划</h2>
+					<div class="ztk-section-title">
+						<button type="button" class="ztk-ghost ztk-section-collapse" data-act="toggle-board-section" data-section="plan" title="${collapsed ? "展开" : "折叠"}" aria-expanded="${collapsed ? "false" : "true"}" aria-label="${collapsed ? "展开" : "折叠"}">${collapsed ? "▸" : "▾"}</button>
+						<h2>明日计划</h2>
+					</div>
 				</div>
-				${tomorrowPlanListHtml(draft.planItems)}
+				<div class="ztk-collapsible-body">
+					${tomorrowPlanListHtml(draft.planItems)}
+				</div>
 			</div>
 		`;
 	}
@@ -1522,20 +1858,331 @@ export class ZTaskingView extends ItemView {
 		try {
 			this.yesterdayPlanCache = await this.plugin.store.readYesterdayPlan();
 		} catch {
-			this.yesterdayPlanCache = { path: null, items: [] };
+			this.yesterdayPlanCache = { path: null, items: [], baseline: [] };
 		}
 		if (this.contentEl.querySelector(".ztk-board-yesterday")) {
 			this.renderBoardYesterday();
 		}
 	}
 
-	private async openYesterdayPlan(path: string): Promise<void> {
-		const file = this.app.vault.getAbstractFileByPath(path);
-		if (!(file instanceof TFile)) {
-			new Notice("昨日日报不存在");
+	private async persistYesterdayPlan(
+		items: YesterdayPlanItem[],
+		baseline: YesterdayPlanItem[],
+	): Promise<void> {
+		try {
+			const path = await this.plugin.store.writeYesterdayPlan(items, baseline);
+			this.yesterdayPlanCache = {
+				path,
+				items: items.map((it) => ({ ...it })),
+				baseline: baseline.map((it) => ({ ...it })),
+			};
+			this.renderBoardYesterday();
+		} catch {
+			new Notice("保存昨日计划失败");
+		}
+	}
+
+	private async openYpDrawer(id: string | null): Promise<void> {
+		this.editingLogDate = null;
+		this.editingYpNoteIdx = null;
+		this.editingDesc = false;
+		this.editingTitle = false;
+		this.selectedId = "";
+		if (!id) {
+			this.ypDrawerId = YP_DRAWER_NEW;
+			this.editingTitle = true;
+		} else {
+			const item = this.yesterdayPlanCache.items.find((it) => it.id === id);
+			if (!item) return;
+			this.ypDrawerId = id;
+			this.editingTitle = false;
+		}
+		this.detailOpen = true;
+		this.syncDetailDrawer();
+		this.renderDetail();
+		this.renderBoardYesterday();
+
+		requestAnimationFrame(() => {
+			this.contentEl.querySelector<HTMLInputElement>("#ztk-title-input")?.focus();
+		});
+	}
+
+	private readYpDescValue(): string {
+		if (this.editingDesc) {
+			const box = this.contentEl.querySelector<HTMLTextAreaElement>("#ztk-desc-text");
+			if (box) return box.value.trim();
+		}
+		if (this.ypDrawerId && this.ypDrawerId !== YP_DRAWER_NEW) {
+			return this.yesterdayPlanCache.items.find((it) => it.id === this.ypDrawerId)?.desc.trim() ?? "";
+		}
+		return "";
+	}
+
+	private readYpDrawerFields(): { title: string; project: string; desc: string } {
+		const titleInput = this.contentEl.querySelector<HTMLInputElement>("#ztk-title-input");
+		const titleEl = this.contentEl.querySelector<HTMLElement>(".ztk-detail-title");
+		const fromCache = this.ypDrawerId && this.ypDrawerId !== YP_DRAWER_NEW
+			? this.yesterdayPlanCache.items.find((it) => it.id === this.ypDrawerId)?.title ?? ""
+			: "";
+		const title = (titleInput?.value ?? titleEl?.textContent ?? fromCache).trim();
+		const project = this.contentEl.querySelector<HTMLSelectElement>(".ztk-yp-project")?.value.trim()
+			|| YP_NO_PROJECT;
+		return { title, project, desc: this.readYpDescValue() };
+	}
+
+	private async ypDrawerSaveFields(opts?: { quiet?: boolean }): Promise<boolean> {
+		if (!this.ypDrawerId) return false;
+		const fields = this.readYpDrawerFields();
+		if (!fields.title) {
+			if (!opts?.quiet) {
+				new Notice("请填写标题");
+				this.editingTitle = true;
+				this.rerenderDetail();
+				this.contentEl.querySelector<HTMLInputElement>("#ztk-title-input")?.focus();
+			}
+			return false;
+		}
+		const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
+		if (this.ypDrawerId === YP_DRAWER_NEW) {
+			const id = newYesterdayPlanItemId();
+			const item: YesterdayPlanItem = { id, ...fields, notes: [], done: false };
+			await this.persistYesterdayPlan([...this.yesterdayPlanCache.items, item], baseline);
+			this.ypDrawerId = id;
+			if (!opts?.quiet) new Notice("已新增昨日计划");
+		} else {
+			const cur = this.yesterdayPlanCache.items.find((it) => it.id === this.ypDrawerId);
+			if (
+				cur
+				&& cur.title === fields.title
+				&& cur.project === fields.project
+				&& cur.desc === fields.desc
+			) {
+				return false;
+			}
+			const items = this.yesterdayPlanCache.items.map((it) =>
+				it.id === this.ypDrawerId ? { ...it, ...fields } : it,
+			);
+			await this.persistYesterdayPlan(items, baseline);
+			if (!opts?.quiet) new Notice("已保存");
+		}
+		this.rerenderDetail();
+		this.renderBoardYesterday();
+		return true;
+	}
+
+	private async ypDrawerAddLog(): Promise<void> {
+		if (!this.ypDrawerId) return;
+		const text = this.contentEl.querySelector<HTMLTextAreaElement>("#ztk-yp-log-text")?.value.trim() ?? "";
+		if (!text) {
+			new Notice("请填写进展内容");
+			this.contentEl.querySelector<HTMLTextAreaElement>("#ztk-yp-log-text")?.focus();
 			return;
 		}
-		await this.app.workspace.getLeaf(false).openFile(file);
+		if (this.ypDrawerId === YP_DRAWER_NEW) {
+			const ok = await this.ypDrawerSaveFields();
+			if (!ok && this.ypDrawerId === YP_DRAWER_NEW) return;
+		}
+		const itemId = this.ypDrawerId;
+		if (!itemId || itemId === YP_DRAWER_NEW) {
+			new Notice("请先填写标题并保存");
+			return;
+		}
+		const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
+		const items = this.yesterdayPlanCache.items.map((it) => {
+			if (it.id !== itemId) return it;
+			return {
+				...it,
+				notes: [...(it.notes ?? []), { date: todayStr(), text }],
+			};
+		});
+		await this.persistYesterdayPlan(items, baseline);
+		this.editingYpNoteIdx = null;
+		this.rerenderDetail();
+		this.renderBoardYesterday();
+		new Notice("已记一笔");
+		requestAnimationFrame(() => {
+			const el = this.contentEl.querySelector<HTMLTextAreaElement>("#ztk-yp-log-text");
+			if (el) el.value = "";
+			this.restoreInputFocus(el);
+		});
+	}
+
+	private async copyYpNote(idx: number): Promise<void> {
+		const item = this.yesterdayPlanCache.items.find((it) => it.id === this.ypDrawerId);
+		const note = item?.notes?.[idx];
+		if (!note) return;
+		await this.copyToClipboard(note.text);
+	}
+
+	private async handleYpNoteAction(act: string, idx: number): Promise<void> {
+		const item = this.yesterdayPlanCache.items.find((it) => it.id === this.ypDrawerId);
+		if (!item) return;
+		const notes = [...(item.notes ?? [])];
+		if (idx < 0 || idx >= notes.length) return;
+		if (act === "edit-log") {
+			this.editingYpNoteIdx = idx;
+			this.rerenderDetail();
+			return;
+		}
+		if (act === "cancel-log") {
+			this.editingYpNoteIdx = null;
+			this.rerenderDetail();
+			return;
+		}
+		if (act === "save-log") {
+			const row = this.contentEl.querySelector(`.ztk-log[data-yp-note-idx="${idx}"]`);
+			const textEl = row?.querySelector("textarea") as HTMLTextAreaElement | null;
+			const dateEl = row?.querySelector(".ztk-log-date-edit") as HTMLInputElement | null;
+			const text = textEl?.value.trim() ?? "";
+			const nextDate = (dateEl?.value ?? notes[idx]!.date).trim();
+			if (!text) {
+				new Notice("进展内容不能为空");
+				this.restoreInputFocus(textEl);
+				return;
+			}
+			if (!/^\d{4}-\d{2}-\d{2}$/.test(nextDate)) {
+				new Notice("请填写有效日期");
+				this.restoreInputFocus(dateEl);
+				return;
+			}
+			notes[idx] = { date: nextDate, text };
+			const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
+			const items = this.yesterdayPlanCache.items.map((it) =>
+				it.id === item.id ? { ...it, notes } : it,
+			);
+			await this.persistYesterdayPlan(items, baseline);
+			this.editingYpNoteIdx = null;
+			this.rerenderDetail();
+			this.renderBoardYesterday();
+			new Notice("已更新进展");
+			return;
+		}
+		if (act === "del-log") {
+			const ok = await askConfirm(
+				this.app,
+				"删除进展",
+				`确定删除 ${notes[idx]!.date} 这条进展？`,
+				"删除",
+			);
+			if (!ok) return;
+			notes.splice(idx, 1);
+			const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
+			const items = this.yesterdayPlanCache.items.map((it) =>
+				it.id === item.id ? { ...it, notes } : it,
+			);
+			await this.persistYesterdayPlan(items, baseline);
+			if (this.editingYpNoteIdx === idx) this.editingYpNoteIdx = null;
+			this.rerenderDetail();
+			this.renderBoardYesterday();
+			new Notice("已删除进展");
+		}
+	}
+
+	private ypNoteRowHtml(note: { date: string; text: string }, idx: number): string {
+		if (this.editingYpNoteIdx === idx) {
+			return `<div class="ztk-log is-editing" data-yp-note-idx="${idx}" data-date="${esc(note.date)}">
+				<div class="ztk-log-when"><time>${esc(note.date)}</time></div>
+				<div class="ztk-log-body">
+					<div class="ztk-log-edit-meta">
+						<label class="ztk-log-field">日期
+							<input class="ztk-log-date-edit" type="date" value="${esc(note.date)}" />
+						</label>
+					</div>
+					<textarea class="ztk-log-edit">${esc(note.text)}</textarea>
+				</div>
+				<div class="ztk-log-actions">
+					${iconBtn("save-log", "save", "保存")}
+					${iconBtn("cancel-log", "cancel", "取消")}
+				</div>
+			</div>`;
+		}
+		const body = esc(note.text).replace(/\n/g, "<br>");
+		return `<div class="ztk-log" data-yp-note-idx="${idx}" data-date="${esc(note.date)}">
+			<div class="ztk-log-when"><time>${esc(note.date)}</time></div>
+			<div class="ztk-log-body">${body}</div>
+			<div class="ztk-log-actions">
+				${iconBtn("copy-log", "copy", "复制")}
+				${iconBtn("edit-log", "edit", "编辑")}
+				${iconBtn("del-log", "del", "删除")}
+			</div>
+		</div>`;
+	}
+
+	private async deleteYesterdayPlanItem(id: string): Promise<void> {
+		const cur = this.yesterdayPlanCache.items.find((it) => it.id === id);
+		if (!cur) return;
+		const ok = await askConfirm(
+			this.app,
+			"删除昨日计划",
+			`确定删除「${cur.title}」？`,
+			"删除",
+		);
+		if (!ok) return;
+		const items = this.yesterdayPlanCache.items.filter((it) => it.id !== id);
+		await this.persistYesterdayPlan(
+			items,
+			this.yesterdayPlanCache.baseline.map((it) => ({ ...it })),
+		);
+		if (this.ypDrawerId === id) this.closeDetailDrawer();
+		new Notice("已删除昨日计划");
+	}
+
+	private async resetYesterdayPlan(): Promise<void> {
+		const ok = await askConfirm(
+			this.app,
+			"重置昨日计划",
+			"将恢复为根据昨日日报「明日计划」生成的内容，当前增删改会丢失。",
+			"重置",
+		);
+		if (!ok) return;
+		const baseline = this.yesterdayPlanCache.baseline.map((it) => ({
+			...it,
+			id: newYesterdayPlanItemId(),
+			notes: [],
+			done: false,
+		}));
+		await this.persistYesterdayPlan(baseline, this.yesterdayPlanCache.baseline.map((it) => ({ ...it })));
+		if (this.ypDrawerId) this.closeDetailDrawer();
+		new Notice("已重置昨日计划");
+	}
+
+	private async toggleYesterdayPlanDone(id: string): Promise<void> {
+		const cur = this.yesterdayPlanCache.items.find((it) => it.id === id);
+		if (!cur) return;
+		const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
+		const items = this.yesterdayPlanCache.items.map((it) =>
+			it.id === id ? { ...it, done: !it.done } : it,
+		);
+		await this.persistYesterdayPlan(items, baseline);
+		this.renderBoardYesterday();
+	}
+
+	private async ypQuickAdd(): Promise<void> {
+		const projects = withYpNoProjectOption(this.plugin.store.projects);
+		const defaultProject = resolveYpDefaultProject(this.projectFilter);
+		const result = await askYpQuickAdd(this.app, projects, defaultProject);
+		if (!result) return;
+		const titles = parseYesterdayPlanQuickLines(result.text);
+		if (!titles.length) {
+			new Notice("请输入至少一行标题");
+			return;
+		}
+		const project = result.project.trim() || YP_NO_PROJECT;
+		const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
+		const added: YesterdayPlanItem[] = titles.map((title) => ({
+			id: newYesterdayPlanItemId(),
+			title,
+			project,
+			desc: "",
+			notes: [],
+			done: false,
+		}));
+		await this.persistYesterdayPlan(
+			[...this.yesterdayPlanCache.items, ...added],
+			baseline,
+		);
+		this.renderBoardYesterday();
+		new Notice(`已新增 ${added.length} 条昨日计划`);
 	}
 
 	/** 汇总页：「今日日报」卡片 HTML */
@@ -1661,7 +2308,7 @@ export class ZTaskingView extends ItemView {
 
 	/** 同步刷新工作台与汇总上的明日计划 UI */
 	private refreshPlanSurfaces(): void {
-		if (this.view === "board" || this.workMode === "board") this.renderBoardPlan();
+		if (this.view === "board") this.renderBoardPlan();
 		const planArea = this.contentEl.querySelector<HTMLTextAreaElement>(".ztk-daily-plan");
 		if (planArea && document.activeElement !== planArea) {
 			const draft = this.syncDailyReportDraft();
@@ -1728,112 +2375,97 @@ export class ZTaskingView extends ItemView {
 		new Notice(ok ? "已复制今日日报" : "复制失败，请手动全选复制");
 	}
 
-	private renderWorkRail(mode: WorkMode = this.workMode): void {
-		this.contentEl.querySelectorAll<HTMLButtonElement>(".ztk-work-rail [data-work-mode]").forEach((b) => {
-			b.classList.toggle("on", b.dataset.workMode === mode);
-		});
-	}
 
 	private filterBarHtml(extra = ""): string {
 		return `
-			<button class="ztk-chip ${this.typeFilter === "all" ? "on" : ""}" data-k="all" type="button">全部</button>
-			<button class="ztk-chip ${this.typeFilter === "long" ? "on" : ""}" data-k="long" type="button">长期</button>
-			<button class="ztk-chip ${this.typeFilter === "temp" ? "on" : ""}" data-k="temp" type="button">临时</button>
-			<button class="ztk-chip ${this.typeFilter === "bug" ? "on" : ""}" data-k="bug" type="button">缺陷</button>
-			<select class="ztk-status-filter">
+			<select class="ztk-type-filter" aria-label="类型筛选">
+				<option value="all">全部类型</option>
+				<option value="long">长期</option>
+				<option value="temp">临时</option>
+				<option value="bug">缺陷</option>
+			</select>
+			<select class="ztk-status-filter" aria-label="状态筛选">
 				<option value="all">全部状态</option>
 				<option value="todo">未开始</option>
 				<option value="doing">进行中</option>
 				<option value="done">已完结</option>
+				<option value="!done">不包括已完结</option>
+				<option value="!todo">不包括未开始</option>
+				<option value="!doing">不包括进行中</option>
 			</select>
+			<span class="ztk-catalog-dates" title="按任务周期重叠筛选">
+				<input type="date" class="ztk-catalog-date-start" aria-label="周期起" value="${esc(this.catalogDateStart)}" />
+				<span class="ztk-period-tilde">~</span>
+				<input type="date" class="ztk-catalog-date-end" aria-label="周期止" value="${esc(this.catalogDateEnd)}" />
+			</span>
 			${extra}
 		`;
 	}
 
-	private renderSidebarChrome(): void {
-		this.$(".ztk-filters").innerHTML = `
-			<div class="ztk-side-filters">
-				<select class="ztk-side-type" aria-label="类型筛选">
-					<option value="long">长期</option>
-					<option value="temp">临时</option>
-					<option value="bug">缺陷</option>
-				</select>
-				<select class="ztk-side-status" aria-label="状态筛选">
-					<option value="all">全部状态</option>
-					<option value="todo">未开始</option>
-					<option value="doing">进行中</option>
-					<option value="done">已完结</option>
-					<option value="!done">不包括已完结</option>
-					<option value="!todo">不包括未开始</option>
-					<option value="!doing">不包括进行中</option>
-				</select>
-			</div>
-		`;
-		const type = this.contentEl.querySelector<HTMLSelectElement>(".ztk-side-type");
-		const status = this.contentEl.querySelector<HTMLSelectElement>(".ztk-side-status");
-		if (type) type.value = this.sidebarType;
-		if (status) status.value = this.sidebarStatus;
-	}
 
 	private renderFilters(): void {
 		this.$(".ztk-filters").innerHTML = this.filterBarHtml(
 			`<input class="ztk-search" type="search" placeholder="搜索标题或说明" value="${esc(this.query)}" />
 			<span class="ztk-catalog-count">${this.catalogFiltered().length} / ${this.projectTasks().length}</span>`,
 		);
+		this.contentEl.querySelectorAll<HTMLSelectElement>(".ztk-type-filter").forEach((el) => {
+			el.value = this.typeFilter;
+		});
 		this.contentEl.querySelectorAll<HTMLSelectElement>(".ztk-status-filter").forEach((el) => {
 			el.value = this.statusFilter;
 		});
 	}
 
-	private renderList(): void {
-		const today = todayStr();
-		const items = this.sidebarTasks();
-		const cards = items.map((t) => {
-			const need = t.status === "doing" && !t.logs.some((l) => l.date === today);
-			return `<div class="ztk-task ${t.id === this.selectedId && this.detailOpen ? "sel" : ""}" data-id="${esc(t.id)}">
-				<button type="button" class="ztk-drag-handle" draggable="true" title="拖动排序" aria-label="拖动排序">⠿</button>
-				<div class="ztk-rail ${t.type}"></div>
-				<div class="ztk-task-main">
-					<h3>${esc(t.title)}</h3>
-					<div class="ztk-meta">
-						${projectBadgeHtml(t.project)}
-						<span class="ztk-st ${t.status}">${STATUS_LABEL[t.status]}</span>
-						<span>${esc(t.start)} → ${esc(t.end)}</span>
-						<span>${t.logs.length} 笔</span>
-					</div>
-				</div>
-				<div class="ztk-task-trail">
-					${need ? `<div class="ztk-need" title="今天还没记"></div>` : ""}
-					<button type="button" class="ztk-task-del" data-act="del-task" data-id="${esc(t.id)}" title="删除任务" aria-label="删除任务">×</button>
-				</div>
-			</div>`;
-		}).join("");
-		this.$(".ztk-task-list").innerHTML = cards
-			|| `<p class="ztk-empty">${TYPE_LABEL[this.sidebarType]}里没有符合筛选的任务</p>`;
-	}
 
 	private renderCatalog(): void {
 		const items = this.catalogFiltered();
-		const rows = items.map((t) => `
+		const sortMark = (key: CatalogSortKey) => {
+			if (this.catalogSort?.key !== key) return "";
+			return this.catalogSort.dir === "asc" ? " ▲" : " ▼";
+		};
+		const sortClass = (key: CatalogSortKey) =>
+			this.catalogSort?.key === key ? " is-sorted" : "";
+		const rows = items.map((t) => {
+			const hours = sumHours(t.logs);
+			const hoursLabel = hours > 0 ? esc(formatHours(hours)) : "—";
+			return `
 			<tr data-act="goto-task" data-id="${esc(t.id)}" class="${t.id === this.selectedId && this.detailOpen ? "sel" : ""}">
+				<td class="ztk-catalog-drag">
+					<button type="button" class="ztk-drag-handle" draggable="true" title="拖拽排序" aria-label="拖拽排序">⋮⋮</button>
+				</td>
 				<td><span class="ztk-rail-dot ${t.type}"></span>${esc(t.title)}</td>
 				<td>${projectBadgeHtml(t.project)}</td>
 				<td>${TYPE_LABEL[t.type]}</td>
 				<td><span class="ztk-st ${t.status}">${STATUS_LABEL[t.status]}</span></td>
 				<td>${esc(t.start)} → ${esc(t.end)}</td>
 				<td>${t.logs.length} 笔</td>
+				<td class="ztk-catalog-hours">${hoursLabel}</td>
 				<td class="ztk-catalog-actions">
 					<button type="button" class="ztk-task-del" data-act="del-task" data-id="${esc(t.id)}" title="删除任务" aria-label="删除任务">×</button>
 				</td>
-			</tr>
-		`).join("");
+			</tr>`;
+		}).join("");
 		this.$(".ztk-catalog-body").innerHTML = `
 			<table>
 				<thead>
-					<tr><th>标题</th><th>项目</th><th>类型</th><th>状态</th><th>周期</th><th>进展</th><th></th></tr>
+					<tr>
+						<th></th>
+						<th>标题</th>
+						<th>项目</th>
+						<th>
+							<button type="button" class="ztk-th-sort${sortClass("type")}" data-act="catalog-sort" data-key="type" title="按类型排序">类型${sortMark("type")}</button>
+						</th>
+						<th>
+							<button type="button" class="ztk-th-sort${sortClass("status")}" data-act="catalog-sort" data-key="status" title="按状态排序">状态${sortMark("status")}</button>
+						</th>
+						<th>周期</th>
+						<th>进展</th>
+						<th>工时</th>
+						<th></th>
+					</tr>
 				</thead>
 				<tbody>
-					${rows || `<tr><td colspan="7">没有匹配的任务</td></tr>`}
+					${rows || `<tr><td colspan="9">没有匹配的任务</td></tr>`}
 				</tbody>
 			</table>
 		`;
@@ -1845,12 +2477,82 @@ export class ZTaskingView extends ItemView {
 		return this.$("#ztk-view-board .ztk-detail");
 	}
 
+	private renderYpDetail(el: HTMLElement): void {
+		const isNew = this.ypDrawerId === YP_DRAWER_NEW;
+		const item = isNew
+			? null
+			: this.yesterdayPlanCache.items.find((it) => it.id === this.ypDrawerId) ?? null;
+		const title = item?.title ?? "";
+		const project = item?.project
+			|| resolveYpDefaultProject(this.projectFilter);
+		const desc = item?.desc ?? "";
+		const projects = withYpNoProjectOption(this.plugin.store.projects);
+		const projectOpts = [
+			...projects.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`),
+			projects.includes(project) ? "" : `<option value="${esc(project)}">${esc(project)}</option>`,
+		].join("");
+		const notes = [...(item?.notes ?? [])]
+			.map((n, idx) => ({ ...n, idx }))
+			.sort((a, b) => b.date.localeCompare(a.date) || b.idx - a.idx);
+		const displayTitle = title.trim() || "未命名计划";
+		el.innerHTML = `
+			<div class="ztk-detail-head ztk-yp-detail-head">
+				<div class="ztk-detail-head-top">
+					<div class="ztk-title-block">
+						${this.editingTitle
+							? `<div class="ztk-title-edit">
+									<input id="ztk-title-input" class="ztk-title-input" value="${esc(title)}" placeholder="计划标题" />
+									<div class="ztk-title-edit-actions">
+										${iconBtn("cancel-title", "cancel", "取消")}
+										${iconBtn("save-title", "save", "保存")}
+									</div>
+								</div>`
+							: `<h1 class="ztk-detail-title" title="右键可修改标题">${esc(displayTitle)}</h1>`}
+					</div>
+					<button type="button" class="ztk-ghost ztk-detail-close" data-act="close-detail" title="关闭" aria-label="关闭">×</button>
+				</div>
+				<div class="ztk-kicker ztk-yp-kicker">${isNew ? "新增昨日计划" : "编辑昨日计划"}</div>
+				<div class="ztk-meta-fields">
+					<label>所属项目
+						<select class="ztk-yp-project">${projectOpts}</select>
+					</label>
+				</div>
+			</div>
+			${descBlockHtml({ editing: this.editingDesc, desc, path: "" })}
+			<div class="ztk-yp-drawer-actions">
+				<button type="button" class="ztk-btn" data-act="yp-drawer-save">${isNew ? "保存计划" : "保存"}</button>
+			</div>
+			<div class="ztk-composer">
+				<label>记一笔 · ${todayStr()}</label>
+				<textarea id="ztk-yp-log-text" placeholder="写进展（无需工时）"></textarea>
+				<div class="ztk-composer-row">
+					<button class="ztk-btn" data-act="yp-drawer-add-log" type="button">记一笔</button>
+				</div>
+			</div>
+			<div class="ztk-log-list">
+				${item
+					? (notes.map((n) => this.ypNoteRowHtml(n, n.idx)).join("")
+						|| `<p class="ztk-muted">还没有进展，从上面记第一笔。</p>`)
+					: `<p class="ztk-muted">保存计划后可记进展。</p>`}
+			</div>
+		`;
+		el.classList.add("is-yp-drawer");
+		const projectEl = el.querySelector(".ztk-yp-project") as HTMLSelectElement | null;
+		if (projectEl) projectEl.value = project;
+	}
+
 	private renderDetail(): void {
 		const el = this.activeDetail();
-		if (!this.detailOpen || !this.selectedId) {
+		if (!this.detailOpen || (!this.selectedId && !this.ypDrawerId)) {
 			el.innerHTML = "";
+			el.classList.remove("is-yp-drawer");
 			return;
 		}
+		if (this.ypDrawerId) {
+			this.renderYpDetail(el);
+			return;
+		}
+		el.classList.remove("is-yp-drawer");
 		const t = this.tasks().find((x) => x.id === this.selectedId);
 		if (!t) {
 			el.innerHTML = `
@@ -1933,12 +2635,29 @@ export class ZTaskingView extends ItemView {
 			: "";
 		if (this.editingLogDate === log.date) {
 			const hoursVal = log.hours !== undefined && log.hours > 0 ? String(log.hours) : "";
-			return `<div class="ztk-log" data-date="${esc(log.date)}">
+			const currentId = this.selectedId;
+			const taskOptions = this.tasks()
+				.slice()
+				.sort((a, b) =>
+					a.project.localeCompare(b.project, "zh")
+					|| a.title.localeCompare(b.title, "zh"),
+				)
+				.map((x) => `<option value="${esc(x.id)}"${x.id === currentId ? " selected" : ""}>${esc(x.project)} · ${esc(x.title)}</option>`)
+				.join("");
+			return `<div class="ztk-log is-editing" data-date="${esc(log.date)}">
 				<div class="ztk-log-when"><time>${esc(log.date)}</time>${badge}</div>
 				<div class="ztk-log-body">
-					<label class="ztk-hours-field">工时 (h)
-						<input class="ztk-log-hours-edit" type="number" min="0.1" step="0.1" inputmode="decimal" value="${esc(hoursVal)}" />
-					</label>
+					<div class="ztk-log-edit-meta">
+						<label class="ztk-log-field">日期
+							<input class="ztk-log-date-edit" type="date" value="${esc(log.date)}" />
+						</label>
+						<label class="ztk-log-field ztk-log-field-task">任务
+							<select class="ztk-log-task-edit">${taskOptions}</select>
+						</label>
+						<label class="ztk-hours-field">工时 (h)
+							<input class="ztk-log-hours-edit" type="number" min="0.1" step="0.1" inputmode="decimal" value="${esc(hoursVal)}" />
+						</label>
+					</div>
 					<textarea class="ztk-log-edit">${esc(log.text)}</textarea>
 				</div>
 				<div class="ztk-log-actions">

@@ -3,12 +3,15 @@ import {
 	DAILY_REPORT_DIR,
 	dailyReportNotePath,
 	draftToArchivePayload,
-	extractTomorrowPlanLines,
+	extractYesterdayPlanState,
 	isDailyDraftWorthArchiving,
 	prevDateStr,
+	replaceTomorrowPlanSection,
 	serializeDailyReportNote,
+	type YesterdayPlanItem,
 } from "./daily-archive";
-import { appendTaskLog, parseTaskMarkdown, serializeTaskMarkdown } from "./markdown";
+import { DEFAULT_DAILY_DISCUSS } from "./daily-report";
+import { appendTaskLog, parseTaskMarkdown, relocateTaskLog, serializeTaskMarkdown } from "./markdown";
 import {
 	TYPE_DIR,
 	sanitizeFileName,
@@ -27,6 +30,7 @@ import {
 	needsLegacyMigration,
 	normalizeProjectName,
 	projectFromPath,
+	rootFolderNamesFromListing,
 	taskDir,
 } from "./project";
 
@@ -98,10 +102,23 @@ export class TaskStore {
 		return isTaskPath(this.root(), path) || isLegacyTaskPath(this.root(), path);
 	}
 
-	private rootChildNames(): string[] {
+	private rootChildNamesFromIndex(): string[] {
 		const rootFile = this.app.vault.getAbstractFileByPath(this.root());
 		if (!(rootFile instanceof TFolder)) return [];
-		return rootFile.children.map((c) => c.name);
+		return rootFile.children.filter((c) => c instanceof TFolder).map((c) => c.name);
+	}
+
+	/** 优先 adapter.list 扫磁盘；失败再回落 vault 索引（空目录重启后常丢） */
+	private async listRootChildNames(): Promise<string[]> {
+		const root = this.root();
+		try {
+			const listed = await this.app.vault.adapter.list(root);
+			const fromDisk = rootFolderNamesFromListing(root, listed.folders ?? []);
+			if (fromDisk.length) return fromDisk;
+		} catch {
+			/* adapter 不可用或根不存在 */
+		}
+		return this.rootChildNamesFromIndex();
 	}
 
 	/**
@@ -109,7 +126,7 @@ export class TaskStore {
 	 * 优先整夹改名；目标已存在则逐文件并入。
 	 */
 	async migrateLegacyLayout(): Promise<boolean> {
-		const children = this.rootChildNames();
+		const children = await this.listRootChildNames();
 		if (!needsLegacyMigration(children)) return false;
 		await this.ensureFolder(this.root());
 		await this.ensureFolder(`${this.root()}/${DEFAULT_PROJECT}`);
@@ -146,8 +163,10 @@ export class TaskStore {
 		return moved;
 	}
 
-	refreshProjectList(): void {
-		this.projects = listProjectNames(this.rootChildNames());
+	async refreshProjectList(): Promise<void> {
+		const fromFolders = await this.listRootChildNames();
+		const fromTasks = this.tasks.map((t) => t.project).filter(Boolean);
+		this.projects = listProjectNames([...fromFolders, ...fromTasks]);
 	}
 
 	/** 将日报草稿写入 vault：根目录/日报/YYYY-MM-DD.md（有内容才写） */
@@ -165,14 +184,45 @@ export class TaskStore {
 		return path;
 	}
 
-	/** 读取昨日日报中的「明日计划」条目 */
-	async readYesterdayPlan(): Promise<{ path: string | null; items: string[] }> {
+	/** 读取昨日日报中的「明日计划」条目（含重置基线） */
+	async readYesterdayPlan(): Promise<{
+		path: string | null;
+		items: YesterdayPlanItem[];
+		baseline: YesterdayPlanItem[];
+	}> {
 		const date = prevDateStr(todayStr());
 		const path = dailyReportNotePath(this.root(), date);
 		const file = this.app.vault.getAbstractFileByPath(path);
-		if (!(file instanceof TFile)) return { path: null, items: [] };
+		if (!(file instanceof TFile)) return { path: null, items: [], baseline: [] };
 		const md = await this.app.vault.read(file);
-		return { path, items: extractTomorrowPlanLines(md) };
+		const state = extractYesterdayPlanState(md);
+		const baseline = (state.baseline !== null ? state.baseline : state.items).map((it) => ({ ...it }));
+		return { path, items: state.items, baseline };
+	}
+
+	/** 写回昨日日报的「明日计划」段（可新建空日报） */
+	async writeYesterdayPlan(
+		items: YesterdayPlanItem[],
+		baseline: YesterdayPlanItem[],
+	): Promise<string> {
+		const date = prevDateStr(todayStr());
+		await this.ensureDailyFolder();
+		const path = dailyReportNotePath(this.root(), date);
+		const file = this.app.vault.getAbstractFileByPath(path);
+		const emptyMd = serializeDailyReportNote({
+			date,
+			work: "",
+			plan: "",
+			discuss: DEFAULT_DAILY_DISCUSS,
+		});
+		if (!(file instanceof TFile)) {
+			const md = replaceTomorrowPlanSection(emptyMd, items, baseline);
+			await this.app.vault.create(path, md);
+			return path;
+		}
+		const md = await this.app.vault.read(file);
+		await this.app.vault.modify(file, replaceTomorrowPlanSection(md, items, baseline));
+		return path;
 	}
 
 	async reload(): Promise<void> {
@@ -180,7 +230,7 @@ export class TaskStore {
 		try {
 			await this.ensureFolder(this.root());
 			const migrated = await this.migrateLegacyLayout();
-			this.refreshProjectList();
+			await this.refreshProjectList();
 			await this.ensureFolders();
 			const files = this.app.vault.getMarkdownFiles().filter((f) => this.isTaskFile(f.path));
 			const tasks: Task[] = [];
@@ -192,7 +242,7 @@ export class TaskStore {
 			}
 			tasks.sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title, "zh"));
 			this.tasks = tasks;
-			this.refreshProjectList();
+			await this.refreshProjectList();
 			if (migrated) {
 				new Notice(`已将旧任务目录迁入 ${DEFAULT_PROJECT}/`);
 			}
@@ -265,13 +315,40 @@ export class TaskStore {
 		this.beginMute();
 		try {
 			await this.ensureProjectFolders(name);
-			this.refreshProjectList();
+			// 空目录 Obsidian 重启后常不进索引；落一个占位笔记保证可发现
+			await this.ensureProjectPlaceholder(name);
+			await this.refreshProjectList();
 			if (!this.projects.includes(name)) {
-				this.projects = listProjectNames([...this.rootChildNames(), name]);
+				const children = await this.listRootChildNames();
+				this.projects = listProjectNames([...children, name]);
 			}
 			return { ok: true, name };
 		} finally {
 			this.endMute();
+		}
+	}
+
+	/** 在项目根写占位笔记，避免空项目夹重启后从 vault 索引消失（勿用点号文件，Obsidian 会忽略） */
+	private async ensureProjectPlaceholder(project: string): Promise<void> {
+		const path = `${this.root()}/${project}/_ztasking-project.md`;
+		if (this.app.vault.getAbstractFileByPath(path)) return;
+		try {
+			await this.app.vault.create(
+				path,
+				[
+					"---",
+					"type: ztasking-project",
+					`project: ${project}`,
+					"---",
+					"",
+					`# ${project}`,
+					"",
+					"此文件由 Z-Tasking 自动创建，用于保留空项目目录；可删，删后请至少保留一条任务笔记。",
+					"",
+				].join("\n"),
+			);
+		} catch {
+			/* 并发创建 */
 		}
 	}
 
@@ -285,15 +362,60 @@ export class TaskStore {
 		return this.save({ ...task, desc });
 	}
 
-	async addLog(task: Task, date: string, text: string, hours: number): Promise<string> {
+	async addLog(task: Task, date: string, text: string, hours: number, bumpStatus = true): Promise<string> {
 		const logs = appendTaskLog(task.logs, date, text, hours);
-		const status = task.status === "todo" ? "doing" : task.status;
+		const status = bumpStatus && task.status === "todo" ? "doing" : task.status;
 		return this.save({ ...task, logs, status });
 	}
 
 	async updateLog(task: Task, date: string, text: string, hours: number): Promise<string> {
 		const logs = task.logs.map((l) => l.date === date ? { ...l, text, hours } : l);
 		return this.save({ ...task, logs });
+	}
+
+	/**
+	 * 保存进展编辑：可改日期、可挪到其他任务；目标日已有进展则合并。
+	 * 返回目标任务 path（用作 selectedId）。
+	 */
+	async saveLogEdit(
+		source: Task,
+		oldDate: string,
+		next: { date: string; text: string; hours: number },
+		target: Task,
+	): Promise<string> {
+		const date = next.date.trim();
+		const text = next.text.trim();
+		if (!date || !text || !(next.hours > 0)) return source.path;
+
+		this.beginMute();
+		try {
+			const same = source.path === target.path;
+			const { sourceLogs, targetLogs } = relocateTaskLog(
+				source.logs,
+				oldDate,
+				{ date, text, hours: next.hours },
+				same ? undefined : target.logs,
+			);
+			const write = async (task: Task, logs: Task["logs"]) => {
+				const file = this.app.vault.getAbstractFileByPath(task.path);
+				if (!(file instanceof TFile)) return;
+				const project = task.project?.trim() || projectFromPath(this.root(), task.path);
+				await this.app.vault.modify(
+					file,
+					serializeTaskMarkdown({ ...task, project, logs, path: task.path, id: task.path }),
+				);
+			};
+			if (same) {
+				await write(source, sourceLogs);
+			} else {
+				await write(source, sourceLogs);
+				await write(target, targetLogs);
+			}
+			await this.reload();
+			return target.path;
+		} finally {
+			this.endMute();
+		}
 	}
 
 	async deleteLog(task: Task, date: string): Promise<string> {

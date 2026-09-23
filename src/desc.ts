@@ -13,7 +13,9 @@ export function descBlockHtml(opts: { editing: boolean; desc: string; path: stri
 		</div>`;
 	}
 	const body = opts.desc.trim()
-		? mdSlotHtml(opts.path, "", "desc")
+		? (opts.path
+			? mdSlotHtml(opts.path, "", "desc")
+			: `<div class="ztk-desc-plain">${esc(opts.desc).replace(/\n/g, "<br>")}</div>`)
 		: `<p class="ztk-muted">还没有说明</p>`;
 	return `<div class="ztk-desc">
 		<div class="ztk-desc-body">${body}</div>

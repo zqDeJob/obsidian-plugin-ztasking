@@ -245,12 +245,13 @@ function todayItemHtml(
 	index?: number,
 ): string {
 	const label = index !== undefined ? `${index}、${it.title}` : it.title;
-	return `<div class="ztk-today-item" data-path="${esc(it.path)}" data-date="${esc(today)}">
+	return `<div class="ztk-today-item" data-id="${esc(it.id)}" data-path="${esc(it.path)}" data-date="${esc(today)}">
 		<div class="ztk-today-head">
 			<div class="ztk-today-title">
 				<button class="ztk-ghost" data-act="goto-task" data-id="${esc(it.id)}" type="button">${esc(label)}</button>
 				${hoursBadgeHtml(it.hours)}
 			</div>
+			<button type="button" class="ztk-task-del" data-act="del-log" data-id="${esc(it.id)}" data-date="${esc(today)}" title="删除今日进展" aria-label="删除今日进展">×</button>
 		</div>
 		${mdSlotHtml(it.path, today)}
 	</div>`;
@@ -277,9 +278,11 @@ export function groupTodayItemsByProject(items: TodayDigestItem[]): { project: s
 export function todayDigestHtml(
 	today: string,
 	items: TodayDigestItem[],
-	opts?: { groupByProject?: boolean },
+	opts?: { groupByProject?: boolean; collapsible?: boolean; collapsed?: boolean },
 ): string {
 	const groupByProject = opts?.groupByProject === true;
+	const collapsible = opts?.collapsible === true;
+	const collapsed = collapsible && opts?.collapsed === true;
 	const total = sumHours(items);
 	const totalLabel = total > 0 ? ` · ${formatHours(total)}` : "";
 	let body: string;
@@ -294,17 +297,25 @@ export function todayDigestHtml(
 	} else {
 		body = items.map((it) => todayItemHtml(today, it)).join("");
 	}
-	return `<div class="ztk-card ztk-today">
+	const collapseBtn = collapsible
+		? `<button type="button" class="ztk-ghost ztk-section-collapse" data-act="toggle-board-section" data-section="today" title="${collapsed ? "展开" : "折叠"}" aria-expanded="${collapsed ? "false" : "true"}" aria-label="${collapsed ? "展开" : "折叠"}">${collapsed ? "▸" : "▾"}</button>`
+		: "";
+	return `<div class="ztk-card ztk-today${collapsed ? " is-collapsed" : ""}">
 		<div class="ztk-today-bar">
-			<h2>我的今天 · ${esc(today)}${esc(totalLabel)}</h2>
-			<label class="ztk-today-group-toggle" title="按项目标记展示">
-				<span class="ztk-today-group-label">按项目</span>
-				<span class="ztk-switch">
-					<input type="checkbox" class="ztk-today-group-by-project" ${groupByProject ? "checked" : ""} />
-					<span class="ztk-switch-track" aria-hidden="true"><span class="ztk-switch-thumb"></span></span>
-				</span>
-			</label>
+			<div class="ztk-section-title">
+				${collapseBtn}
+				<h2>我的今天 · ${esc(today)}${esc(totalLabel)}</h2>
+			</div>
+			<div class="ztk-today-bar-actions">
+				<label class="ztk-today-group-toggle" title="按项目标记展示">
+					<span class="ztk-today-group-label">按项目</span>
+					<span class="ztk-switch">
+						<input type="checkbox" class="ztk-today-group-by-project" ${groupByProject ? "checked" : ""} />
+						<span class="ztk-switch-track" aria-hidden="true"><span class="ztk-switch-thumb"></span></span>
+					</span>
+				</label>
+			</div>
 		</div>
-		${body}
+		<div class="ztk-collapsible-body">${body}</div>
 	</div>`;
 }

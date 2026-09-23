@@ -66,19 +66,27 @@ export function needsLegacyMigration(rootChildren: string[]): boolean {
 	return rootChildren.some((name) => isLegacyRootTypeFolder(name));
 }
 
-/** 根下项目文件夹名；排除日报与旧类型目录；默认项目始终首位；输入可含重复 */
+/** 根下项目文件夹名；排除日报与旧类型目录；KVAD 仅在存在时置顶，空库才回落默认 */
 export function listProjectNames(rootChildren: string[]): string[] {
 	const seen = new Set<string>();
 	const others: string[] = [];
+	let hasDefault = false;
 	for (const raw of rootChildren) {
 		const name = typeof raw === "string" ? raw.trim() : "";
-		if (!name || isReservedRootName(name) || name === DEFAULT_PROJECT) continue;
+		if (!name || isReservedRootName(name)) continue;
+		if (name === DEFAULT_PROJECT) {
+			hasDefault = true;
+			continue;
+		}
 		if (seen.has(name)) continue;
 		seen.add(name);
 		others.push(name);
 	}
 	others.sort((a, b) => a.localeCompare(b, "zh"));
-	return [DEFAULT_PROJECT, ...others];
+	if (hasDefault || others.length === 0) {
+		return [DEFAULT_PROJECT, ...others];
+	}
+	return others;
 }
 
 /**

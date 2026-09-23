@@ -25,6 +25,7 @@ import {
 import {
 	DEFAULT_PROJECT,
 	isLegacyTaskPath,
+	isReservedRootName,
 	isTaskPath,
 	listProjectNames,
 	needsLegacyMigration,
@@ -85,9 +86,10 @@ export class TaskStore {
 	}
 
 	async ensureFolders(): Promise<void> {
-		await this.ensureProjectFolders(DEFAULT_PROJECT);
-		for (const p of this.projects) {
-			if (p !== DEFAULT_PROJECT) await this.ensureProjectFolders(p);
+		await this.ensureFolder(this.root());
+		const names = this.projects.length ? this.projects : [DEFAULT_PROJECT];
+		for (const p of names) {
+			await this.ensureProjectFolders(p);
 		}
 	}
 
@@ -230,8 +232,6 @@ export class TaskStore {
 		try {
 			await this.ensureFolder(this.root());
 			const migrated = await this.migrateLegacyLayout();
-			await this.refreshProjectList();
-			await this.ensureFolders();
 			const files = this.app.vault.getMarkdownFiles().filter((f) => this.isTaskFile(f.path));
 			const tasks: Task[] = [];
 			for (const file of files) {
@@ -242,12 +242,35 @@ export class TaskStore {
 			}
 			tasks.sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title, "zh"));
 			this.tasks = tasks;
+			await this.pruneOrphanScaffoldProjects();
 			await this.refreshProjectList();
+			await this.ensureFolders();
 			if (migrated) {
 				new Notice(`已将旧任务目录迁入 ${DEFAULT_PROJECT}/`);
 			}
 		} finally {
 			this.endMute();
+		}
+	}
+
+	/**
+	 * 清理「无任务且无建项占位」的空项目夹（多为改名/强制重建残留）。
+	 * 保留 createProject 写下的 _ztasking-project.md 空项目。
+	 */
+	private async pruneOrphanScaffoldProjects(): Promise<void> {
+		const children = await this.listRootChildNames();
+		for (const name of children) {
+			if (isReservedRootName(name)) continue;
+			if (this.tasks.some((t) => t.project === name)) continue;
+			const projectPath = `${this.root()}/${name}`;
+			if (this.app.vault.getAbstractFileByPath(`${projectPath}/_ztasking-project.md`)) continue;
+			const folder = this.app.vault.getAbstractFileByPath(projectPath);
+			if (!(folder instanceof TFolder)) continue;
+			try {
+				await this.app.vault.delete(folder, true);
+			} catch (err) {
+				console.error("Z-Tasking pruneOrphanScaffoldProjects", name, err);
+			}
 		}
 	}
 
@@ -302,8 +325,33 @@ export class TaskStore {
 	}
 
 	async setProject(task: Task, project: string): Promise<string> {
+		const oldProject = (task.project?.trim() || projectFromPath(this.root(), task.path)).trim();
 		const next = project.trim() || DEFAULT_PROJECT;
-		return this.save({ ...task, project: next });
+		const path = await this.save({ ...task, project: next });
+		if (oldProject && oldProject !== next) {
+			await this.pruneProjectIfNoTasks(oldProject);
+			await this.refreshProjectList();
+		}
+		return path;
+	}
+
+	/** 项目下已无任务笔记时删掉空项目夹（含占位文件与空类型目录），避免改名后残留旧项目 */
+	private async pruneProjectIfNoTasks(project: string): Promise<void> {
+		const name = project.trim();
+		if (!name || isReservedRootName(name)) return;
+		if (this.tasks.some((t) => t.project === name)) return;
+		const prefix = `${this.root()}/${name}/`;
+		if (this.tasks.some((t) => t.path.startsWith(prefix))) return;
+		const folder = this.app.vault.getAbstractFileByPath(`${this.root()}/${name}`);
+		if (!(folder instanceof TFolder)) return;
+		this.beginMute();
+		try {
+			await this.app.vault.delete(folder, true);
+		} catch (err) {
+			console.error("Z-Tasking pruneProjectIfNoTasks", name, err);
+		} finally {
+			this.endMute();
+		}
 	}
 
 	/** 创建空业务项目目录（长期/临时/缺陷）；已存在则仍确保子目录齐全。 */

@@ -45,12 +45,24 @@ test("isLegacyRootTypeFolder：识别根下旧类型名", () => {
 	assert.equal(isLegacyRootTypeFolder("日报"), false);
 });
 
-test("listProjectNames：子目录去保留名与旧类型，默认含 KVAD", () => {
+test("listProjectNames：子目录去保留名与旧类型；有 KVAD 时置顶", () => {
 	assert.deepEqual(
 		listProjectNames(["KVAD", "日报", "长期", "终端"]),
 		["KVAD", "终端"],
 	);
+});
+
+test("listProjectNames：无任何项目时回落默认 KVAD（空库种子）", () => {
 	assert.deepEqual(listProjectNames(["日报"]), [DEFAULT_PROJECT]);
+	assert.deepEqual(listProjectNames([]), [DEFAULT_PROJECT]);
+});
+
+test("listProjectNames：磁盘上没有 KVAD 时不强行插入", () => {
+	assert.deepEqual(listProjectNames(["KVAD66", "日报"]), ["KVAD66"]);
+	const names = listProjectNames(["公共类项目", "KVAD66", "终端"]);
+	assert.equal(names.includes("KVAD"), false);
+	assert.deepEqual(new Set(names), new Set(["KVAD66", "公共类项目", "终端"]));
+	assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b, "zh")));
 });
 
 test("listProjectNames：文件夹与任务来源重复时去重", () => {

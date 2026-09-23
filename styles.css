@@ -559,6 +559,7 @@
 }
 .ztk-day-pane-plans .ztk-yesterday-plan-list,
 .ztk-day-pane-plans .ztk-yp-list-root {
+	width: 100%;
 	max-height: min(40vh, 320px);
 	overflow: auto;
 }
@@ -662,18 +663,21 @@
 	display: grid;
 	gap: 2px;
 }
-.ztk-yesterday-plan .ztk-yp-task {
+/* 计划行只有：勾选 / 标题 / 删除；须压过后面的 .ztk-task 四列定义，否则标题挤进 4px 色条列 */
+.ztk-task.ztk-yp-task {
 	cursor: pointer;
 	grid-template-columns: 22px minmax(0, 1fr) auto;
 	align-items: center;
 	margin: 4px 0;
 	padding: 10px 12px;
 	gap: 8px;
+	width: 100%;
+	box-sizing: border-box;
 }
-.ztk-yesterday-plan .ztk-yp-task.is-done {
+.ztk-task.ztk-yp-task.is-done {
 	background: color-mix(in srgb, var(--text-muted) 12%, var(--background-primary));
 }
-.ztk-yesterday-plan .ztk-yp-task.is-done .ztk-task-main h3 {
+.ztk-task.ztk-yp-task.is-done .ztk-task-main h3 {
 	color: var(--text-muted);
 	text-decoration: line-through;
 	text-decoration-color: color-mix(in srgb, var(--text-muted) 55%, transparent);
@@ -720,11 +724,21 @@
 	border-width: 0 2px 2px 0;
 	transform: rotate(45deg);
 }
-.ztk-yesterday-plan .ztk-yp-task .ztk-task-main h3 {
-	margin: 0;
+.ztk-task.ztk-yp-task .ztk-task-main {
+	min-width: 0;
+	grid-column: auto;
 }
-.ztk-yesterday-plan .ztk-yp-task .ztk-meta {
+.ztk-task.ztk-yp-task .ztk-task-main h3 {
+	margin: 0;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+.ztk-task.ztk-yp-task .ztk-meta {
 	margin-top: 4px;
+}
+.ztk-day-pane-plans .ztk-task.ztk-yp-task {
+	margin-left: 0;
+	margin-right: 0;
 }
 .ztk-yp-drawer-actions {
 	display: flex;
@@ -1146,6 +1160,14 @@
 		0 0 0 1px color-mix(in srgb, var(--ztk-line) 88%, transparent);
 	transition: background .15s ease, box-shadow .15s ease, transform .12s ease;
 }
+/* 紧跟 .ztk-task，保证计划行三列不被上面四列盖掉 */
+.ztk-task.ztk-yp-task {
+	grid-template-columns: 22px minmax(0, 1fr) auto;
+	margin: 4px 0;
+	padding: 10px 12px;
+	width: 100%;
+	box-sizing: border-box;
+}
 .ztk-drag-handle {
 	width: 18px;
 	height: 28px;
@@ -1495,11 +1517,12 @@
 .ztk-gantt-logs .ztk-log {
 	grid-template-columns: 92px minmax(0, 1fr);
 }
-/* ?????????????????????????? */
+/* 日历日详情：任务 / 计划列表统一（不加粗、紧凑、同字号） */
 .ztk-day-pane .ztk-log,
 .ztk-day-pane .ztk-day-log {
 	grid-template-columns: minmax(0, 1fr);
-	gap: 6px;
+	gap: 4px;
+	padding: 6px 0;
 }
 .ztk-day-pane .ztk-log time {
 	padding-top: 0;
@@ -1512,18 +1535,56 @@
 	white-space: normal;
 	text-align: left;
 	height: auto;
-	line-height: 1.4;
+	line-height: 1.35;
 	overflow-wrap: anywhere;
 }
 .ztk-day-pane .ztk-day-log-head {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: 6px;
 	min-width: 0;
 }
 .ztk-day-pane .ztk-day-log-head > button.ztk-ghost[data-act="goto-task"] {
 	flex: 1 1 auto;
 	min-width: 0;
+	font-size: 13px;
+	font-weight: 400;
+	line-height: 1.35;
+}
+.ztk-day-pane-plans .ztk-yesterday-plan-list.is-readonly {
+	display: grid;
+	gap: 0;
+}
+.ztk-day-plan {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 0;
+	min-width: 0;
+	border-bottom: 1px dashed var(--ztk-line);
+}
+.ztk-day-pane-plans .ztk-day-plan:last-child {
+	border-bottom: 0;
+}
+.ztk-day-plan-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	font-size: 13px;
+	font-weight: 400;
+	color: var(--ztk-ink);
+	line-height: 1.35;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+.ztk-day-plan.is-done .ztk-day-plan-title {
+	color: var(--text-muted);
+	text-decoration: line-through;
+	text-decoration-color: color-mix(in srgb, var(--text-muted) 55%, transparent);
+}
+.ztk-day-plan .ztk-project-badge {
+	flex: 0 0 auto;
+	font-size: 11px;
+	font-weight: 500;
 }
 .ztk-log time { font-size: 12px; color: var(--ztk-muted); padding-top: 0; }
 .ztk-log p { margin: 0; line-height: 1.6; }
@@ -2064,13 +2125,17 @@
 	box-shadow: none;
 	padding: 0;
 	border-radius: 0;
-	font-weight: 650;
+	font-weight: 400;
+	font-size: 13px;
 	color: var(--ztk-ink);
 	text-align: left;
 	max-width: 100%;
 	white-space: normal;
-	line-height: 1.4;
+	line-height: 1.35;
 	overflow-wrap: anywhere;
+}
+.ztk-today-title > button.ztk-ghost[data-act="goto-task"] {
+	font-weight: 650;
 }
 .ztk-today-title > button.ztk-ghost[data-act="goto-task"]:hover,
 .ztk-day-pane button.ztk-ghost[data-act="goto-task"]:hover {

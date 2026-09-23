@@ -806,10 +806,6 @@ export class ZTaskingView extends ItemView {
 					void this.deleteYesterdayPlanItem(act.dataset.ypId);
 					return;
 				}
-				if (a === "cal-add-plan") {
-					void this.openYpDrawer(null, planReportDateForDay(this.selectedDay));
-					return;
-				}
 				if (a === "yp-drawer-add-log") {
 					void this.ypDrawerAddLog();
 					return;
@@ -2993,12 +2989,11 @@ export class ZTaskingView extends ItemView {
 				if (this.view === "cal") this.renderCalendar();
 			});
 		}
-		const planSelected = this.ypDrawerId && this.ypDrawerId !== YP_DRAWER_NEW ? this.ypDrawerId : null;
 		const planList = yesterdayPlanListHtml({
 			items: this.calPlanCache.reportDate === calReport ? this.calPlanCache.items : [],
-			selectedId: planSelected,
 			emptyText: "这天还没有计划",
 			reportDate: calReport,
+			readonly: true,
 		});
 		this.$(".ztk-day-pane").innerHTML = `
 			<div class="ztk-day-pane-head">
@@ -3022,7 +3017,6 @@ export class ZTaskingView extends ItemView {
 			<section class="ztk-day-pane-section ztk-day-pane-plans" data-yp-report="${esc(calReport)}">
 				<div class="ztk-day-pane-section-head">
 					<h3>计划</h3>
-					<button type="button" class="ztk-ghost ztk-plan-add-btn" data-act="cal-add-plan" title="新增计划" aria-label="新增计划">+</button>
 				</div>
 				${planList}
 			</section>

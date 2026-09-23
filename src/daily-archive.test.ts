@@ -14,6 +14,7 @@ import {
 	serializeYesterdayPlanItems,
 	withYpNoProjectOption,
 	yesterdayPlanBlockHtml,
+	yesterdayPlanListHtml,
 	type YesterdayPlanItem,
 } from "./daily-archive.ts";
 
@@ -89,6 +90,21 @@ test("空草稿不值得归档；有计划或工作时才归档", () => {
 		}),
 		true,
 	);
+});
+
+test("yesterdayPlanListHtml：只读模式无勾选、无删除、不可编辑", () => {
+	const html = yesterdayPlanListHtml({
+		items: [yp("只看", "", "r1", "终端", [], true)],
+		readonly: true,
+	});
+	assert.match(html, /ztk-day-plan/);
+	assert.match(html, /只看/);
+	assert.match(html, /is-done/);
+	assert.doesNotMatch(html, /ztk-yp-check/);
+	assert.doesNotMatch(html, /data-act="edit-yesterday-plan"/);
+	assert.doesNotMatch(html, /data-act="del-yesterday-plan"/);
+	assert.doesNotMatch(html, /data-act="toggle-yesterday-plan"/);
+	assert.doesNotMatch(html, /ztk-task-del/);
 });
 
 test("yesterdayPlanBlockHtml：标题为昨日计划，不展示日期控件", () => {

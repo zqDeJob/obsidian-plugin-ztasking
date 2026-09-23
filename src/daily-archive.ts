@@ -371,16 +371,26 @@ export function yesterdayPlanListHtml(opts: {
 	selectedId?: string | null;
 	emptyText?: string;
 	reportDate?: string;
+	/** 只读：无勾选/删除/点击编辑（日历日详情） */
+	readonly?: boolean;
 }): string {
 	const reportAttr = opts.reportDate ? ` data-yp-report="${esc(opts.reportDate)}"` : "";
+	const readonly = opts.readonly === true;
 	if (!opts.items.length) {
 		return `<div class="ztk-yp-list-root"${reportAttr}><p class="ztk-yesterday-plan-empty">${esc(opts.emptyText ?? "暂无计划")}</p></div>`;
 	}
-	return `<div class="ztk-yp-list-root"${reportAttr}><div class="ztk-yesterday-plan-list">${opts.items
+	return `<div class="ztk-yp-list-root"${reportAttr}><div class="ztk-yesterday-plan-list${readonly ? " is-readonly" : ""}">${opts.items
 		.map((it) => {
 			const projectTag = it.project.trim() && it.project.trim() !== YP_NO_PROJECT
 				? projectBadgeHtml(it.project)
 				: "";
+			if (readonly) {
+				return `
+			<div class="ztk-day-plan${it.done ? " is-done" : ""}">
+				<span class="ztk-day-plan-title">${esc(it.title)}</span>
+				${projectTag}
+			</div>`;
+			}
 			const meta = projectTag ? `<div class="ztk-meta">${projectTag}</div>` : "";
 			return `
 			<div class="ztk-task ztk-yp-task${it.done ? " is-done" : ""}${opts.selectedId === it.id ? " sel" : ""}" data-act="edit-yesterday-plan" data-yp-id="${esc(it.id)}" role="button" tabindex="0" title="点击编辑">

@@ -38,6 +38,11 @@ export function prevDateStr(date: string): string {
 	return fmt(addDays(parseDate(date), -1));
 }
 
+/** 某日「计划」写在哪份日报：D 的计划来自 日报/(D-1).md 的「明日计划」段 */
+export function planReportDateForDay(planDay: string): string {
+	return prevDateStr(planDay);
+}
+
 export function serializeDailyReportNote(payload: DailyArchivePayload): string {
 	const work = payload.work.trim();
 	const plan = payload.plan.trim();
@@ -361,37 +366,56 @@ export function parseYesterdayPlanQuickLines(raw: string): string[] {
 		.filter(Boolean);
 }
 
+export function yesterdayPlanListHtml(opts: {
+	items: YesterdayPlanItem[];
+	selectedId?: string | null;
+	emptyText?: string;
+	reportDate?: string;
+}): string {
+	const reportAttr = opts.reportDate ? ` data-yp-report="${esc(opts.reportDate)}"` : "";
+	if (!opts.items.length) {
+		return `<div class="ztk-yp-list-root"${reportAttr}><p class="ztk-yesterday-plan-empty">${esc(opts.emptyText ?? "暂无计划")}</p></div>`;
+	}
+	return `<div class="ztk-yp-list-root"${reportAttr}><div class="ztk-yesterday-plan-list">${opts.items
+		.map((it) => {
+			const projectTag = it.project.trim() && it.project.trim() !== YP_NO_PROJECT
+				? projectBadgeHtml(it.project)
+				: "";
+			const meta = projectTag ? `<div class="ztk-meta">${projectTag}</div>` : "";
+			return `
+			<div class="ztk-task ztk-yp-task${it.done ? " is-done" : ""}${opts.selectedId === it.id ? " sel" : ""}" data-act="edit-yesterday-plan" data-yp-id="${esc(it.id)}" role="button" tabindex="0" title="点击编辑">
+				<label class="ztk-yp-check-wrap" data-act="toggle-yesterday-plan" data-yp-id="${esc(it.id)}" title="${it.done ? "标记未完成" : "标记完成"}">
+					<input type="checkbox" class="ztk-yp-check"${it.done ? " checked" : ""} />
+				</label>
+				<div class="ztk-task-main">
+					<h3>${esc(it.title)}</h3>
+					${meta}
+				</div>
+				<div class="ztk-task-trail">
+					<button type="button" class="ztk-task-del" data-act="del-yesterday-plan" data-yp-id="${esc(it.id)}" title="删除" aria-label="删除">×</button>
+				</div>
+			</div>`;
+		})
+		.join("")}</div></div>`;
+}
+
 export function yesterdayPlanBlockHtml(opts: {
 	items: YesterdayPlanItem[];
 	selectedId?: string | null;
 	collapsed?: boolean;
+	/** 计划所属日（计划是为哪天准备的）；对应日报日期为 D-1；仅用于 data 属性，不展示日期控件 */
+	planDay?: string;
 }): string {
 	const collapsed = opts.collapsed === true;
-	const list = opts.items.length
-		? `<div class="ztk-yesterday-plan-list">${opts.items
-			.map((it) => {
-				const projectTag = it.project.trim() && it.project.trim() !== YP_NO_PROJECT
-					? projectBadgeHtml(it.project)
-					: "";
-				const meta = projectTag ? `<div class="ztk-meta">${projectTag}</div>` : "";
-				return `
-				<div class="ztk-task ztk-yp-task${it.done ? " is-done" : ""}${opts.selectedId === it.id ? " sel" : ""}" data-act="edit-yesterday-plan" data-yp-id="${esc(it.id)}" role="button" tabindex="0" title="点击编辑">
-					<label class="ztk-yp-check-wrap" data-act="toggle-yesterday-plan" data-yp-id="${esc(it.id)}" title="${it.done ? "标记未完成" : "标记完成"}">
-						<input type="checkbox" class="ztk-yp-check"${it.done ? " checked" : ""} />
-					</label>
-					<div class="ztk-task-main">
-						<h3>${esc(it.title)}</h3>
-						${meta}
-					</div>
-					<div class="ztk-task-trail">
-						<button type="button" class="ztk-task-del" data-act="del-yesterday-plan" data-yp-id="${esc(it.id)}" title="删除" aria-label="删除">×</button>
-					</div>
-				</div>`;
-			})
-			.join("")}</div>`
-		: `<p class="ztk-yesterday-plan-empty">暂无昨日计划</p>`;
+	const planDay = opts.planDay?.trim() || "";
+	const list = yesterdayPlanListHtml({
+		items: opts.items,
+		selectedId: opts.selectedId,
+		emptyText: "暂无计划",
+		reportDate: planDay ? planReportDateForDay(planDay) : undefined,
+	});
 	return `
-		<div class="ztk-card ztk-yesterday-plan${collapsed ? " is-collapsed" : ""}">
+		<div class="ztk-card ztk-yesterday-plan${collapsed ? " is-collapsed" : ""}"${planDay ? ` data-yp-report="${esc(planReportDateForDay(planDay))}"` : ""}>
 			<div class="ztk-yesterday-plan-head">
 				<div class="ztk-section-title">
 					<button type="button" class="ztk-ghost ztk-section-collapse" data-act="toggle-board-section" data-section="yesterday" title="${collapsed ? "展开" : "折叠"}" aria-expanded="${collapsed ? "false" : "true"}" aria-label="${collapsed ? "展开" : "折叠"}">${collapsed ? "▸" : "▾"}</button>
@@ -400,7 +424,7 @@ export function yesterdayPlanBlockHtml(opts: {
 				<div class="ztk-yesterday-plan-actions">
 					<button type="button" class="ztk-ghost" data-act="yp-quick-add" title="按行批量新增">批量新增</button>
 					<button type="button" class="ztk-btn" data-act="add-yesterday-plan" title="新增计划">新增</button>
-					<button type="button" class="ztk-btn" data-act="reset-yesterday-plan" title="恢复为根据明日计划生成的内容">重置</button>
+					<button type="button" class="ztk-btn" data-act="reset-yesterday-plan" title="恢复为归档基线">重置</button>
 				</div>
 			</div>
 			<div class="ztk-collapsible-body">${list}</div>

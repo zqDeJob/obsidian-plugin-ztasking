@@ -24,12 +24,14 @@ import {
 } from "./model";
 import {
 	DEFAULT_PROJECT,
+	canDeleteProject,
 	isLegacyTaskPath,
 	isReservedRootName,
 	isTaskPath,
 	listProjectNames,
 	needsLegacyMigration,
 	normalizeProjectName,
+	prepareRenameProject,
 	projectFromPath,
 	rootFolderNamesFromListing,
 	taskDir,
@@ -186,28 +188,30 @@ export class TaskStore {
 		return path;
 	}
 
-	/** 读取昨日日报中的「明日计划」条目（含重置基线） */
-	async readYesterdayPlan(): Promise<{
+	/** 读取指定日报日期中的「明日计划」条目（含重置基线）；默认昨天 */
+	async readYesterdayPlan(reportDate?: string): Promise<{
 		path: string | null;
 		items: YesterdayPlanItem[];
 		baseline: YesterdayPlanItem[];
+		reportDate: string;
 	}> {
-		const date = prevDateStr(todayStr());
+		const date = (reportDate?.trim() || prevDateStr(todayStr()));
 		const path = dailyReportNotePath(this.root(), date);
 		const file = this.app.vault.getAbstractFileByPath(path);
-		if (!(file instanceof TFile)) return { path: null, items: [], baseline: [] };
+		if (!(file instanceof TFile)) return { path: null, items: [], baseline: [], reportDate: date };
 		const md = await this.app.vault.read(file);
 		const state = extractYesterdayPlanState(md);
 		const baseline = (state.baseline !== null ? state.baseline : state.items).map((it) => ({ ...it }));
-		return { path, items: state.items, baseline };
+		return { path, items: state.items, baseline, reportDate: date };
 	}
 
-	/** 写回昨日日报的「明日计划」段（可新建空日报） */
+	/** 写回指定日报日期的「明日计划」段（可新建空日报）；默认昨天 */
 	async writeYesterdayPlan(
 		items: YesterdayPlanItem[],
 		baseline: YesterdayPlanItem[],
+		reportDate?: string,
 	): Promise<string> {
-		const date = prevDateStr(todayStr());
+		const date = (reportDate?.trim() || prevDateStr(todayStr()));
 		await this.ensureDailyFolder();
 		const path = dailyReportNotePath(this.root(), date);
 		const file = this.app.vault.getAbstractFileByPath(path);
@@ -371,6 +375,58 @@ export class TaskStore {
 				this.projects = listProjectNames([...children, name]);
 			}
 			return { ok: true, name };
+		} finally {
+			this.endMute();
+		}
+	}
+
+	/** 重命名项目文件夹；任务 path 随目录变更，调用方需同步 sidebarOrder */
+	async renameProject(
+		from: string,
+		rawTo: string,
+	): Promise<{ ok: true; from: string; to: string } | { ok: false; reason: string }> {
+		const prepared = prepareRenameProject(from, rawTo, this.projects);
+		if (!prepared.ok) return prepared;
+		const { from: oldName, to } = prepared;
+		const oldPath = `${this.root()}/${oldName}`;
+		const newPath = `${this.root()}/${to}`;
+		const folder = this.app.vault.getAbstractFileByPath(oldPath);
+		if (!(folder instanceof TFolder)) {
+			return { ok: false, reason: `找不到项目目录「${oldName}」` };
+		}
+		if (this.app.vault.getAbstractFileByPath(newPath)) {
+			return { ok: false, reason: `已存在项目「${to}」` };
+		}
+		this.beginMute();
+		try {
+			await this.app.fileManager.renameFile(folder, newPath);
+			await this.reload();
+			return { ok: true, from: oldName, to };
+		} catch (err) {
+			console.error("Z-Tasking renameProject", oldName, to, err);
+			return { ok: false, reason: "重命名失败，请查看控制台" };
+		} finally {
+			this.endMute();
+		}
+	}
+
+	/** 删除空项目目录；有任务时拒绝（规则 A） */
+	async deleteProject(name: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+		const check = canDeleteProject(name, this.tasks);
+		if (!check.ok) return check;
+		const folder = this.app.vault.getAbstractFileByPath(`${this.root()}/${name.trim()}`);
+		if (!(folder instanceof TFolder)) {
+			await this.refreshProjectList();
+			return { ok: false, reason: `找不到项目目录「${name.trim()}」` };
+		}
+		this.beginMute();
+		try {
+			await this.app.vault.delete(folder, true);
+			await this.refreshProjectList();
+			return { ok: true };
+		} catch (err) {
+			console.error("Z-Tasking deleteProject", name, err);
+			return { ok: false, reason: "删除失败，请查看控制台" };
 		} finally {
 			this.endMute();
 		}

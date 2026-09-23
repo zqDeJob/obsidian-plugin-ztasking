@@ -37,15 +37,23 @@ test("nextCatalogSort：同列 none→asc→desc→none；换列重置为 asc", 
 	assert.deepEqual(nextCatalogSort({ key: "type", dir: "asc" }, "status"), { key: "status", dir: "asc" });
 });
 
-test("applyCatalogSort：按类型 / 状态升降序", () => {
+test("applyCatalogSort：按类型 / 状态 / 工时升降序", () => {
 	const tasks = [
-		task({ id: "d", title: "d", type: "bug", status: "done" }),
-		task({ id: "a", title: "a", type: "long", status: "todo" }),
-		task({ id: "b", title: "b", type: "temp", status: "doing" }),
+		task({ id: "d", title: "d", type: "bug", status: "done", logs: [{ date: "2026-01-01", text: "x", hours: 3 }] }),
+		task({ id: "a", title: "a", type: "long", status: "todo", logs: [{ date: "2026-01-01", text: "x", hours: 1 }] }),
+		task({ id: "b", title: "b", type: "temp", status: "doing", logs: [{ date: "2026-01-01", text: "x", hours: 2 }] }),
 	];
 	assert.deepEqual(applyCatalogSort(tasks, { key: "type", dir: "asc" }).map((t) => t.id), ["a", "b", "d"]);
 	assert.deepEqual(applyCatalogSort(tasks, { key: "type", dir: "desc" }).map((t) => t.id), ["d", "b", "a"]);
 	assert.deepEqual(applyCatalogSort(tasks, { key: "status", dir: "asc" }).map((t) => t.id), ["a", "b", "d"]);
 	assert.deepEqual(applyCatalogSort(tasks, { key: "status", dir: "desc" }).map((t) => t.id), ["d", "b", "a"]);
+	assert.deepEqual(applyCatalogSort(tasks, { key: "hours", dir: "asc" }).map((t) => t.id), ["a", "b", "d"]);
+	assert.deepEqual(applyCatalogSort(tasks, { key: "hours", dir: "desc" }).map((t) => t.id), ["d", "b", "a"]);
 	assert.deepEqual(applyCatalogSort(tasks, null).map((t) => t.id), ["d", "a", "b"]);
+});
+
+test("nextCatalogSort：工时列可循环", () => {
+	assert.deepEqual(nextCatalogSort(null, "hours"), { key: "hours", dir: "asc" });
+	assert.deepEqual(nextCatalogSort({ key: "hours", dir: "asc" }, "hours"), { key: "hours", dir: "desc" });
+	assert.deepEqual(nextCatalogSort({ key: "hours", dir: "desc" }, "hours"), null);
 });

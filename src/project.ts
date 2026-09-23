@@ -66,27 +66,20 @@ export function needsLegacyMigration(rootChildren: string[]): boolean {
 	return rootChildren.some((name) => isLegacyRootTypeFolder(name));
 }
 
-/** 根下项目文件夹名；排除日报与旧类型目录；KVAD 仅在存在时置顶，空库才回落默认 */
+/** 根下项目文件夹名；排除日报与旧类型目录；按中文名排序；空库才回落默认 */
 export function listProjectNames(rootChildren: string[]): string[] {
 	const seen = new Set<string>();
-	const others: string[] = [];
-	let hasDefault = false;
+	const names: string[] = [];
 	for (const raw of rootChildren) {
 		const name = typeof raw === "string" ? raw.trim() : "";
 		if (!name || isReservedRootName(name)) continue;
-		if (name === DEFAULT_PROJECT) {
-			hasDefault = true;
-			continue;
-		}
 		if (seen.has(name)) continue;
 		seen.add(name);
-		others.push(name);
+		names.push(name);
 	}
-	others.sort((a, b) => a.localeCompare(b, "zh"));
-	if (hasDefault || others.length === 0) {
-		return [DEFAULT_PROJECT, ...others];
-	}
-	return others;
+	if (names.length === 0) return [DEFAULT_PROJECT];
+	names.sort((a, b) => a.localeCompare(b, "zh"));
+	return names;
 }
 
 /**
@@ -119,10 +112,18 @@ export function filterByProject<T extends { project: string }>(
 	return items.filter((it) => it.project === q);
 }
 
-export function resolveNewTaskProject(projectFilter: string): string {
+/** 新建任务默认项目：顶栏筛了具体项目用筛选值，否则取列表首项；无项目则空串由表单必填兜底 */
+export function resolveNewTaskProject(projectFilter: string, projects: string[] = []): string {
 	const q = projectFilter.trim();
-	if (!q || q === "all") return DEFAULT_PROJECT;
-	return q;
+	if (q && q !== "all") return q;
+	return projects[0]?.trim() || "";
+}
+
+/** select 选中值：preferred 在列表中则用它，否则列表首项 */
+export function resolveProjectSelectValue(preferred: string, projects: string[]): string {
+	const q = preferred.trim();
+	if (q && projects.includes(q)) return q;
+	return projects[0]?.trim() || "";
 }
 
 /**
@@ -133,4 +134,57 @@ export function normalizeProjectName(raw: string): string | null {
 	if (!name) return null;
 	if (isReservedRootName(name)) return null;
 	return name;
+}
+
+export function canDeleteProject(
+	project: string,
+	tasks: { project: string }[],
+): { ok: true } | { ok: false; reason: string } {
+	const name = project.trim();
+	if (!name || isReservedRootName(name)) {
+		return { ok: false, reason: "项目名无效（不能是「日报 / 长期 / 临时 / 缺陷」）" };
+	}
+	const n = tasks.filter((t) => t.project === name).length;
+	if (n > 0) {
+		return {
+			ok: false,
+			reason: `「${name}」下还有 ${n} 个任务，请先迁移或删除任务后再删项目`,
+		};
+	}
+	return { ok: true };
+}
+
+export function prepareRenameProject(
+	from: string,
+	rawTo: string,
+	projects: string[],
+): { ok: true; from: string; to: string } | { ok: false; reason: string } {
+	const oldName = from.trim();
+	if (!oldName || isReservedRootName(oldName)) {
+		return { ok: false, reason: "原项目名无效" };
+	}
+	const to = normalizeProjectName(rawTo);
+	if (!to) {
+		return { ok: false, reason: "项目名无效（不能为空，也不能是「日报 / 长期 / 临时 / 缺陷」）" };
+	}
+	if (to === oldName) {
+		return { ok: false, reason: "名称未变化" };
+	}
+	if (projects.includes(to)) {
+		return { ok: false, reason: `已存在项目「${to}」` };
+	}
+	return { ok: true, from: oldName, to };
+}
+
+/** 项目改名后，把任务 path / sidebarOrder id 里旧前缀换成新前缀 */
+export function remapPathsAfterProjectRename(
+	paths: string[],
+	root: string,
+	from: string,
+	to: string,
+): string[] {
+	const r = normalizeRoot(root);
+	const prefix = `${r}/${from}/`;
+	const nextPrefix = `${r}/${to}/`;
+	return paths.map((p) => (p.startsWith(prefix) ? `${nextPrefix}${p.slice(prefix.length)}` : p));
 }

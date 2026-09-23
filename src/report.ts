@@ -257,7 +257,7 @@ function todayItemHtml(
 	</div>`;
 }
 
-/** 按项目分组；默认项目优先，其余按中文名排序。 */
+/** 按项目分组；按中文名排序。 */
 export function groupTodayItemsByProject(items: TodayDigestItem[]): { project: string; items: TodayDigestItem[] }[] {
 	const map = new Map<string, TodayDigestItem[]>();
 	for (const it of items) {
@@ -268,11 +268,7 @@ export function groupTodayItemsByProject(items: TodayDigestItem[]): { project: s
 	}
 	return [...map.entries()]
 		.map(([project, list]) => ({ project, items: list }))
-		.sort((a, b) => {
-			if (a.project === "KVAD") return -1;
-			if (b.project === "KVAD") return 1;
-			return a.project.localeCompare(b.project, "zh");
-		});
+		.sort((a, b) => a.project.localeCompare(b.project, "zh"));
 }
 
 export function todayDigestHtml(

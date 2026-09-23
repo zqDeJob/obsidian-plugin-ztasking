@@ -20,10 +20,12 @@ import { copyText } from "./clipboard";
 import {
 	newYesterdayPlanItemId,
 	parseYesterdayPlanQuickLines,
+	planReportDateForDay,
 	prevDateStr,
 	resolveYpDefaultProject,
 	withYpNoProjectOption,
 	yesterdayPlanBlockHtml,
+	yesterdayPlanListHtml,
 	YP_NO_PROJECT,
 	type YesterdayPlanItem,
 } from "./daily-archive";
@@ -51,7 +53,9 @@ import {
 	DEFAULT_PROJECT,
 	filterByProject,
 	normalizeProjectName,
+	remapPathsAfterProjectRename,
 	resolveNewTaskProject,
+	resolveProjectSelectValue,
 } from "./project";
 import {
 	formatReportLogsCopyText,
@@ -126,15 +130,16 @@ function askConfirm(app: App, title: string, message: string, okLabel = "确定"
 	});
 }
 
-/** 昨日计划批量新增：多行标题 + 所属项目 */
+/** 昨日计划批量新增：日期 + 多行标题 + 所属项目 */
 function askYpQuickAdd(
 	app: App,
 	projects: string[],
 	defaultProject: string,
-): Promise<{ text: string; project: string } | null> {
+	defaultPlanDay: string,
+): Promise<{ text: string; project: string; planDay: string } | null> {
 	return new Promise((resolve) => {
 		let settled = false;
-		const done = (v: { text: string; project: string } | null) => {
+		const done = (v: { text: string; project: string; planDay: string } | null) => {
 			if (settled) return;
 			settled = true;
 			resolve(v);
@@ -149,8 +154,18 @@ function askYpQuickAdd(
 				this.contentEl.createEl("h2", { text: "批量新增昨日计划" });
 				this.contentEl.createEl("p", {
 					cls: "ztk-bm-modal-lead",
-					text: "一行一条标题，保存后批量写入昨日计划。",
+					text: "日期是计划要执行的那天（默认今天→写入昨天日报）。一行一条标题。",
 				});
+
+				const dayLabel = this.contentEl.createEl("label", {
+					cls: "ztk-yp-quick-field",
+					text: "计划所属日期",
+				});
+				const dayInput = dayLabel.createEl("input", {
+					cls: "ztk-yp-quick-day",
+					attr: { type: "date", value: defaultPlanDay },
+				});
+
 				const projectLabel = this.contentEl.createEl("label", {
 					cls: "ztk-yp-quick-field",
 					text: "所属项目",
@@ -190,6 +205,7 @@ function askYpQuickAdd(
 					done({
 						text: textArea.value,
 						project: projectSel.value.trim() || YP_NO_PROJECT,
+						planDay: dayInput.value.trim() || defaultPlanDay,
 					});
 					this.close();
 				});
@@ -249,20 +265,41 @@ export class ZTaskingView extends ItemView {
 	private boardCollapsed = { yesterday: false, today: false, plan: false };
 	/** 任务详情抽屉是否打开（默认关闭） */
 	private detailOpen = false;
+	/** 项目管理抽屉（与任务/昨日计划抽屉互斥） */
+	private projectMgrOpen = false;
+	/** 项目管理：正在行内重命名的项目名 */
+	private projectMgrRenameFrom: string | null = null;
 	/** 昨日计划抽屉：null 关闭；YP_DRAWER_NEW 新增；否则为条目 id */
 	private ypDrawerId: string | null = null;
-	/** 昨日计划缓存（按「相对今天的昨日」日期键） */
-	private yesterdayPlanCache: {
+	/** 抽屉/批量写入锁定的日报日期（空则用左侧昨日计划对应日报） */
+	private ypEditReportDate = "";
+	private boardPlanCache: {
 		path: string | null;
 		items: YesterdayPlanItem[];
 		baseline: YesterdayPlanItem[];
-	} = { path: null, items: [], baseline: [] };
-	private yesterdayPlanLoadedFor = "";
+		reportDate: string;
+	} = { path: null, items: [], baseline: [], reportDate: "" };
+	private calPlanCache: {
+		path: string | null;
+		items: YesterdayPlanItem[];
+		baseline: YesterdayPlanItem[];
+		reportDate: string;
+	} = { path: null, items: [], baseline: [], reportDate: "" };
 
 	constructor(leaf: WorkspaceLeaf, plugin: ZTaskingPlugin) {
 		super(leaf);
 		this.plugin = plugin;
 		this.webPanel = new WebPanel(plugin);
+	}
+
+	/** 左侧「昨日计划」对应的计划所属日 = 今天（内容在昨天日报的「明日计划」） */
+	private boardYpPlanDay(): string {
+		return todayStr();
+	}
+
+	/** 左侧「昨日计划」读取的日报日期 = 昨天 */
+	private boardYpReportDate(): string {
+		return prevDateStr(todayStr());
 	}
 
 	getViewType(): string {
@@ -309,8 +346,8 @@ export class ZTaskingView extends ItemView {
 						<input type="date" class="ztk-range-end" aria-label="结束日期" />
 					</div>
 				</div>
-				<button class="ztk-btn is-hidden" data-act="new-project" type="button">新建项目</button>
 				<button class="ztk-btn is-hidden" data-act="new" type="button">新建任务</button>
+				<button class="ztk-btn is-hidden" data-act="project-mgr" type="button">项目管理</button>
 			</header>
 			<main class="ztk-main">
 				<div class="ztk-page" id="ztk-view-board" data-detail-open="0">
@@ -366,8 +403,7 @@ export class ZTaskingView extends ItemView {
 						<textarea name="desc" placeholder="说明：这件事项要达成什么"></textarea>
 						<label class="ztk-field">
 							<span>业务项目</span>
-							<input name="project" list="ztk-project-options" required placeholder="如 KVAD" />
-							<datalist id="ztk-project-options"></datalist>
+							<select name="project" required aria-label="业务项目"></select>
 						</label>
 						<div class="ztk-two">
 							<select name="type">
@@ -388,22 +424,6 @@ export class ZTaskingView extends ItemView {
 					</div>
 					<div class="ztk-modal-actions">
 						<button type="button" class="ztk-ghost" data-act="cancel">取消</button>
-						<button class="ztk-btn" type="submit">创建</button>
-					</div>
-				</form>
-			</div>
-			<div class="ztk-modal ztk-project-modal">
-				<form class="ztk-modal-card ztk-project-modal-card">
-					<h2>新建项目</h2>
-					<div class="ztk-form">
-						<label class="ztk-field">
-							<span>项目名称</span>
-							<input name="projectName" required placeholder="例如 终端安全" autocomplete="off" />
-						</label>
-						<p class="ztk-muted ztk-modal-hint">将创建 Z-Tasking/项目名/长期|临时|缺陷</p>
-					</div>
-					<div class="ztk-modal-actions">
-						<button type="button" class="ztk-ghost" data-act="cancel-project">取消</button>
 						<button class="ztk-btn" type="submit">创建</button>
 					</div>
 				</form>
@@ -646,10 +666,31 @@ export class ZTaskingView extends ItemView {
 			const act = target.closest<HTMLElement>("[data-act]");
 			if (act?.dataset.act) {
 				const a = act.dataset.act;
-				if (a === "new") this.openModal();
-				if (a === "new-project") this.openProjectModal();
+				if (a === "new") void this.openModal();
+				if (a === "project-mgr") void this.openProjectMgrDrawer();
 				if (a === "cancel") this.closeModal();
-				if (a === "cancel-project") this.closeProjectModal();
+				if (a === "pm-add") {
+					void this.pmAddProject();
+					return;
+				}
+				if (a === "pm-rename" && act.dataset.project) {
+					this.projectMgrRenameFrom = act.dataset.project;
+					this.renderDetail();
+					return;
+				}
+				if (a === "pm-rename-cancel") {
+					this.projectMgrRenameFrom = null;
+					this.renderDetail();
+					return;
+				}
+				if (a === "pm-rename-save" && act.dataset.project) {
+					void this.pmRenameProject(act.dataset.project);
+					return;
+				}
+				if (a === "pm-delete" && act.dataset.project) {
+					void this.pmDeleteProject(act.dataset.project);
+					return;
+				}
 				if (a === "goto-gantt") {
 					this.switchView("gantt");
 					return;
@@ -687,7 +728,7 @@ export class ZTaskingView extends ItemView {
 				}
 				if (a === "catalog-sort") {
 					const key = act.dataset.key as CatalogSortKey | undefined;
-					if (key === "type" || key === "status") {
+					if (key === "type" || key === "status" || key === "hours") {
 						this.catalogSort = nextCatalogSort(this.catalogSort, key);
 						this.renderCatalog();
 					}
@@ -731,27 +772,42 @@ export class ZTaskingView extends ItemView {
 					return;
 				}
 				if (a === "add-yesterday-plan") {
-					void this.openYpDrawer(null);
+					const report = act.closest<HTMLElement>("[data-yp-report]")?.dataset.ypReport;
+					void this.openYpDrawer(null, report);
 					return;
 				}
 				if (a === "yp-quick-add") {
+					const report = act.closest<HTMLElement>("[data-yp-report]")?.dataset.ypReport
+						|| this.boardYpReportDate();
+					this.ypEditReportDate = report;
 					void this.ypQuickAdd();
 					return;
 				}
 				if (a === "reset-yesterday-plan") {
+					const report = act.closest<HTMLElement>("[data-yp-report]")?.dataset.ypReport;
+					if (report) this.ypEditReportDate = report;
 					void this.resetYesterdayPlan();
 					return;
 				}
 				if (a === "edit-yesterday-plan" && act.dataset.ypId) {
-					void this.openYpDrawer(act.dataset.ypId);
+					const report = act.closest<HTMLElement>("[data-yp-report]")?.dataset.ypReport;
+					void this.openYpDrawer(act.dataset.ypId, report);
 					return;
 				}
 				if (a === "toggle-yesterday-plan" && act.dataset.ypId) {
+					const report = act.closest<HTMLElement>("[data-yp-report]")?.dataset.ypReport;
+					if (report) this.ypEditReportDate = report;
 					void this.toggleYesterdayPlanDone(act.dataset.ypId);
 					return;
 				}
 				if (a === "del-yesterday-plan" && act.dataset.ypId) {
+					const report = act.closest<HTMLElement>("[data-yp-report]")?.dataset.ypReport;
+					if (report) this.ypEditReportDate = report;
 					void this.deleteYesterdayPlanItem(act.dataset.ypId);
+					return;
+				}
+				if (a === "cal-add-plan") {
+					void this.openYpDrawer(null, planReportDateForDay(this.selectedDay));
 					return;
 				}
 				if (a === "yp-drawer-add-log") {
@@ -952,6 +1008,17 @@ export class ZTaskingView extends ItemView {
 			}
 			const el = e.target as HTMLElement;
 			if (!(el instanceof HTMLInputElement)) return;
+			if (el.classList.contains("ztk-pm-add-input") && e.key === "Enter") {
+				e.preventDefault();
+				void this.pmAddProject();
+				return;
+			}
+			if (el.classList.contains("ztk-pm-rename-input") && e.key === "Enter") {
+				e.preventDefault();
+				const from = el.dataset.project;
+				if (from) void this.pmRenameProject(from);
+				return;
+			}
 			if (!el.classList.contains("ztk-plan-add-input")) return;
 			if (e.key !== "Enter") return;
 			e.preventDefault();
@@ -960,10 +1027,6 @@ export class ZTaskingView extends ItemView {
 		this.$(".ztk-modal-card").addEventListener("submit", (e) => {
 			e.preventDefault();
 			void this.createTask(e.target as HTMLFormElement);
-		});
-		this.$(".ztk-project-modal-card").addEventListener("submit", (e) => {
-			e.preventDefault();
-			void this.createProject(e.target as HTMLFormElement);
 		});
 		this.bindListReorder();
 		window.addEventListener("resize", () => {
@@ -1135,6 +1198,8 @@ export class ZTaskingView extends ItemView {
 		}
 		this.ypDrawerId = null;
 		this.editingYpNoteIdx = null;
+		this.projectMgrOpen = false;
+		this.projectMgrRenameFrom = null;
 		this.selectedId = id;
 		this.detailOpen = true;
 	}
@@ -1143,6 +1208,8 @@ export class ZTaskingView extends ItemView {
 		this.detailOpen = false;
 		this.ypDrawerId = null;
 		this.editingYpNoteIdx = null;
+		this.projectMgrOpen = false;
+		this.projectMgrRenameFrom = null;
 		this.editingLogDate = null;
 		this.editingDesc = false;
 		this.editingTitle = false;
@@ -1154,7 +1221,7 @@ export class ZTaskingView extends ItemView {
 	private syncDetailDrawer(): void {
 		const board = this.contentEl.querySelector("#ztk-view-board") as HTMLElement | null;
 		if (!board) return;
-		const open = this.detailOpen && (!!this.selectedId || !!this.ypDrawerId);
+		const open = this.detailOpen && (!!this.selectedId || !!this.ypDrawerId || this.projectMgrOpen);
 		board.dataset.detailOpen = open ? "1" : "0";
 		board.classList.toggle("is-detail-open", open);
 		const drawer = board.querySelector(".ztk-detail-drawer");
@@ -1173,50 +1240,58 @@ export class ZTaskingView extends ItemView {
 		if (newBtn) {
 			newBtn.classList.toggle("is-hidden", this.view !== "board");
 		}
-		const newProjectBtn = this.contentEl.querySelector<HTMLElement>("[data-act=\"new-project\"]");
-		if (newProjectBtn) {
-			newProjectBtn.classList.toggle("is-hidden", this.view !== "board");
+		const pmBtn = this.contentEl.querySelector<HTMLElement>("[data-act=\"project-mgr\"]");
+		if (pmBtn) {
+			pmBtn.classList.toggle("is-hidden", this.view !== "board");
 		}
 	}
 
-	private openModal(): void {
-		this.closeProjectModal();
+	private async openModal(): Promise<void> {
+		await this.plugin.store.refreshProjectList();
+		this.syncProjectFilterOptions();
 		const form = this.$(".ztk-modal-card") as HTMLFormElement;
 		const start = form.elements.namedItem("start") as HTMLInputElement;
 		const end = form.elements.namedItem("end") as HTMLInputElement;
 		start.value = todayStr();
 		end.value = fmt(addDays(new Date(), 14));
-		const projectInput = form.elements.namedItem("project") as HTMLInputElement;
-		projectInput.value = resolveNewTaskProject(this.projectFilter);
-		const list = form.querySelector("#ztk-project-options");
-		if (list) {
-			list.innerHTML = this.plugin.store.projects
-				.map((p) => `<option value="${esc(p)}"></option>`)
-				.join("");
+		const projectSelect = form.elements.namedItem("project") as HTMLSelectElement;
+		const projects = this.plugin.store.projects;
+		if (!projects.length) {
+			new Notice("请先在「项目管理」中新增项目");
+			return;
 		}
-		this.$(".ztk-modal:not(.ztk-project-modal)").classList.add("on");
+		const preferred = resolveNewTaskProject(this.projectFilter, projects);
+		projectSelect.innerHTML = projects
+			.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`)
+			.join("");
+		projectSelect.value = resolveProjectSelectValue(preferred, projects);
+		this.$(".ztk-modal").classList.add("on");
 	}
 
 	private closeModal(): void {
-		this.$(".ztk-modal:not(.ztk-project-modal)").classList.remove("on");
+		this.$(".ztk-modal").classList.remove("on");
 	}
 
-	private openProjectModal(): void {
+	private async openProjectMgrDrawer(): Promise<void> {
 		this.closeModal();
-		const form = this.$(".ztk-project-modal-card") as HTMLFormElement;
-		form.reset();
-		this.$(".ztk-project-modal").classList.add("on");
-		(form.elements.namedItem("projectName") as HTMLInputElement | null)?.focus();
+		await this.plugin.store.refreshProjectList();
+		this.selectedId = "";
+		this.ypDrawerId = null;
+		this.editingYpNoteIdx = null;
+		this.projectMgrRenameFrom = null;
+		this.projectMgrOpen = true;
+		this.detailOpen = true;
+		this.syncDetailDrawer();
+		this.renderDetail();
+		this.renderCatalog();
 	}
 
-	private closeProjectModal(): void {
-		this.$(".ztk-project-modal").classList.remove("on");
-	}
-
-	private async createProject(form: HTMLFormElement): Promise<void> {
-		const raw = (form.elements.namedItem("projectName") as HTMLInputElement).value;
+	private async pmAddProject(): Promise<void> {
+		const input = this.contentEl.querySelector<HTMLInputElement>(".ztk-pm-add-input");
+		const raw = input?.value ?? "";
 		if (!normalizeProjectName(raw)) {
 			new Notice("请填写有效项目名（不能是日报/长期/临时/缺陷）");
+			input?.focus();
 			return;
 		}
 		const result = await this.plugin.store.createProject(raw);
@@ -1224,17 +1299,78 @@ export class ZTaskingView extends ItemView {
 			new Notice(result.reason);
 			return;
 		}
-		this.projectFilter = result.name;
-		this.closeProjectModal();
-		this.renderAll();
+		if (input) input.value = "";
+		this.syncProjectFilterOptions();
+		this.renderDetail();
 		new Notice(`已创建项目「${result.name}」`);
+	}
+
+	private async pmRenameProject(from: string): Promise<void> {
+		const input = Array.from(
+			this.contentEl.querySelectorAll<HTMLInputElement>(".ztk-pm-rename-input"),
+		).find((el) => el.dataset.project === from);
+		const raw = input?.value ?? "";
+		const result = await this.plugin.store.renameProject(from, raw);
+		if (!result.ok) {
+			new Notice(result.reason);
+			return;
+		}
+		const root = this.plugin.store.root();
+		const order = this.plugin.settings.sidebarOrder;
+		if (order) {
+			order.long = remapPathsAfterProjectRename(order.long ?? [], root, result.from, result.to);
+			order.temp = remapPathsAfterProjectRename(order.temp ?? [], root, result.from, result.to);
+			order.bug = remapPathsAfterProjectRename(order.bug ?? [], root, result.from, result.to);
+			await this.plugin.saveSettings();
+		}
+		if (this.projectFilter === result.from) this.projectFilter = result.to;
+		if (this.selectedId) {
+			const prefix = `${root}/${result.from}/`;
+			if (this.selectedId.startsWith(prefix)) {
+				this.selectedId = `${root}/${result.to}/${this.selectedId.slice(prefix.length)}`;
+			}
+		}
+		this.projectMgrRenameFrom = null;
+		this.projectMgrOpen = true;
+		this.detailOpen = true;
+		this.syncProjectFilterOptions();
+		this.renderAll();
+		new Notice(`已重命名为「${result.to}」`);
+	}
+
+	private async pmDeleteProject(name: string): Promise<void> {
+		if (this.plugin.store.tasks.some((t) => t.project === name)) {
+			new Notice(`「${name}」下还有任务，请先迁移或删除任务后再删项目`);
+			return;
+		}
+		const ok = await askConfirm(
+			this.app,
+			"删除项目",
+			`确定删除空项目「${name}」？将删除其目录与占位文件，此操作不可恢复。`,
+			"删除",
+		);
+		if (!ok) return;
+		const result = await this.plugin.store.deleteProject(name);
+		if (!result.ok) {
+			new Notice(result.reason);
+			return;
+		}
+		if (this.projectFilter === name) this.projectFilter = "all";
+		this.projectMgrOpen = true;
+		this.detailOpen = true;
+		this.syncProjectFilterOptions();
+		this.renderAll();
+		new Notice(`已删除项目「${name}」`);
 	}
 
 	private async createTask(form: HTMLFormElement): Promise<void> {
 		const title = (form.elements.namedItem("title") as HTMLInputElement).value.trim();
 		const desc = (form.elements.namedItem("desc") as HTMLTextAreaElement).value.trim();
-		const project = (form.elements.namedItem("project") as HTMLInputElement).value.trim()
-			|| resolveNewTaskProject(this.projectFilter);
+		const project = (form.elements.namedItem("project") as HTMLSelectElement).value.trim();
+		if (!project || !this.plugin.store.projects.includes(project)) {
+			new Notice("请选择有效业务项目");
+			return;
+		}
 		const type = (form.elements.namedItem("type") as HTMLSelectElement).value as TaskType;
 		const status = (form.elements.namedItem("status") as HTMLSelectElement).value as TaskStatus;
 		const start = (form.elements.namedItem("start") as HTMLInputElement).value;
@@ -1369,14 +1505,14 @@ export class ZTaskingView extends ItemView {
 			const projectEl = this.contentEl.querySelector<HTMLSelectElement>(".ztk-yp-project");
 			const project = projectEl?.value.trim() || YP_NO_PROJECT;
 			const desc = this.readYpDescValue();
-			const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
+			const baseline = this.ypActiveCache().baseline.map((it) => ({ ...it }));
 			if (this.ypDrawerId === YP_DRAWER_NEW) {
 				const id = newYesterdayPlanItemId();
 				const item: YesterdayPlanItem = { id, title, project, desc, notes: [], done: false };
-				await this.persistYesterdayPlan([...this.yesterdayPlanCache.items, item], baseline);
+				await this.persistYesterdayPlan([...this.ypActiveCache().items, item], baseline);
 				this.ypDrawerId = id;
 			} else {
-				const items = this.yesterdayPlanCache.items.map((it) =>
+				const items = this.ypActiveCache().items.map((it) =>
 					it.id === this.ypDrawerId ? { ...it, title, project, desc } : it,
 				);
 				await this.persistYesterdayPlan(items, baseline);
@@ -1613,16 +1749,16 @@ export class ZTaskingView extends ItemView {
 					this.contentEl.querySelector<HTMLInputElement>("#ztk-title-input")?.focus();
 					return;
 				}
-				const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
+				const baseline = this.ypActiveCache().baseline.map((it) => ({ ...it }));
 				const id = newYesterdayPlanItemId();
 				await this.persistYesterdayPlan(
-					[...this.yesterdayPlanCache.items, { id, ...fields, notes: [], done: false }],
+					[...this.ypActiveCache().items, { id, ...fields, notes: [], done: false }],
 					baseline,
 				);
 				this.ypDrawerId = id;
 			} else {
-				const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
-				const items = this.yesterdayPlanCache.items.map((it) =>
+				const baseline = this.ypActiveCache().baseline.map((it) => ({ ...it }));
+				const items = this.ypActiveCache().items.map((it) =>
 					it.id === this.ypDrawerId ? { ...it, desc } : it,
 				);
 				await this.persistYesterdayPlan(items, baseline);
@@ -1774,7 +1910,7 @@ export class ZTaskingView extends ItemView {
 		this.renderCatalog();
 	}
 
-	/** 工作台最左：昨日计划（可编辑） */
+	/** 工作台最左：昨日计划 = 昨天日报「明日计划」（日期仅在批量新增弹窗选择） */
 	private renderBoardYesterday(show = true): void {
 		const box = this.contentEl.querySelector<HTMLElement>(".ztk-board-yesterday");
 		if (!box) return;
@@ -1783,17 +1919,130 @@ export class ZTaskingView extends ItemView {
 			box.classList.remove("is-collapsed");
 			return;
 		}
-		const yKey = prevDateStr(todayStr());
-		if (this.yesterdayPlanLoadedFor !== yKey) {
-			this.yesterdayPlanLoadedFor = yKey;
-			void this.refreshYesterdayPlanCache();
+		const reportDate = this.boardYpReportDate();
+		if (this.boardPlanCache.reportDate !== reportDate) {
+			void this.refreshBoardPlanCache();
 		}
 		const collapsed = this.boardCollapsed.yesterday;
 		box.classList.toggle("is-collapsed", collapsed);
 		box.innerHTML = yesterdayPlanBlockHtml({
-			items: this.yesterdayPlanCache.items,
+			items: this.boardPlanCache.items,
 			selectedId: this.ypDrawerId && this.ypDrawerId !== YP_DRAWER_NEW ? this.ypDrawerId : null,
 			collapsed,
+			planDay: this.boardYpPlanDay(),
+		});
+	}
+
+	private ypActiveCache(): {
+		path: string | null;
+		items: YesterdayPlanItem[];
+		baseline: YesterdayPlanItem[];
+		reportDate: string;
+	} {
+		const r = this.ypEditReportDate || this.boardPlanCache.reportDate;
+		if (r && this.calPlanCache.reportDate === r && this.boardPlanCache.reportDate === r) {
+			return this.view === "cal" ? this.calPlanCache : this.boardPlanCache;
+		}
+		if (r && this.calPlanCache.reportDate === r) return this.calPlanCache;
+		return this.boardPlanCache;
+	}
+
+	private async refreshBoardPlanCache(): Promise<void> {
+		const reportDate = this.boardYpReportDate();
+		try {
+			const data = await this.plugin.store.readYesterdayPlan(reportDate);
+			this.boardPlanCache = {
+				path: data.path,
+				items: data.items,
+				baseline: data.baseline,
+				reportDate: data.reportDate,
+			};
+		} catch {
+			this.boardPlanCache = { path: null, items: [], baseline: [], reportDate };
+		}
+		if (this.contentEl.querySelector(".ztk-board-yesterday")) {
+			this.renderBoardYesterday();
+		}
+	}
+
+	private async refreshCalPlanCache(): Promise<void> {
+		const reportDate = planReportDateForDay(this.selectedDay);
+		try {
+			const data = await this.plugin.store.readYesterdayPlan(reportDate);
+			this.calPlanCache = {
+				path: data.path,
+				items: data.items,
+				baseline: data.baseline,
+				reportDate: data.reportDate,
+			};
+		} catch {
+			this.calPlanCache = { path: null, items: [], baseline: [], reportDate };
+		}
+	}
+
+	private async persistYesterdayPlan(
+		items: YesterdayPlanItem[],
+		baseline: YesterdayPlanItem[],
+		reportDate?: string,
+	): Promise<void> {
+		const date = (reportDate?.trim()
+			|| this.ypEditReportDate
+			|| this.boardPlanCache.reportDate
+			|| this.boardYpReportDate());
+		try {
+			const path = await this.plugin.store.writeYesterdayPlan(items, baseline, date);
+			const next = {
+				path,
+				items: items.map((it) => ({ ...it })),
+				baseline: baseline.map((it) => ({ ...it })),
+				reportDate: date,
+			};
+			if (this.boardPlanCache.reportDate === date || !this.boardPlanCache.reportDate) {
+				this.boardPlanCache = next;
+			}
+			if (this.calPlanCache.reportDate === date) {
+				this.calPlanCache = next;
+			}
+			this.renderBoardYesterday();
+			if (this.view === "cal") this.renderCalendar();
+		} catch {
+			new Notice("保存计划失败");
+		}
+	}
+
+	private async openYpDrawer(id: string | null, reportDate?: string): Promise<void> {
+		this.editingLogDate = null;
+		this.editingYpNoteIdx = null;
+		this.editingDesc = false;
+		this.editingTitle = false;
+		this.selectedId = "";
+		this.projectMgrOpen = false;
+		this.projectMgrRenameFrom = null;
+		this.ypEditReportDate = (reportDate?.trim()
+			|| (this.view === "cal" ? planReportDateForDay(this.selectedDay) : this.boardYpReportDate()));
+		if (this.view === "cal" && this.calPlanCache.reportDate !== this.ypEditReportDate) {
+			await this.refreshCalPlanCache();
+		}
+		if (this.view !== "cal" && this.boardPlanCache.reportDate !== this.ypEditReportDate) {
+			await this.refreshBoardPlanCache();
+		}
+		if (!id) {
+			this.ypDrawerId = YP_DRAWER_NEW;
+			this.editingTitle = true;
+		} else {
+			const item = this.ypActiveCache().items.find((it) => it.id === id);
+			if (!item) return;
+			this.ypDrawerId = id;
+			this.editingTitle = false;
+		}
+		this.detailOpen = true;
+		this.syncDetailDrawer();
+		this.renderDetail();
+		this.renderBoardYesterday();
+		if (this.view === "cal") this.renderCalendar();
+
+		requestAnimationFrame(() => {
+			this.contentEl.querySelector<HTMLInputElement>("#ztk-title-input")?.focus();
 		});
 	}
 
@@ -1854,66 +2103,13 @@ export class ZTaskingView extends ItemView {
 		`;
 	}
 
-	private async refreshYesterdayPlanCache(): Promise<void> {
-		try {
-			this.yesterdayPlanCache = await this.plugin.store.readYesterdayPlan();
-		} catch {
-			this.yesterdayPlanCache = { path: null, items: [], baseline: [] };
-		}
-		if (this.contentEl.querySelector(".ztk-board-yesterday")) {
-			this.renderBoardYesterday();
-		}
-	}
-
-	private async persistYesterdayPlan(
-		items: YesterdayPlanItem[],
-		baseline: YesterdayPlanItem[],
-	): Promise<void> {
-		try {
-			const path = await this.plugin.store.writeYesterdayPlan(items, baseline);
-			this.yesterdayPlanCache = {
-				path,
-				items: items.map((it) => ({ ...it })),
-				baseline: baseline.map((it) => ({ ...it })),
-			};
-			this.renderBoardYesterday();
-		} catch {
-			new Notice("保存昨日计划失败");
-		}
-	}
-
-	private async openYpDrawer(id: string | null): Promise<void> {
-		this.editingLogDate = null;
-		this.editingYpNoteIdx = null;
-		this.editingDesc = false;
-		this.editingTitle = false;
-		this.selectedId = "";
-		if (!id) {
-			this.ypDrawerId = YP_DRAWER_NEW;
-			this.editingTitle = true;
-		} else {
-			const item = this.yesterdayPlanCache.items.find((it) => it.id === id);
-			if (!item) return;
-			this.ypDrawerId = id;
-			this.editingTitle = false;
-		}
-		this.detailOpen = true;
-		this.syncDetailDrawer();
-		this.renderDetail();
-		this.renderBoardYesterday();
-
-		requestAnimationFrame(() => {
-			this.contentEl.querySelector<HTMLInputElement>("#ztk-title-input")?.focus();
-		});
-	}
-
 	private readYpDescValue(): string {
 		if (this.editingDesc) {
 			const box = this.contentEl.querySelector<HTMLTextAreaElement>("#ztk-desc-text");
 			if (box) return box.value.trim();
 		}
 		if (this.ypDrawerId && this.ypDrawerId !== YP_DRAWER_NEW) {
-			return this.yesterdayPlanCache.items.find((it) => it.id === this.ypDrawerId)?.desc.trim() ?? "";
+			return this.ypActiveCache().items.find((it) => it.id === this.ypDrawerId)?.desc.trim() ?? "";
 		}
 		return "";
 	}
@@ -1922,7 +2118,7 @@ export class ZTaskingView extends ItemView {
 		const titleInput = this.contentEl.querySelector<HTMLInputElement>("#ztk-title-input");
 		const titleEl = this.contentEl.querySelector<HTMLElement>(".ztk-detail-title");
 		const fromCache = this.ypDrawerId && this.ypDrawerId !== YP_DRAWER_NEW
-			? this.yesterdayPlanCache.items.find((it) => it.id === this.ypDrawerId)?.title ?? ""
+			? this.ypActiveCache().items.find((it) => it.id === this.ypDrawerId)?.title ?? ""
 			: "";
 		const title = (titleInput?.value ?? titleEl?.textContent ?? fromCache).trim();
 		const project = this.contentEl.querySelector<HTMLSelectElement>(".ztk-yp-project")?.value.trim()
@@ -1942,15 +2138,15 @@ export class ZTaskingView extends ItemView {
 			}
 			return false;
 		}
-		const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
+		const baseline = this.ypActiveCache().baseline.map((it) => ({ ...it }));
 		if (this.ypDrawerId === YP_DRAWER_NEW) {
 			const id = newYesterdayPlanItemId();
 			const item: YesterdayPlanItem = { id, ...fields, notes: [], done: false };
-			await this.persistYesterdayPlan([...this.yesterdayPlanCache.items, item], baseline);
+			await this.persistYesterdayPlan([...this.ypActiveCache().items, item], baseline);
 			this.ypDrawerId = id;
 			if (!opts?.quiet) new Notice("已新增昨日计划");
 		} else {
-			const cur = this.yesterdayPlanCache.items.find((it) => it.id === this.ypDrawerId);
+			const cur = this.ypActiveCache().items.find((it) => it.id === this.ypDrawerId);
 			if (
 				cur
 				&& cur.title === fields.title
@@ -1959,7 +2155,7 @@ export class ZTaskingView extends ItemView {
 			) {
 				return false;
 			}
-			const items = this.yesterdayPlanCache.items.map((it) =>
+			const items = this.ypActiveCache().items.map((it) =>
 				it.id === this.ypDrawerId ? { ...it, ...fields } : it,
 			);
 			await this.persistYesterdayPlan(items, baseline);
@@ -1987,8 +2183,8 @@ export class ZTaskingView extends ItemView {
 			new Notice("请先填写标题并保存");
 			return;
 		}
-		const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
-		const items = this.yesterdayPlanCache.items.map((it) => {
+		const baseline = this.ypActiveCache().baseline.map((it) => ({ ...it }));
+		const items = this.ypActiveCache().items.map((it) => {
 			if (it.id !== itemId) return it;
 			return {
 				...it,
@@ -2008,14 +2204,14 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private async copyYpNote(idx: number): Promise<void> {
-		const item = this.yesterdayPlanCache.items.find((it) => it.id === this.ypDrawerId);
+		const item = this.ypActiveCache().items.find((it) => it.id === this.ypDrawerId);
 		const note = item?.notes?.[idx];
 		if (!note) return;
 		await this.copyToClipboard(note.text);
 	}
 
 	private async handleYpNoteAction(act: string, idx: number): Promise<void> {
-		const item = this.yesterdayPlanCache.items.find((it) => it.id === this.ypDrawerId);
+		const item = this.ypActiveCache().items.find((it) => it.id === this.ypDrawerId);
 		if (!item) return;
 		const notes = [...(item.notes ?? [])];
 		if (idx < 0 || idx >= notes.length) return;
@@ -2046,8 +2242,8 @@ export class ZTaskingView extends ItemView {
 				return;
 			}
 			notes[idx] = { date: nextDate, text };
-			const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
-			const items = this.yesterdayPlanCache.items.map((it) =>
+			const baseline = this.ypActiveCache().baseline.map((it) => ({ ...it }));
+			const items = this.ypActiveCache().items.map((it) =>
 				it.id === item.id ? { ...it, notes } : it,
 			);
 			await this.persistYesterdayPlan(items, baseline);
@@ -2066,8 +2262,8 @@ export class ZTaskingView extends ItemView {
 			);
 			if (!ok) return;
 			notes.splice(idx, 1);
-			const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
-			const items = this.yesterdayPlanCache.items.map((it) =>
+			const baseline = this.ypActiveCache().baseline.map((it) => ({ ...it }));
+			const items = this.ypActiveCache().items.map((it) =>
 				it.id === item.id ? { ...it, notes } : it,
 			);
 			await this.persistYesterdayPlan(items, baseline);
@@ -2109,7 +2305,7 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private async deleteYesterdayPlanItem(id: string): Promise<void> {
-		const cur = this.yesterdayPlanCache.items.find((it) => it.id === id);
+		const cur = this.ypActiveCache().items.find((it) => it.id === id);
 		if (!cur) return;
 		const ok = await askConfirm(
 			this.app,
@@ -2118,10 +2314,10 @@ export class ZTaskingView extends ItemView {
 			"删除",
 		);
 		if (!ok) return;
-		const items = this.yesterdayPlanCache.items.filter((it) => it.id !== id);
+		const items = this.ypActiveCache().items.filter((it) => it.id !== id);
 		await this.persistYesterdayPlan(
 			items,
-			this.yesterdayPlanCache.baseline.map((it) => ({ ...it })),
+			this.ypActiveCache().baseline.map((it) => ({ ...it })),
 		);
 		if (this.ypDrawerId === id) this.closeDetailDrawer();
 		new Notice("已删除昨日计划");
@@ -2135,22 +2331,22 @@ export class ZTaskingView extends ItemView {
 			"重置",
 		);
 		if (!ok) return;
-		const baseline = this.yesterdayPlanCache.baseline.map((it) => ({
+		const baseline = this.ypActiveCache().baseline.map((it) => ({
 			...it,
 			id: newYesterdayPlanItemId(),
 			notes: [],
 			done: false,
 		}));
-		await this.persistYesterdayPlan(baseline, this.yesterdayPlanCache.baseline.map((it) => ({ ...it })));
+		await this.persistYesterdayPlan(baseline, this.ypActiveCache().baseline.map((it) => ({ ...it })));
 		if (this.ypDrawerId) this.closeDetailDrawer();
 		new Notice("已重置昨日计划");
 	}
 
 	private async toggleYesterdayPlanDone(id: string): Promise<void> {
-		const cur = this.yesterdayPlanCache.items.find((it) => it.id === id);
+		const cur = this.ypActiveCache().items.find((it) => it.id === id);
 		if (!cur) return;
-		const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
-		const items = this.yesterdayPlanCache.items.map((it) =>
+		const baseline = this.ypActiveCache().baseline.map((it) => ({ ...it }));
+		const items = this.ypActiveCache().items.map((it) =>
 			it.id === id ? { ...it, done: !it.done } : it,
 		);
 		await this.persistYesterdayPlan(items, baseline);
@@ -2160,15 +2356,34 @@ export class ZTaskingView extends ItemView {
 	private async ypQuickAdd(): Promise<void> {
 		const projects = withYpNoProjectOption(this.plugin.store.projects);
 		const defaultProject = resolveYpDefaultProject(this.projectFilter);
-		const result = await askYpQuickAdd(this.app, projects, defaultProject);
+		const defaultPlanDay = this.view === "cal"
+			? this.selectedDay
+			: this.boardYpPlanDay();
+		const result = await askYpQuickAdd(this.app, projects, defaultProject, defaultPlanDay);
 		if (!result) return;
 		const titles = parseYesterdayPlanQuickLines(result.text);
 		if (!titles.length) {
 			new Notice("请输入至少一行标题");
 			return;
 		}
+		const planDay = result.planDay.trim() || defaultPlanDay;
+		const reportDate = planReportDateForDay(planDay);
+		this.ypEditReportDate = reportDate;
+
+		let items = this.ypActiveCache().items;
+		let baseline = this.ypActiveCache().baseline;
+		if (this.ypActiveCache().reportDate !== reportDate) {
+			try {
+				const data = await this.plugin.store.readYesterdayPlan(reportDate);
+				items = data.items;
+				baseline = data.baseline;
+			} catch {
+				items = [];
+				baseline = [];
+			}
+		}
+
 		const project = result.project.trim() || YP_NO_PROJECT;
-		const baseline = this.yesterdayPlanCache.baseline.map((it) => ({ ...it }));
 		const added: YesterdayPlanItem[] = titles.map((title) => ({
 			id: newYesterdayPlanItemId(),
 			title,
@@ -2178,11 +2393,18 @@ export class ZTaskingView extends ItemView {
 			done: false,
 		}));
 		await this.persistYesterdayPlan(
-			[...this.yesterdayPlanCache.items, ...added],
-			baseline,
+			[...items, ...added],
+			baseline.map((it) => ({ ...it })),
+			reportDate,
 		);
-		this.renderBoardYesterday();
-		new Notice(`已新增 ${added.length} 条昨日计划`);
+		if (this.boardYpReportDate() === reportDate) {
+			this.renderBoardYesterday();
+		}
+		if (this.view === "cal" && planReportDateForDay(this.selectedDay) === reportDate) {
+			await this.refreshCalPlanCache();
+			this.renderCalendar();
+		}
+		new Notice(`已新增 ${added.length} 条计划（${planDay}）`);
 	}
 
 	/** 汇总页：「今日日报」卡片 HTML */
@@ -2229,12 +2451,13 @@ export class ZTaskingView extends ItemView {
 	private async archiveDailyDraft(draft: typeof this.plugin.settings.dailyReportDraft): Promise<void> {
 		try {
 			const path = await this.plugin.store.upsertDailyReportArchive(draft);
-			const yKey = prevDateStr(todayStr());
-			if (path && draft.date === yKey) {
-				this.yesterdayPlanLoadedFor = "";
-				if (this.contentEl.querySelector(".ztk-board-yesterday")) {
-					this.renderBoardYesterday();
-				}
+			if (path && draft.date === this.boardYpReportDate()) {
+				void this.refreshBoardPlanCache();
+			}
+			if (path && draft.date === planReportDateForDay(this.selectedDay)) {
+				void this.refreshCalPlanCache().then(() => {
+					if (this.view === "cal") this.renderCalendar();
+				});
 			}
 		} catch (err) {
 			console.error(err);
@@ -2460,7 +2683,9 @@ export class ZTaskingView extends ItemView {
 						</th>
 						<th>周期</th>
 						<th>进展</th>
-						<th>工时</th>
+						<th>
+							<button type="button" class="ztk-th-sort${sortClass("hours")}" data-act="catalog-sort" data-key="hours" title="按工时排序">工时${sortMark("hours")}</button>
+						</th>
 						<th></th>
 					</tr>
 				</thead>
@@ -2477,11 +2702,54 @@ export class ZTaskingView extends ItemView {
 		return this.$("#ztk-view-board .ztk-detail");
 	}
 
+	private renderProjectMgrDetail(el: HTMLElement): void {
+		el.classList.remove("is-yp-drawer");
+		el.classList.add("is-pm-drawer");
+		const projects = this.plugin.store.projects;
+		const rows = projects.length
+			? projects.map((name) => {
+				const editing = this.projectMgrRenameFrom === name;
+				const body = editing
+					? `<input class="ztk-pm-rename-input" data-project="${esc(name)}" value="${esc(name)}" aria-label="新项目名" />
+						<button type="button" class="ztk-ghost" data-act="pm-rename-cancel">取消</button>
+						<button type="button" class="ztk-btn" data-act="pm-rename-save" data-project="${esc(name)}">保存</button>`
+					: `<span class="ztk-pm-name">${esc(name)}</span>
+						<button type="button" class="ztk-ghost" data-act="pm-rename" data-project="${esc(name)}">重命名</button>
+						<button type="button" class="ztk-ghost ztk-pm-del" data-act="pm-delete" data-project="${esc(name)}">删除</button>`;
+				return `<li class="ztk-pm-row${editing ? " is-editing" : ""}" data-project="${esc(name)}">${body}</li>`;
+			}).join("")
+			: `<li class="ztk-pm-empty ztk-muted">暂无项目，在上方新增</li>`;
+		el.innerHTML = `
+			<div class="ztk-detail-head">
+				<div class="ztk-detail-head-top">
+					<div class="ztk-title-block">
+						<h1 class="ztk-detail-title">项目管理</h1>
+						<div class="ztk-kicker">新增、重命名或删除业务项目</div>
+					</div>
+					<button type="button" class="ztk-ghost ztk-detail-close" data-act="close-detail" title="关闭" aria-label="关闭">×</button>
+				</div>
+			</div>
+			<div class="ztk-pm-add">
+				<input class="ztk-pm-add-input" type="text" placeholder="新项目名称，例如 终端安全" autocomplete="off" />
+				<button type="button" class="ztk-btn" data-act="pm-add">新增</button>
+			</div>
+			<ul class="ztk-pm-list">${rows}</ul>
+		`;
+		requestAnimationFrame(() => {
+			if (this.projectMgrRenameFrom) {
+				el.querySelector<HTMLInputElement>(".ztk-pm-rename-input")?.focus();
+			} else {
+				el.querySelector<HTMLInputElement>(".ztk-pm-add-input")?.focus();
+			}
+		});
+	}
+
 	private renderYpDetail(el: HTMLElement): void {
+		el.classList.remove("is-pm-drawer");
 		const isNew = this.ypDrawerId === YP_DRAWER_NEW;
 		const item = isNew
 			? null
-			: this.yesterdayPlanCache.items.find((it) => it.id === this.ypDrawerId) ?? null;
+			: this.ypActiveCache().items.find((it) => it.id === this.ypDrawerId) ?? null;
 		const title = item?.title ?? "";
 		const project = item?.project
 			|| resolveYpDefaultProject(this.projectFilter);
@@ -2495,23 +2763,27 @@ export class ZTaskingView extends ItemView {
 			.map((n, idx) => ({ ...n, idx }))
 			.sort((a, b) => b.date.localeCompare(a.date) || b.idx - a.idx);
 		const displayTitle = title.trim() || "未命名计划";
+		const titleActions = this.editingTitle
+			? `<div class="ztk-title-edit">
+					<input id="ztk-title-input" class="ztk-title-input" value="${esc(title)}" placeholder="计划标题" />
+					<div class="ztk-title-edit-actions">
+						${isNew ? "" : iconBtn("cancel-title", "cancel", "取消")}
+						${iconBtn("save-title", "save", "保存")}
+					</div>
+				</div>`
+			: `<h1 class="ztk-detail-title" title="右键可修改标题">${esc(displayTitle)}</h1>`;
+		const closeBtn = this.editingTitle && !isNew
+			? ""
+			: `<button type="button" class="ztk-ghost ztk-detail-close" data-act="close-detail" title="关闭" aria-label="关闭">×</button>`;
 		el.innerHTML = `
 			<div class="ztk-detail-head ztk-yp-detail-head">
 				<div class="ztk-detail-head-top">
 					<div class="ztk-title-block">
-						${this.editingTitle
-							? `<div class="ztk-title-edit">
-									<input id="ztk-title-input" class="ztk-title-input" value="${esc(title)}" placeholder="计划标题" />
-									<div class="ztk-title-edit-actions">
-										${iconBtn("cancel-title", "cancel", "取消")}
-										${iconBtn("save-title", "save", "保存")}
-									</div>
-								</div>`
-							: `<h1 class="ztk-detail-title" title="右键可修改标题">${esc(displayTitle)}</h1>`}
+						${titleActions}
 					</div>
-					<button type="button" class="ztk-ghost ztk-detail-close" data-act="close-detail" title="关闭" aria-label="关闭">×</button>
+					${closeBtn}
 				</div>
-				<div class="ztk-kicker ztk-yp-kicker">${isNew ? "新增昨日计划" : "编辑昨日计划"}</div>
+				<div class="ztk-kicker ztk-yp-kicker">${isNew ? "新增计划" : "编辑计划"}</div>
 				<div class="ztk-meta-fields">
 					<label>所属项目
 						<select class="ztk-yp-project">${projectOpts}</select>
@@ -2543,16 +2815,20 @@ export class ZTaskingView extends ItemView {
 
 	private renderDetail(): void {
 		const el = this.activeDetail();
-		if (!this.detailOpen || (!this.selectedId && !this.ypDrawerId)) {
+		if (!this.detailOpen || (!this.selectedId && !this.ypDrawerId && !this.projectMgrOpen)) {
 			el.innerHTML = "";
-			el.classList.remove("is-yp-drawer");
+			el.classList.remove("is-yp-drawer", "is-pm-drawer");
+			return;
+		}
+		if (this.projectMgrOpen) {
+			this.renderProjectMgrDetail(el);
 			return;
 		}
 		if (this.ypDrawerId) {
 			this.renderYpDetail(el);
 			return;
 		}
-		el.classList.remove("is-yp-drawer");
+		el.classList.remove("is-yp-drawer", "is-pm-drawer");
 		const t = this.tasks().find((x) => x.id === this.selectedId);
 		if (!t) {
 			el.innerHTML = `
@@ -2564,22 +2840,26 @@ export class ZTaskingView extends ItemView {
 			return;
 		}
 		const logs = [...t.logs].sort((a, b) => b.date.localeCompare(a.date));
+		const taskTitleEdit = this.editingTitle
+			? `<div class="ztk-title-edit">
+					<input id="ztk-title-input" class="ztk-title-input" value="${esc(t.title)}" />
+					<div class="ztk-title-edit-actions">
+						${iconBtn("cancel-title", "cancel", "取消")}
+						${iconBtn("save-title", "save", "保存")}
+					</div>
+				</div>`
+			: `<h1 class="ztk-detail-title" title="右键可修改标题">${esc(t.title)}</h1>`;
+		const taskCloseBtn = this.editingTitle
+			? ""
+			: `<button type="button" class="ztk-ghost ztk-detail-close" data-act="close-detail" title="关闭" aria-label="关闭">×</button>`;
 		el.innerHTML = `
 			<div class="ztk-detail-head">
 				<div class="ztk-detail-head-top">
 					<div class="ztk-title-block">
-						${this.editingTitle
-							? `<div class="ztk-title-edit">
-									<input id="ztk-title-input" class="ztk-title-input" value="${esc(t.title)}" />
-									<div class="ztk-title-edit-actions">
-										${iconBtn("cancel-title", "cancel", "取消")}
-										${iconBtn("save-title", "save", "保存")}
-									</div>
-								</div>`
-							: `<h1 class="ztk-detail-title" title="右键可修改标题">${esc(t.title)}</h1>`}
+						${taskTitleEdit}
 						<div class="ztk-kicker">${esc(t.path)}</div>
 					</div>
-					<button type="button" class="ztk-ghost ztk-detail-close" data-act="close-detail" title="关闭" aria-label="关闭">×</button>
+					${taskCloseBtn}
 				</div>
 				<div class="ztk-meta-fields">
 					<label>项目
@@ -2707,20 +2987,45 @@ export class ZTaskingView extends ItemView {
 		const paneTotal = sumHours(dayLogs);
 		const paneHours = paneTotal > 0 ? ` · ${formatHours(paneTotal)}` : "";
 		const collapsed = this.plugin.settings.calDayPaneCollapsed === true;
+		const calReport = planReportDateForDay(this.selectedDay);
+		if (this.calPlanCache.reportDate !== calReport) {
+			void this.refreshCalPlanCache().then(() => {
+				if (this.view === "cal") this.renderCalendar();
+			});
+		}
+		const planSelected = this.ypDrawerId && this.ypDrawerId !== YP_DRAWER_NEW ? this.ypDrawerId : null;
+		const planList = yesterdayPlanListHtml({
+			items: this.calPlanCache.reportDate === calReport ? this.calPlanCache.items : [],
+			selectedId: planSelected,
+			emptyText: "这天还没有计划",
+			reportDate: calReport,
+		});
 		this.$(".ztk-day-pane").innerHTML = `
 			<div class="ztk-day-pane-head">
 				<h2>${this.selectedDay}${esc(paneHours)}</h2>
 				<button class="ztk-ghost ztk-cal-day-toggle" data-act="toggle-cal-day" type="button" title="${collapsed ? "展开详情" : "折叠详情"}">${collapsed ? "›" : "‹"}</button>
 			</div>
-			${dayLogs.length
-				? dayLogs.map((l) => `<div class="ztk-log ztk-day-log">
-					<div class="ztk-day-log-head">
-						<button class="ztk-ghost" data-act="goto-task" data-id="${esc(l.task.id)}" type="button">${esc(l.task.title)}</button>
-						${hoursBadgeHtml(l.hours)}
-					</div>
-					<div class="ztk-log-body">${this.mdSlot(l.task.path, l.date)}</div>
-				</div>`).join("")
-				: `<p class="ztk-muted">这天还没有进展记录</p>`}
+			<section class="ztk-day-pane-section ztk-day-pane-tasks" data-yp-report="${esc(calReport)}">
+				<div class="ztk-day-pane-section-head">
+					<h3>任务</h3>
+				</div>
+				${dayLogs.length
+					? dayLogs.map((l) => `<div class="ztk-log ztk-day-log">
+						<div class="ztk-day-log-head">
+							<button class="ztk-ghost" data-act="goto-task" data-id="${esc(l.task.id)}" type="button">${esc(l.task.title)}</button>
+							${hoursBadgeHtml(l.hours)}
+						</div>
+						<div class="ztk-log-body">${this.mdSlot(l.task.path, l.date)}</div>
+					</div>`).join("")
+					: `<p class="ztk-muted">这天还没有进展记录</p>`}
+			</section>
+			<section class="ztk-day-pane-section ztk-day-pane-plans" data-yp-report="${esc(calReport)}">
+				<div class="ztk-day-pane-section-head">
+					<h3>计划</h3>
+					<button type="button" class="ztk-ghost ztk-plan-add-btn" data-act="cal-add-plan" title="新增计划" aria-label="新增计划">+</button>
+				</div>
+				${planList}
+			</section>
 		`;
 		this.syncCalDayPane();
 	}

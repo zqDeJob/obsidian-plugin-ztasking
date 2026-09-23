@@ -2,14 +2,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
 	DEFAULT_PROJECT,
+	canDeleteProject,
 	filterByProject,
 	isLegacyRootTypeFolder,
 	isTaskPath,
 	listProjectNames,
 	needsLegacyMigration,
 	normalizeProjectName,
+	prepareRenameProject,
 	projectFromPath,
+	remapPathsAfterProjectRename,
 	resolveNewTaskProject,
+	resolveProjectSelectValue,
 	rootFolderNamesFromListing,
 	taskDir,
 } from "./project.ts";
@@ -45,10 +49,10 @@ test("isLegacyRootTypeFolder：识别根下旧类型名", () => {
 	assert.equal(isLegacyRootTypeFolder("日报"), false);
 });
 
-test("listProjectNames：子目录去保留名与旧类型；有 KVAD 时置顶", () => {
+test("listProjectNames：子目录去保留名与旧类型；按中文名排序（不置顶 KVAD）", () => {
 	assert.deepEqual(
 		listProjectNames(["KVAD", "日报", "长期", "终端"]),
-		["KVAD", "终端"],
+		["KVAD", "终端"].sort((a, b) => a.localeCompare(b, "zh")),
 	);
 });
 
@@ -65,10 +69,10 @@ test("listProjectNames：磁盘上没有 KVAD 时不强行插入", () => {
 	assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b, "zh")));
 });
 
-test("listProjectNames：文件夹与任务来源重复时去重", () => {
+test("listProjectNames：文件夹与任务来源重复时去重，按名排序", () => {
 	assert.deepEqual(
 		listProjectNames(["公共类项目", "KVAD", "公共类项目", "终端", "终端"]),
-		[DEFAULT_PROJECT, "公共类项目", "终端"],
+		[DEFAULT_PROJECT, "公共类项目", "终端"].sort((a, b) => a.localeCompare(b, "zh")),
 	);
 });
 
@@ -81,10 +85,59 @@ test("filterByProject：全部不过滤，指定项目只留同名", () => {
 	assert.deepEqual(filterByProject(items, "终端"), [{ project: "终端", title: "b" }]);
 });
 
-test("resolveNewTaskProject：筛选非全部时用筛选值，否则默认 KVAD", () => {
-	assert.equal(resolveNewTaskProject("终端"), "终端");
-	assert.equal(resolveNewTaskProject("all"), DEFAULT_PROJECT);
-	assert.equal(resolveNewTaskProject(""), DEFAULT_PROJECT);
+test("resolveNewTaskProject：筛选非全部时用筛选值，否则用列表首项", () => {
+	assert.equal(resolveNewTaskProject("终端", ["公共类", "终端"]), "终端");
+	assert.equal(resolveNewTaskProject("all", ["公共类", "终端"]), "公共类");
+	assert.equal(resolveNewTaskProject("", ["终端", "公共类"]), "终端");
+	assert.equal(resolveNewTaskProject("all", []), "");
+	assert.equal(resolveNewTaskProject("all"), "");
+});
+
+test("resolveProjectSelectValue：优先 preferred，否则列表首项", () => {
+	assert.equal(resolveProjectSelectValue("终端", ["公共类", "终端"]), "终端");
+	assert.equal(resolveProjectSelectValue("不存在", ["公共类", "终端"]), "公共类");
+	assert.equal(resolveProjectSelectValue("", ["终端"]), "终端");
+	assert.equal(resolveProjectSelectValue("x", []), "");
+});
+
+test("canDeleteProject：有任务则禁止删除", () => {
+	assert.deepEqual(
+		canDeleteProject("终端", [{ project: "终端" }, { project: "公共类" }]),
+		{ ok: false, reason: "「终端」下还有 1 个任务，请先迁移或删除任务后再删项目" },
+	);
+	assert.deepEqual(canDeleteProject("公共类", [{ project: "终端" }]), { ok: true });
+	assert.deepEqual(canDeleteProject("日报", []), { ok: false, reason: "项目名无效（不能是「日报 / 长期 / 临时 / 缺陷」）" });
+});
+
+test("prepareRenameProject：校验新名与冲突", () => {
+	assert.deepEqual(
+		prepareRenameProject("终端", "终端安全", ["终端", "公共类"]),
+		{ ok: true, from: "终端", to: "终端安全" },
+	);
+	assert.equal(prepareRenameProject("终端", "公共类", ["终端", "公共类"]).ok, false);
+	assert.equal(prepareRenameProject("终端", "日报", ["终端"]).ok, false);
+	assert.equal(prepareRenameProject("终端", "  ", ["终端"]).ok, false);
+	assert.equal(prepareRenameProject("终端", "终端", ["终端"]).ok, false);
+});
+
+test("remapPathsAfterProjectRename：只改该项目前缀路径", () => {
+	assert.deepEqual(
+		remapPathsAfterProjectRename(
+			[
+				"Z-Tasking/终端/长期/a.md",
+				"Z-Tasking/公共类/临时/b.md",
+				"Z-Tasking/终端安全/长期/c.md",
+			],
+			"Z-Tasking",
+			"终端",
+			"终端安全",
+		),
+		[
+			"Z-Tasking/终端安全/长期/a.md",
+			"Z-Tasking/公共类/临时/b.md",
+			"Z-Tasking/终端安全/长期/c.md",
+		],
+	);
 });
 
 test("normalizeProjectName：去空白与非法名", () => {

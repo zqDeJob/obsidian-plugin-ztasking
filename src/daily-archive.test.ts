@@ -6,6 +6,7 @@ import {
 	extractYesterdayPlanState,
 	isDailyDraftWorthArchiving,
 	parseYesterdayPlanQuickLines,
+	planReportDateForDay,
 	prevDateStr,
 	replaceTomorrowPlanSection,
 	resolveYpDefaultProject,
@@ -50,6 +51,14 @@ test("serializeDailyReportNote 写出 frontmatter 与三段", () => {
 	assert.match(md, /## 待讨论\n- 无\n?$/);
 });
 
+test("planReportDateForDay：D 的计划存在 D-1 日报里；昨日计划读昨天日报", () => {
+	assert.equal(planReportDateForDay("2026-09-20"), "2026-09-19");
+	assert.equal(planReportDateForDay("2026-09-20"), prevDateStr("2026-09-20"));
+	// 今天=21 → 昨日计划读 20 号日报的明日计划（即计划所属日=21）
+	assert.equal(planReportDateForDay("2026-09-21"), "2026-09-20");
+	assert.equal(prevDateStr("2026-09-21"), "2026-09-20");
+});
+
 test("extractTomorrowPlanLines 只取明日计划段的列表项", () => {
 	const md = serializeDailyReportNote({
 		date: "2026-09-20",
@@ -80,6 +89,13 @@ test("空草稿不值得归档；有计划或工作时才归档", () => {
 		}),
 		true,
 	);
+});
+
+test("yesterdayPlanBlockHtml：标题为昨日计划，不展示日期控件", () => {
+	const html = yesterdayPlanBlockHtml({ items: [], planDay: "2026-09-20" });
+	assert.match(html, /<h2>昨日计划<\/h2>/);
+	assert.doesNotMatch(html, /ztk-yp-plan-day/);
+	assert.match(html, /data-yp-report="2026-09-19"/);
 });
 
 test("yesterdayPlanBlockHtml：可编辑列表 + 新增/重置/批量新增，无打开、无内联输入", () => {
@@ -127,7 +143,7 @@ test("yesterdayPlanBlockHtml：可编辑列表 + 新增/重置/批量新增，�
 	assert.doesNotMatch(noProject, />无项目</);
 
 	const empty = yesterdayPlanBlockHtml({ items: [] });
-	assert.match(empty, /暂无昨日计划/);
+	assert.match(empty, /暂无计划/);
 	assert.match(empty, /data-act="add-yesterday-plan"/);
 	assert.match(empty, /data-act="reset-yesterday-plan"/);
 	assert.match(empty, /data-act="yp-quick-add"/);

@@ -446,6 +446,64 @@
 	transform: translateX(0);
 	animation: ztk-drawer-in .18s ease-out;
 }
+.ztk-detail.is-pm-drawer {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	padding: 16px 18px 20px;
+	overflow: auto;
+}
+.ztk-pm-add {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.ztk-pm-add-input,
+.ztk-pm-rename-input {
+	flex: 1 1 auto;
+	min-width: 0;
+	padding: 6px 10px;
+	border: 1px solid var(--ztk-line);
+	border-radius: 8px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font: inherit;
+}
+.ztk-pm-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	gap: 6px;
+}
+.ztk-pm-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 10px;
+	border: 1px solid color-mix(in srgb, var(--ztk-line) 85%, transparent);
+	border-radius: 10px;
+	background: color-mix(in srgb, var(--background-primary) 88%, var(--ztk-sand, #f7f1ea));
+}
+.ztk-pm-name {
+	flex: 1 1 auto;
+	min-width: 0;
+	font-weight: 600;
+	color: var(--ztk-ink);
+}
+.ztk-pm-row .ztk-ghost,
+.ztk-pm-row .ztk-btn {
+	flex: 0 0 auto;
+	font-size: 12px;
+	padding: 4px 8px;
+	min-height: 28px;
+}
+.ztk-pm-del {
+	color: var(--text-error, #b42318) !important;
+}
+.ztk-pm-empty {
+	padding: 12px 4px;
+}
 @keyframes ztk-drawer-in {
 	from { transform: translateX(18px); opacity: .6; }
 	to { transform: translateX(0); opacity: 1; }
@@ -476,16 +534,46 @@
 	gap: 8px;
 	padding: 12px 14px 12px;
 }
+.ztk-day-pane-section {
+	margin-top: 12px;
+	padding-top: 10px;
+	border-top: 1px solid color-mix(in srgb, var(--ztk-line) 75%, transparent);
+}
+.ztk-day-pane-section:first-of-type {
+	margin-top: 4px;
+	padding-top: 0;
+	border-top: 0;
+}
+.ztk-day-pane-section-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+.ztk-day-pane-section-head h3 {
+	margin: 0;
+	font-size: 13px;
+	font-weight: 650;
+	color: var(--ztk-teal-deep);
+}
+.ztk-day-pane-plans .ztk-yesterday-plan-list,
+.ztk-day-pane-plans .ztk-yp-list-root {
+	max-height: min(40vh, 320px);
+	overflow: auto;
+}
 .ztk-yesterday-plan-head {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 8px;
+	margin-bottom: 4px;
 }
 .ztk-yesterday-plan-actions {
 	display: flex;
 	align-items: center;
 	gap: 6px;
+	flex: 0 0 auto;
 	flex-shrink: 0;
 }
 .ztk-yesterday-plan-actions .ztk-btn {
@@ -506,6 +594,7 @@
 	color: var(--text-muted);
 }
 .ztk-yp-quick-modal .ztk-yp-quick-project,
+.ztk-yp-quick-modal .ztk-yp-quick-day,
 .ztk-yp-quick-modal .ztk-yp-quick-input {
 	width: 100%;
 	font: inherit;
@@ -2302,7 +2391,8 @@
 .ztk-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .ztk-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 
-.ztk-header .ztk-btn[data-act="new-project"] {
+.ztk-header .ztk-btn[data-act="project-mgr"],
+.ztk-header .ztk-btn[data-act="new"] {
 	flex: 0 0 auto;
 }
 .ztk-modal-hint {

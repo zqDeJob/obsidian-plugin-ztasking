@@ -97,7 +97,8 @@ test("我的今天按项目标记：开关与分组标题", () => {
 	assert.match(html, /1、3000M终端选型/);
 	const kvadIdx = html.indexOf("【KVAD】");
 	const pubIdx = html.indexOf("【公共类】");
-	assert.ok(kvadIdx >= 0 && pubIdx > kvadIdx);
+	// 按中文名排序：公共类 在 KVAD 前
+	assert.ok(pubIdx >= 0 && kvadIdx > pubIdx);
 });
 
 test("我的今天关闭按项目时无分组标题，仍有开关", () => {

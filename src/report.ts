@@ -1,4 +1,11 @@
-import { esc, formatHours } from "./model.ts";
+import {
+	STATUS_LABEL,
+	TYPE_LABEL,
+	esc,
+	formatHours,
+	type TaskStatus,
+	type TaskType,
+} from "./model.ts";
 import { iconBtn } from "./icons.ts";
 
 export type ReportLogItem = {
@@ -186,9 +193,19 @@ export type ReportProjectGroup = {
 	logs: { date: string; title: string; path: string; hours?: number }[];
 };
 
-export function reportLogsHeadHtml(label: string, byTask: boolean, query = ""): string {
+export function reportLogsHeadHtml(
+	label: string,
+	byTask: boolean,
+	query = "",
+	summary?: { count: number; hours: number },
+): string {
+	const count = summary?.count ?? 0;
+	const hours = summary?.hours ?? 0;
+	const hoursPart = hours > 0 ? ` · ${esc(formatHours(hours))}` : "";
+	const summaryHtml = `<span class="ztk-report-logs-summary">${count} 笔${hoursPart}</span>`;
 	return `<div class="ztk-report-logs-head">
 		<h2>${esc(label)}进展明细</h2>
+		${summaryHtml}
 		<div class="ztk-report-view-tabs" role="tablist" aria-label="进展明细视图">
 			<button type="button" role="tab" class="ztk-report-view-tab${!byTask ? " on" : ""}" data-act="report-view-mode" data-mode="time" aria-selected="${!byTask}">按时间展示</button>
 			<button type="button" role="tab" class="ztk-report-view-tab${byTask ? " on" : ""}" data-act="report-view-mode" data-mode="task" aria-selected="${byTask}">按项目展示</button>
@@ -271,14 +288,11 @@ export function reportMergedGroupHtml(group: ReportProjectGroup): string {
 			<div class="ztk-report-task-card-stack">${items}</div>
 		</section>`;
 	}).join("");
+	const hoursPart = group.hours > 0 ? ` - ${formatHours(group.hours)}` : "";
+	const summary = `（${group.count} 笔${hoursPart}）`;
 	return `<section class="ztk-report-task-card">
 		<header class="ztk-report-task-card-head">
-			${projectBadgeHtml(group.project)}
-			<strong class="ztk-report-title">${esc(group.project)}</strong>
-			<span class="ztk-report-group-meta">
-				<span class="ztk-report-count">${group.count} 笔</span>
-				${hoursBadgeHtml(group.hours)}
-			</span>
+			<strong class="ztk-report-title">${esc(group.project)} <span class="ztk-report-title-meta">${esc(summary)}</span></strong>
 		</header>
 		<div class="ztk-report-project-tasks">${tasks}</div>
 	</section>`;
@@ -379,5 +393,79 @@ export function todayDigestHtml(
 			</div>
 		</div>
 		<div class="ztk-collapsible-body">${body}</div>
+	</div>`;
+}
+
+export type RecentTaskItem = {
+	id: string;
+	title: string;
+	path: string;
+	project?: string;
+	type: TaskType;
+	status: TaskStatus;
+	updatedAt: number;
+};
+
+/** 按 updatedAt 倒序取最近编辑任务；updatedAt≤0 排最后。 */
+export function pickRecentTasks<T extends { updatedAt: number }>(tasks: T[], limit = 8): T[] {
+	const n = Math.max(0, limit);
+	return [...tasks]
+		.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+		.slice(0, n);
+}
+
+/** 相对「现在」的编辑时间文案（纯函数，便于单测）。 */
+export function formatRecentEditLabel(updatedAt: number, nowMs: number): string {
+	if (!updatedAt || updatedAt <= 0) return "未知";
+	const diff = Math.max(0, nowMs - updatedAt);
+	const min = Math.floor(diff / 60_000);
+	if (min < 1) return "刚刚";
+	if (min < 60) return `${min} 分钟前`;
+	const hour = Math.floor(min / 60);
+	if (hour < 24) return `${hour} 小时前`;
+	const day = Math.floor(hour / 24);
+	if (day === 1) return "昨天";
+	if (day < 7) return `${day} 天前`;
+	const d = new Date(updatedAt);
+	const mm = String(d.getMonth() + 1).padStart(2, "0");
+	const dd = String(d.getDate()).padStart(2, "0");
+	return `${mm}-${dd}`;
+}
+
+/** 汇总顶栏：最近编辑任务卡片。 */
+export function recentTasksHtml(
+	items: RecentTaskItem[],
+	nowMs: number,
+	opts?: { showProject?: boolean },
+): string {
+	const showProject = opts?.showProject !== false;
+	const body = items.length
+		? `<ul class="ztk-recent-list">
+			${items.map((it) => {
+				const when = formatRecentEditLabel(it.updatedAt, nowMs);
+				const meta = [
+					TYPE_LABEL[it.type],
+					STATUS_LABEL[it.status],
+					showProject && it.project ? it.project : "",
+				].filter(Boolean).join(" · ");
+				return `<li class="ztk-recent-item is-${esc(it.status)}" data-id="${esc(it.id)}">
+					<button type="button" class="ztk-recent-open" data-act="goto-task" data-id="${esc(it.id)}">
+						<span class="ztk-recent-row">
+							<span class="ztk-recent-title">${esc(it.title)}</span>
+							<time class="ztk-recent-when" datetime="${esc(it.updatedAt ? new Date(it.updatedAt).toISOString() : "")}">${esc(when)}</time>
+						</span>
+						<span class="ztk-recent-meta">${esc(meta)}</span>
+					</button>
+				</li>`;
+			}).join("")}
+		</ul>`
+		: `<p class="ztk-muted">还没有可显示的任务</p>`;
+	return `<div class="ztk-card ztk-recent">
+		<div class="ztk-recent-bar">
+			<div class="ztk-section-title">
+				<h2>最近编辑</h2>
+			</div>
+		</div>
+		${body}
 	</div>`;
 }

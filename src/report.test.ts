@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+	formatRecentEditLabel,
 	formatReportLogsCopyText,
 	groupReportLogsByProject,
 	groupReportLogsByTask,
 	hoursBadgeHtml,
+	pickRecentTasks,
+	recentTasksHtml,
 	reportLogRowHtml,
 	reportLogsHeadHtml,
 	reportMergedGroupHtml,
@@ -141,9 +144,12 @@ test("按任务查看：同 path 归为一组，组内日期倒序，组间按�
 	assert.equal(second.hours, 1.5);
 });
 
-test("进展明细表头：时间/项目 Tab，搜索在复制左侧", () => {
-	const byTime = reportLogsHeadHtml("本周", false, "任务");
+test("进展明细表头：时间/项目 Tab，搜索在复制左侧，汇总在标题后", () => {
+	const byTime = reportLogsHeadHtml("本周", false, "任务", { count: 12, hours: 3.5 });
 	assert.match(byTime, /本周进展明细/);
+	assert.match(byTime, /ztk-report-logs-summary/);
+	assert.match(byTime, /12 笔/);
+	assert.match(byTime, /3\.5h/);
 	assert.match(byTime, /data-act="report-view-mode"/);
 	assert.match(byTime, /data-mode="time"/);
 	assert.match(byTime, /data-mode="task"/);
@@ -153,17 +159,19 @@ test("进展明细表头：时间/项目 Tab，搜索在复制左侧", () => {
 	assert.match(byTime, /value="任务"/);
 	assert.match(byTime, /data-act="copy-report-logs"/);
 	assert.match(byTime, />复制</);
+	const titleIdx = byTime.indexOf("进展明细");
+	const summaryIdx = byTime.indexOf("ztk-report-logs-summary");
 	const tabsIdx = byTime.indexOf("ztk-report-view-tabs");
 	const searchIdx = byTime.indexOf("ztk-report-search");
 	const copyIdx = byTime.indexOf('data-act="copy-report-logs"');
-	const titleIdx = byTime.indexOf("进展明细");
-	assert.ok(titleIdx < tabsIdx && tabsIdx < searchIdx && searchIdx < copyIdx);
+	assert.ok(titleIdx < summaryIdx && summaryIdx < tabsIdx && tabsIdx < searchIdx && searchIdx < copyIdx);
 	assert.match(byTime, /class="ztk-report-view-tab on"[^>]*data-mode="time"/);
 	assert.match(byTime, /class="ztk-report-view-tab"[^>]*data-mode="task"/);
 
 	const byTask = reportLogsHeadHtml("本周", true);
 	assert.match(byTask, /class="ztk-report-view-tab"[^>]*data-mode="time"/);
 	assert.match(byTask, /class="ztk-report-view-tab on"[^>]*data-mode="task"/);
+	assert.match(byTask, /0 笔/);
 });
 
 test("复制明细：按日期导出标题工时与正文", () => {
@@ -213,8 +221,11 @@ test("按项目分组 HTML：项目下再按任务合并堆叠", () => {
 	assert.match(html, /data-act="edit-report-log"/);
 	assert.equal(html.includes('data-act="copy-md"'), false);
 	assert.match(html, /KVAD/);
-	assert.match(html, /3 笔/);
-	assert.match(html, /4h/);
+	assert.equal((html.match(/KVAD/g) || []).length, 1);
+	assert.match(html, /class="ztk-report-title"/);
+	assert.match(html, /ztk-report-title-meta/);
+	assert.match(html, /（3 笔 - 4h）/);
+	assert.equal(html.includes("ztk-project-badge"), false);
 	assert.match(html, /插件开发/);
 	assert.match(html, /联调/);
 	assert.match(html, /2 笔/);
@@ -237,4 +248,40 @@ test("groupReportLogsByProject：同项目归并", () => {
 	assert.equal(groups[0]?.count, 2);
 	assert.equal(groups[0]?.hours, 2);
 	assert.equal(groups[1]?.project, "终端");
+});
+
+test("pickRecentTasks：按 updatedAt 倒序截断", () => {
+	const picked = pickRecentTasks([
+		{ id: "a", updatedAt: 100 },
+		{ id: "b", updatedAt: 300 },
+		{ id: "c", updatedAt: 200 },
+	], 2);
+	assert.deepEqual(picked.map((t) => t.id), ["b", "c"]);
+});
+
+test("formatRecentEditLabel：相对时间", () => {
+	const now = Date.parse("2026-09-24T12:00:00+08:00");
+	assert.equal(formatRecentEditLabel(now - 30_000, now), "刚刚");
+	assert.equal(formatRecentEditLabel(now - 5 * 60_000, now), "5 分钟前");
+	assert.equal(formatRecentEditLabel(now - 3 * 3600_000, now), "3 小时前");
+	assert.equal(formatRecentEditLabel(0, now), "未知");
+});
+
+test("recentTasksHtml：含标题与 goto-task", () => {
+	const html = recentTasksHtml([
+		{
+			id: "t1",
+			title: "改汇总",
+			path: "p/t.md",
+			project: "Z",
+			type: "temp",
+			status: "doing",
+			updatedAt: Date.parse("2026-09-24T11:00:00+08:00"),
+		},
+	], Date.parse("2026-09-24T12:00:00+08:00"));
+	assert.match(html, /最近编辑/);
+	assert.match(html, /改汇总/);
+	assert.match(html, /data-act="goto-task"/);
+	assert.match(html, /临时 · 进行中 · Z/);
+	assert.match(html, /is-doing/);
 });

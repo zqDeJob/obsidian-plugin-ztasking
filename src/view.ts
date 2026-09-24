@@ -61,17 +61,17 @@ import {
 import {
 	formatReportLogsCopyText,
 	groupReportLogsByProject,
-	groupReportLogsByTask,
 	highlightElementText,
 	hoursBadgeHtml,
 	mdSlotHtml,
 	projectBadgeHtml,
+	recentTasksHtml,
 	reportLogRowHtml,
 	reportLogsHeadHtml,
 	reportMergedGroupHtml,
-	reportTaskCountRowHtml,
 	sumHours,
 	todayDigestHtml,
+	pickRecentTasks,
 } from "./report";
 import {
 	applyCatalogSort,
@@ -81,6 +81,7 @@ import {
 	type CatalogSortKey,
 } from "./catalog";
 import { isSidebarStatusFilter, matchSidebarStatus, mergeSidebarOrder, reorderSidebarIds, type SidebarStatusFilter } from "./sidebar";
+import { helpCenterHtml } from "./help";
 import {
 	isTopTabChange,
 	markdownPaintRootSelectors,
@@ -88,12 +89,15 @@ import {
 } from "./view-scope";
 import { WebPanel } from "./web-panel";
 
-type BoardView = "board" | "detail" | "cal" | "gantt" | "report" | "web";
-type TopTab = "report" | "work" | "schedule" | "web";
+type BoardView = "board" | "detail" | "cal" | "gantt" | "report" | "web" | "help";
+type TopTab = "report" | "work" | "schedule" | "web" | "help";
 type ScheduleMode = "cal" | "gantt";
-const VIEWS: BoardView[] = ["board", "detail", "cal", "gantt", "report", "web"];
+const VIEWS: BoardView[] = ["board", "detail", "cal", "gantt", "report", "web", "help"];
 const PERIOD_SHORTCUTS = ["week", "month", "quarter", "year"] as const;
 const YP_DRAWER_NEW = "__new__";
+/** 汇总页顶栏网页壁纸（Unsplash，横幅裁切）。 */
+const REPORT_BANNER_URL =
+	"https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=1920&h=480&q=80";
 
 /** Obsidian Modal 确认，避免 window.confirm 在 Electron 里弄丢输入焦点 */
 function askConfirm(app: App, title: string, message: string, okLabel = "确定"): Promise<boolean> {
@@ -336,12 +340,12 @@ export class ZTaskingView extends ItemView {
 		this.contentEl.addClass("ztk-view");
 		this.contentEl.innerHTML = `
 			<header class="ztk-header">
-				<div class="ztk-brand">Z-TASKING<span>任务台</span></div>
 				<div class="ztk-tabs">
 					<button data-tab="report" class="on" type="button">汇总</button>
 					<button data-tab="work" type="button">工作台</button>
 					<button data-tab="schedule" type="button">日历</button>
 					${Platform.isDesktopApp ? `<button data-tab="web" type="button">网页</button>` : ""}
+					<button data-tab="help" type="button">帮助中心</button>
 				</div>
 				<div class="ztk-spacer"></div>
 				<select class="ztk-project-filter" aria-label="业务项目">
@@ -410,6 +414,7 @@ export class ZTaskingView extends ItemView {
 				</div>
 				<div class="ztk-page on" id="ztk-view-report"></div>
 				<div class="ztk-page" id="ztk-view-web"></div>
+				<div class="ztk-page" id="ztk-view-help"></div>
 				<div class="ztk-detail-drawer" aria-hidden="true">
 					<div class="ztk-detail-backdrop" data-act="close-detail"></div>
 					<article class="ztk-detail"></article>
@@ -591,6 +596,7 @@ export class ZTaskingView extends ItemView {
 		if (view === "report") return "report";
 		if (view === "cal" || view === "gantt") return "schedule";
 		if (view === "web") return "web";
+		if (view === "help") return "help";
 		return "work";
 	}
 
@@ -602,6 +608,7 @@ export class ZTaskingView extends ItemView {
 		else if (tab === "work") this.switchView("board");
 		else if (tab === "schedule") this.switchView(this.scheduleMode);
 		else if (tab === "web") this.switchView("web");
+		else if (tab === "help") this.switchView("help");
 	}
 
 	private switchView(view: BoardView): void {
@@ -675,8 +682,21 @@ export class ZTaskingView extends ItemView {
 				|| tab?.dataset.tab === "work"
 				|| tab?.dataset.tab === "schedule"
 				|| tab?.dataset.tab === "web"
+				|| tab?.dataset.tab === "help"
 			) {
 				this.switchTopTab(tab.dataset.tab);
+				return;
+			}
+			const helpExt = target.closest<HTMLAnchorElement>("#ztk-view-help a[href^='http']");
+			if (helpExt?.href) {
+				e.preventDefault();
+				window.open(helpExt.href, "_blank", "noopener");
+				return;
+			}
+			const helpAnchor = target.closest<HTMLElement>("#ztk-view-help [data-act=\"help-anchor\"]");
+			if (helpAnchor) {
+				e.preventDefault();
+				this.scrollHelpAnchor(helpAnchor.dataset.target ?? "");
 				return;
 			}
 			const p = target.closest<HTMLButtonElement>(".ztk-period button[data-p]");
@@ -1338,11 +1358,12 @@ export class ZTaskingView extends ItemView {
 			this.view === "board"
 				|| this.view === "detail"
 				|| this.view === "cal"
-				|| this.view === "web",
+				|| this.view === "web"
+				|| this.view === "help",
 		);
 		const projectFilter = this.contentEl.querySelector<HTMLElement>(".ztk-project-filter");
 		if (projectFilter) {
-			projectFilter.classList.toggle("is-hidden", this.view === "web");
+			projectFilter.classList.toggle("is-hidden", this.view === "web" || this.view === "help");
 		}
 		const newBtn = this.contentEl.querySelector<HTMLElement>("[data-act=\"new\"]");
 		if (newBtn) {
@@ -1996,9 +2017,29 @@ export class ZTaskingView extends ItemView {
 				this.renderReport();
 			} else if (target === "web") {
 				this.webPanel.mount(this.$("#ztk-view-web"));
+			} else if (target === "help") {
+				this.renderHelp();
 			}
 		}
 		this.renderDetail();
+	}
+
+	private renderHelp(): void {
+		this.$("#ztk-view-help").innerHTML = helpCenterHtml();
+	}
+
+	/** 帮助中心侧栏锚点：在帮助页滚动容器内平滑跳转并高亮目录。 */
+	private scrollHelpAnchor(targetId: string): void {
+		const id = targetId.trim();
+		if (!id) return;
+		const page = this.contentEl.querySelector("#ztk-view-help");
+		if (!page) return;
+		const el = page.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+		if (!el) return;
+		el.scrollIntoView({ behavior: "smooth", block: "start" });
+		page.querySelectorAll(".ztk-help-nav a").forEach((a) => {
+			a.classList.toggle("on", (a as HTMLElement).dataset.target === id);
+		});
 	}
 
 	private mdSlot(path: string, date: string): string {
@@ -3464,11 +3505,28 @@ export class ZTaskingView extends ItemView {
 			showProject,
 		}));
 		const projectGroups = groupReportLogsByProject(logItems);
-		const taskGroups = groupReportLogsByTask(logItems);
 		const listHtml = this.reportByTask
 			? projectGroups.map((g) => reportMergedGroupHtml(g)).join("")
 			: logItems.map((l) => reportLogRowHtml(l)).join("");
+		const periodHours = sumHours(logItems);
+		const recent = pickRecentTasks(this.projectTasks(), 15).map((t) => ({
+			id: t.id,
+			title: t.title,
+			path: t.path,
+			project: t.project,
+			type: t.type,
+			status: t.status,
+			updatedAt: t.updatedAt,
+		}));
 		this.$("#ztk-view-report").innerHTML = `
+			<div class="ztk-report-banner" aria-hidden="true">
+				<img class="ztk-report-banner-img" src="${esc(REPORT_BANNER_URL)}" alt="" loading="lazy" referrerpolicy="no-referrer" />
+				<div class="ztk-report-banner-shade"></div>
+				<div class="ztk-report-banner-mark">
+					<span class="ztk-report-banner-z">Z</span>
+					<span class="ztk-report-banner-name">-Tasking</span>
+				</div>
+			</div>
 			<div class="ztk-report-top">
 				${todayDigestHtml(
 					today,
@@ -3486,7 +3544,10 @@ export class ZTaskingView extends ItemView {
 			<div class="ztk-report-body">
 				<div class="ztk-report-main">
 					<div class="ztk-card ztk-report-logs">
-						${reportLogsHeadHtml(r.label, this.reportByTask, this.reportQuery)}
+						${reportLogsHeadHtml(r.label, this.reportByTask, this.reportQuery, {
+							count: logItems.length,
+							hours: periodHours,
+						})}
 						<div class="ztk-report-list">
 							${listHtml || `<p class="ztk-muted">这个周期还没有记录</p>`}
 						</div>
@@ -3497,12 +3558,7 @@ export class ZTaskingView extends ItemView {
 						<h2>活跃分布</h2>
 						<div class="ztk-heat">${heat}</div>
 					</div>
-					<div class="ztk-card ztk-report-overview">
-						<h2>按任务计数</h2>
-						<div class="ztk-count-list">
-							${taskGroups.map((g) => reportTaskCountRowHtml(g.title, g.count, g.hours)).join("") || `<p class="ztk-muted">暂无</p>`}
-						</div>
-					</div>
+					${recentTasksHtml(recent, Date.now(), { showProject })}
 				</aside>
 			</div>
 		`;

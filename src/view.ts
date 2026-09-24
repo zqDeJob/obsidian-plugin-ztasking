@@ -81,6 +81,11 @@ import {
 	type CatalogSortKey,
 } from "./catalog";
 import { isSidebarStatusFilter, matchSidebarStatus, mergeSidebarOrder, reorderSidebarIds, type SidebarStatusFilter } from "./sidebar";
+import {
+	isTopTabChange,
+	markdownPaintRootSelectors,
+	shellRenderTargets,
+} from "./view-scope";
 import { WebPanel } from "./web-panel";
 
 type BoardView = "board" | "detail" | "cal" | "gantt" | "report" | "web";
@@ -541,8 +546,8 @@ export class ZTaskingView extends ItemView {
 	private refreshPeriodViews(): void {
 		this.mdGen += 1;
 		const gen = this.mdGen;
-		this.renderGantt();
-		this.renderReport();
+		if (this.view === "gantt") this.renderGantt();
+		if (this.view === "report") this.renderReport();
 		void this.paintMarkdown(gen);
 	}
 
@@ -590,6 +595,9 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private switchTopTab(tab: TopTab): void {
+		if (isTopTabChange(this.view, tab)) {
+			this.closeDetailDrawer({ skipShellRefresh: true });
+		}
 		if (tab === "report") this.switchView("report");
 		else if (tab === "work") this.switchView("board");
 		else if (tab === "schedule") this.switchView(this.scheduleMode);
@@ -614,15 +622,7 @@ export class ZTaskingView extends ItemView {
 		this.syncPeriodControls();
 		this.mdGen += 1;
 		const gen = this.mdGen;
-		if (view === "board") {
-			this.syncWorkShell();
-			this.renderDetail();
-			requestAnimationFrame(() => this.applyBoardLayout());
-		}
-		if (view === "cal") this.renderCalendar();
-		if (view === "gantt") this.renderGantt();
-		if (view === "report") this.renderReport();
-		if (view === "web") this.webPanel.mount(this.$("#ztk-view-web"));
+		this.renderActiveShell();
 		void this.paintMarkdown(gen);
 	}
 
@@ -1303,7 +1303,7 @@ export class ZTaskingView extends ItemView {
 		this.detailOpen = true;
 	}
 
-	private closeDetailDrawer(): void {
+	private closeDetailDrawer(opts?: { skipShellRefresh?: boolean }): void {
 		const wasTp = this.planDrawerKind === "tp" && !!this.ypDrawerId;
 		this.detailOpen = false;
 		this.ypDrawerId = null;
@@ -1315,6 +1315,8 @@ export class ZTaskingView extends ItemView {
 		this.editingDesc = false;
 		this.editingTitle = false;
 		this.syncDetailDrawer();
+		this.renderDetail();
+		if (opts?.skipShellRefresh) return;
 		this.renderBoardYesterday();
 		if (wasTp) this.renderBoardPlan();
 		this.renderCatalog();
@@ -1975,14 +1977,28 @@ export class ZTaskingView extends ItemView {
 		this.syncPeriodVisibility();
 		this.syncPeriodControls();
 		this.syncProjectFilterOptions();
-		this.syncWorkShell();
 		this.syncDetailDrawer();
-		this.renderDetail();
-		this.renderCalendar();
-		this.renderGantt();
-		this.renderReport();
-		requestAnimationFrame(() => this.applyBoardLayout());
+		this.renderActiveShell();
 		void this.paintMarkdown(gen);
+	}
+
+	/** 只刷新当前 Tab 壳层；抽屉打开时一并刷新详情。 */
+	private renderActiveShell(): void {
+		for (const target of shellRenderTargets(this.view)) {
+			if (target === "board") {
+				this.syncWorkShell();
+				requestAnimationFrame(() => this.applyBoardLayout());
+			} else if (target === "cal") {
+				this.renderCalendar();
+			} else if (target === "gantt") {
+				this.renderGantt();
+			} else if (target === "report") {
+				this.renderReport();
+			} else if (target === "web") {
+				this.webPanel.mount(this.$("#ztk-view-web"));
+			}
+		}
+		this.renderDetail();
 	}
 
 	private mdSlot(path: string, date: string): string {
@@ -2003,7 +2019,12 @@ export class ZTaskingView extends ItemView {
 		this.mdRoot = new Component();
 		this.mdRoot.load();
 		const boxes: HTMLElement[] = [];
-		this.contentEl.querySelectorAll(".ztk-md").forEach((el) => boxes.push(el as HTMLElement));
+		const detailOpen = this.detailOpen && (!!this.selectedId || !!this.ypDrawerId || this.projectMgrOpen);
+		for (const sel of markdownPaintRootSelectors(this.view, detailOpen)) {
+			const root = this.contentEl.querySelector(sel);
+			if (!root) continue;
+			root.querySelectorAll(".ztk-md").forEach((el) => boxes.push(el as HTMLElement));
+		}
 		for (const box of boxes) {
 			if (gen !== this.mdGen) return;
 			const path = box.dataset.src ?? "";

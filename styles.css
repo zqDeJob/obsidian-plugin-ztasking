@@ -78,6 +78,13 @@
 		linear-gradient(180deg, #faf3ed 0%, var(--ztk-bg) 36%, #ffffff 100%);
 	color: var(--ztk-ink);
 	font-size: 14px;
+	/* 字号阶梯：标题 14 / 正文 13 / 辅助 12 / 标注 11 */
+	--ztk-fs-title: 14px;
+	--ztk-fs-body: 13px;
+	--ztk-fs-meta: 12px;
+	--ztk-fs-caption: 11px;
+	--ztk-lh-tight: 1.35;
+	--ztk-lh-body: 1.5;
 	overflow: hidden;
 }
 
@@ -886,9 +893,9 @@
 }
 .ztk-task.ztk-yp-task .ztk-task-main h3 {
 	margin: 0;
-	font-size: 12px;
+	font-size: var(--ztk-fs-body);
 	font-weight: 500;
-	line-height: 1.35;
+	line-height: var(--ztk-lh-tight);
 	overflow-wrap: anywhere;
 	word-break: break-word;
 }
@@ -1888,10 +1895,10 @@
 .ztk-day-plan-title {
 	flex: 1 1 auto;
 	min-width: 0;
-	font-size: 13px;
+	font-size: var(--ztk-fs-body);
 	font-weight: 400;
 	color: var(--ztk-ink);
-	line-height: 1.35;
+	line-height: var(--ztk-lh-tight);
 	overflow-wrap: anywhere;
 	word-break: break-word;
 }
@@ -1902,7 +1909,7 @@
 }
 .ztk-day-plan .ztk-project-badge {
 	flex: 0 0 auto;
-	font-size: 11px;
+	font-size: var(--ztk-fs-caption);
 	font-weight: 500;
 }
 .ztk-log time { font-size: 12px; color: var(--ztk-muted); padding-top: 0; }
@@ -1941,8 +1948,8 @@
 	margin-top: 0;
 }
 .ztk-md {
-	font-size: 14px;
-	line-height: 1.65;
+	font-size: var(--ztk-fs-body);
+	line-height: var(--ztk-lh-body);
 	overflow-wrap: anywhere;
 }
 .ztk-md > :first-child { margin-top: 0; }
@@ -2618,7 +2625,7 @@
 .ztk-today-item .ztk-ghost {
 	justify-self: start;
 	padding: 4px 10px;
-	font-size: 13px;
+	font-size: var(--ztk-fs-body);
 	font-weight: 600;
 }
 .ztk-today-title > button.ztk-ghost[data-act="goto-task"],
@@ -2629,12 +2636,12 @@
 	padding: 0;
 	border-radius: 0;
 	font-weight: 400;
-	font-size: 13px;
+	font-size: var(--ztk-fs-body);
 	color: var(--ztk-ink);
 	text-align: left;
 	max-width: 100%;
 	white-space: normal;
-	line-height: 1.35;
+	line-height: var(--ztk-lh-tight);
 	overflow-wrap: anywhere;
 }
 .ztk-today-title > button.ztk-ghost[data-act="goto-task"] {
@@ -2811,15 +2818,15 @@
 }
 .ztk-report-task-card-stack {
 	display: grid;
-	gap: 10px;
+	gap: 14px;
 }
 .ztk-report-project-tasks {
 	display: grid;
-	gap: 12px;
+	gap: 16px;
 }
 .ztk-report-task-block {
 	display: grid;
-	gap: 8px;
+	gap: 10px;
 	min-width: 0;
 }
 .ztk-report-task-block-head {
@@ -2827,22 +2834,29 @@
 	align-items: center;
 	gap: 8px;
 	min-width: 0;
-	padding: 0 2px;
+	padding: 2px 2px 4px;
 }
 .ztk-report-task-block-head .ztk-report-entry-title {
 	flex: 1 1 auto;
+	font-size: var(--ztk-fs-body);
+	line-height: var(--ztk-lh-tight);
 }
 .ztk-report-entry-card {
 	position: relative;
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) auto;
 	gap: 6px 8px;
-	padding: 8px 2px;
+	padding: 10px 6px;
+	margin: 0 -4px;
 	border: 0;
-	border-radius: 0;
+	border-radius: 8px;
 	background: transparent;
 	box-shadow: none;
 	align-items: start;
+	transition: background .12s ease;
+}
+.ztk-report-entry-card:hover {
+	background: color-mix(in srgb, var(--ztk-teal-soft) 55%, transparent);
 }
 .ztk-report-entry-card > .ztk-report-entry-card-head,
 .ztk-report-entry-card > .ztk-report-body {
@@ -2862,12 +2876,13 @@
 .ztk-report-entry-title {
 	flex: 1 1 auto;
 	min-width: 0;
-	font-size: 12px;
+	font-size: var(--ztk-fs-body);
 	font-weight: 650;
 	color: var(--ztk-ink);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	line-height: var(--ztk-lh-tight);
 }
 .ztk-report-entry-card-head .ztk-hours-badge {
 	margin-left: auto;
@@ -2943,7 +2958,7 @@
 	min-width: 0;
 }
 .ztk-report-date {
-	font-size: 12px;
+	font-size: var(--ztk-fs-meta);
 	font-weight: 650;
 	color: var(--ztk-teal);
 	letter-spacing: .02em;
@@ -2953,10 +2968,10 @@
 .ztk-report-row-head .ztk-report-title {
 	flex: 1 1 auto;
 	min-width: 0;
-	font-size: 13px;
+	font-size: var(--ztk-fs-body);
 	font-weight: 650;
 	color: var(--ztk-ink);
-	line-height: 1.4;
+	line-height: var(--ztk-lh-body);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -2976,7 +2991,10 @@
 	min-width: 0;
 	color: #444;
 }
-.ztk-report-body .ztk-md { font-size: 13px; }
+.ztk-report-body .ztk-md {
+	font-size: var(--ztk-fs-body);
+	line-height: var(--ztk-lh-body);
+}
 .ztk-count-list {
 	display: grid;
 	gap: 2px;

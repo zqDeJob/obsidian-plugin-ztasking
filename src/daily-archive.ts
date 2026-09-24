@@ -1,11 +1,24 @@
-import { addDays, esc, fmt, parseDate, type DailyReportDraftSettings } from "./model.ts";
-import { DEFAULT_DAILY_DISCUSS, planItemsToText, type DailyReportDraft } from "./daily-report.ts";
+import {
+	addDays,
+	esc,
+	fmt,
+	parseDate,
+	YP_NO_PROJECT,
+	type DailyReportDraftSettings,
+} from "./model.ts";
+import {
+	DEFAULT_DAILY_DISCUSS,
+	coercePlanItem,
+	type DailyReportDraft,
+	type TomorrowPlanItem,
+} from "./daily-report.ts";
+import { iconBtn } from "./icons.ts";
 import { projectBadgeHtml } from "./report.ts";
 
 export const DAILY_REPORT_DIR = "日报";
 
-/** 昨日计划默认/空项目 */
-export const YP_NO_PROJECT = "无项目";
+/** @deprecated 使用 model.YP_NO_PROJECT；此处再导出保持旧 import 兼容 */
+export { YP_NO_PROJECT };
 
 /** 项目下拉：始终带「无项目」在首项 */
 export function withYpNoProjectOption(projects: string[]): string[] {
@@ -341,16 +354,34 @@ export function isDailyDraftWorthArchiving(
 ): boolean {
 	if (draft.work.trim()) return true;
 	if (draft.plan.trim()) return true;
-	if (Array.isArray(draft.planItems) && draft.planItems.some((it) => it.text.trim())) return true;
+	if (Array.isArray(draft.planItems) && draft.planItems.some((it) => {
+		const raw = it as TomorrowPlanItem & { text?: string };
+		const title = typeof raw.title === "string"
+			? raw.title.trim()
+			: typeof raw.text === "string"
+				? raw.text.trim()
+				: "";
+		return !!title;
+	})) return true;
 	const discuss = draft.discuss.trim();
 	if (discuss && discuss !== DEFAULT_DAILY_DISCUSS) return true;
 	return false;
 }
 
 export function draftToArchivePayload(draft: DailyReportDraft | DailyReportDraftSettings): DailyArchivePayload {
-	const plan = draft.plan?.trim()
-		? draft.plan
-		: planItemsToText(Array.isArray(draft.planItems) ? draft.planItems : []);
+	const items: TomorrowPlanItem[] = Array.isArray(draft.planItems)
+		? draft.planItems.map((it) => coercePlanItem(it)).filter((it): it is TomorrowPlanItem => !!it)
+		: [];
+	const plan = items.length
+		? serializeYesterdayPlanItems(items.map((it) => ({
+			id: it.id,
+			title: it.title,
+			project: it.project,
+			desc: it.desc,
+			notes: it.notes,
+			done: it.done,
+		})))
+		: (draft.plan?.trim() ?? "");
 	return {
 		date: draft.date,
 		work: draft.work ?? "",
@@ -393,16 +424,17 @@ export function yesterdayPlanListHtml(opts: {
 			}
 			const meta = projectTag ? `<div class="ztk-meta">${projectTag}</div>` : "";
 			return `
-			<div class="ztk-task ztk-yp-task${it.done ? " is-done" : ""}${opts.selectedId === it.id ? " sel" : ""}" data-act="edit-yesterday-plan" data-yp-id="${esc(it.id)}" role="button" tabindex="0" title="点击编辑">
-				<label class="ztk-yp-check-wrap" data-act="toggle-yesterday-plan" data-yp-id="${esc(it.id)}" title="${it.done ? "标记未完成" : "标记完成"}">
-					<input type="checkbox" class="ztk-yp-check"${it.done ? " checked" : ""} />
+			<div class="ztk-task ztk-yp-task${it.done ? " is-done" : ""}${opts.selectedId === it.id ? " sel" : ""}" data-act="toggle-yesterday-plan" data-yp-id="${esc(it.id)}" role="button" tabindex="0" title="点击勾选完成">
+				<label class="ztk-yp-check-wrap" title="${it.done ? "标记未完成" : "标记完成"}">
+					<input type="checkbox" class="ztk-yp-check"${it.done ? " checked" : ""} tabindex="-1" />
 				</label>
 				<div class="ztk-task-main">
 					<h3>${esc(it.title)}</h3>
 					${meta}
 				</div>
 				<div class="ztk-task-trail">
-					<button type="button" class="ztk-task-del" data-act="del-yesterday-plan" data-yp-id="${esc(it.id)}" title="删除" aria-label="删除">×</button>
+					${iconBtn("edit-yesterday-plan", "edit", "编辑", `data-yp-id="${esc(it.id)}"`)}
+					${iconBtn("del-yesterday-plan", "del", "删除", `data-yp-id="${esc(it.id)}"`)}
 				</div>
 			</div>`;
 		})
@@ -433,11 +465,16 @@ export function yesterdayPlanBlockHtml(opts: {
 				</div>
 				<div class="ztk-yesterday-plan-actions">
 					<button type="button" class="ztk-ghost" data-act="yp-quick-add" title="按行批量新增">批量新增</button>
-					<button type="button" class="ztk-btn" data-act="add-yesterday-plan" title="新增计划">新增</button>
 					<button type="button" class="ztk-btn" data-act="reset-yesterday-plan" title="恢复为归档基线">重置</button>
 				</div>
 			</div>
-			<div class="ztk-collapsible-body">${list}</div>
+			<div class="ztk-collapsible-body">
+				${list}
+				<div class="ztk-plan-add">
+					<input type="text" class="ztk-plan-add-input" placeholder="新建昨日计划，回车添加" />
+					<button type="button" class="ztk-ghost ztk-plan-add-btn" data-act="add-yp-plan-item" title="添加" aria-label="添加">+</button>
+				</div>
+			</div>
 		</div>
 	`;
 }

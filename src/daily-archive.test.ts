@@ -85,7 +85,7 @@ test("空草稿不值得归档；有计划或工作时才归档", () => {
 		isDailyDraftWorthArchiving({
 			work: "",
 			plan: "- a",
-			planItems: [{ id: "1", text: "a" }],
+			planItems: [{ id: "1", title: "a", project: "无项目", desc: "", notes: [], done: false }],
 			discuss: "- 无",
 		}),
 		true,
@@ -126,10 +126,14 @@ test("yesterdayPlanBlockHtml：可编辑列表 + 新增/重置/批量新增，�
 	assert.match(withItems, />终端</);
 	assert.doesNotMatch(withItems, /补边界/);
 	assert.doesNotMatch(withItems, /暂无描述/);
-	assert.match(withItems, /data-act="add-yesterday-plan"/);
+	assert.doesNotMatch(withItems, /data-act="add-yesterday-plan"/);
+	assert.match(withItems, /data-act="add-yp-plan-item"/);
+	assert.match(withItems, /ztk-plan-add-input/);
 	assert.match(withItems, /data-act="reset-yesterday-plan"/);
 	assert.match(withItems, /data-act="edit-yesterday-plan"/);
+	assert.match(withItems, /ztk-icon-btn--edit/);
 	assert.match(withItems, /data-act="del-yesterday-plan"/);
+	assert.match(withItems, /ztk-icon-btn--del/);
 	assert.match(withItems, /data-yp-id="a"/);
 	assert.match(withItems, /data-act="yp-quick-add"/);
 	assert.match(withItems, /ztk-ghost/);
@@ -160,7 +164,9 @@ test("yesterdayPlanBlockHtml：可编辑列表 + 新增/重置/批量新增，�
 
 	const empty = yesterdayPlanBlockHtml({ items: [] });
 	assert.match(empty, /暂无计划/);
-	assert.match(empty, /data-act="add-yesterday-plan"/);
+	assert.doesNotMatch(empty, /data-act="add-yesterday-plan"/);
+	assert.match(empty, /data-act="add-yp-plan-item"/);
+	assert.match(empty, /ztk-plan-add-input/);
 	assert.match(empty, /data-act="reset-yesterday-plan"/);
 	assert.match(empty, /data-act="yp-quick-add"/);
 	assert.doesNotMatch(empty, /data-act="open-yesterday-plan"/);

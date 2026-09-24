@@ -19,6 +19,7 @@ const STYLE: Record<IconKind, string> = {
 
 export type IconKind = keyof typeof SVG;
 
-export function iconBtn(act: string, kind: IconKind, label: string): string {
-	return `<button type="button" class="ztk-icon-btn ztk-icon-btn--${kind}" data-act="${act}" title="${label}" aria-label="${label}" style="${STYLE[kind]}">${SVG[kind]}</button>`;
+export function iconBtn(act: string, kind: IconKind, label: string, extraAttrs = ""): string {
+	const attrs = extraAttrs.trim();
+	return `<button type="button" class="ztk-icon-btn ztk-icon-btn--${kind}" data-act="${act}"${attrs ? ` ${attrs}` : ""} title="${label}" aria-label="${label}" style="${STYLE[kind]}">${SVG[kind]}</button>`;
 }

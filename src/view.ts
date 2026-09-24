@@ -16,6 +16,7 @@ import {
 	type TaskStatus,
 	type TaskType,
 } from "./model";
+import { calJumpButtonHtml, calPickerPanelHtml, monthCursorFromDay, shiftMonth } from "./cal-picker";
 import { copyText } from "./clipboard";
 import {
 	newYesterdayPlanItemId,
@@ -32,7 +33,7 @@ import {
 import {
 	assembleDailyReportText,
 	emptyDailyDraft,
-	newPlanItemId,
+	emptyPlanItem,
 	planItemsToText,
 	refreshDailyDraft,
 	textToPlanItems,
@@ -59,6 +60,7 @@ import {
 } from "./project";
 import {
 	formatReportLogsCopyText,
+	groupReportLogsByProject,
 	groupReportLogsByTask,
 	highlightElementText,
 	hoursBadgeHtml,
@@ -241,6 +243,12 @@ export class ZTaskingView extends ItemView {
 	selectedId = "";
 	calCursor = new Date();
 	selectedDay = todayStr();
+	/** 日历网格高亮区间（七天内 / 本月快捷） */
+	private calHighlight: { start: string; end: string } | null = null;
+	/** 自定义日期选择器是否展开 */
+	private calPickerOpen = false;
+	/** 选择器面板当前浏览月份 */
+	private calPickerCursor = monthCursorFromDay(todayStr());
 	ganttTaskId = "";
 	editingLogDate: string | null = null;
 	/** 昨日计划笔记编辑下标（item.notes 原数组） */
@@ -269,8 +277,10 @@ export class ZTaskingView extends ItemView {
 	private projectMgrOpen = false;
 	/** 项目管理：正在行内重命名的项目名 */
 	private projectMgrRenameFrom: string | null = null;
-	/** 昨日计划抽屉：null 关闭；YP_DRAWER_NEW 新增；否则为条目 id */
+	/** 计划抽屉：null 关闭；条目 id（昨日/明日共用） */
 	private ypDrawerId: string | null = null;
+	/** 计划抽屉来源：昨日计划(yp) / 明日计划(tp) */
+	private planDrawerKind: "yp" | "tp" = "yp";
 	/** 抽屉/批量写入锁定的日报日期（空则用左侧昨日计划对应日报） */
 	private ypEditReportDate = "";
 	private boardPlanCache: {
@@ -350,7 +360,7 @@ export class ZTaskingView extends ItemView {
 				<button class="ztk-btn is-hidden" data-act="project-mgr" type="button">项目管理</button>
 			</header>
 			<main class="ztk-main">
-				<div class="ztk-page" id="ztk-view-board" data-detail-open="0">
+				<div class="ztk-page" id="ztk-view-board">
 					<aside class="ztk-board-left">
 						<div class="ztk-board-yesterday"></div>
 						<div class="ztk-board-today"></div>
@@ -361,18 +371,19 @@ export class ZTaskingView extends ItemView {
 						<div class="ztk-filters"></div>
 						<div class="ztk-catalog-body"></div>
 					</aside>
-					<div class="ztk-detail-drawer" aria-hidden="true">
-						<div class="ztk-detail-backdrop" data-act="close-detail"></div>
-						<article class="ztk-detail"></article>
-					</div>
 				</div>
 				<div class="ztk-page" id="ztk-view-cal">
 					<div class="ztk-cal-grid">
 						<div class="ztk-cal-toolbar">
-							<button class="ztk-ghost" data-act="cal-prev" type="button">上一月</button>
+							<div class="ztk-cal-jump-wrap"></div>
+							<div class="ztk-cal-shortcuts" role="group" aria-label="日期快捷">
+								<button class="ztk-ghost ztk-cal-shortcut" data-act="cal-today" type="button">今天</button>
+								<button class="ztk-ghost ztk-cal-shortcut" data-act="cal-last7" type="button">七天内</button>
+								<button class="ztk-ghost ztk-cal-shortcut" data-act="cal-this-month" type="button">本月</button>
+							</div>
+							<button class="ztk-ghost ztk-cal-month-nav" data-act="cal-prev" type="button" title="上一月" aria-label="上一月">‹</button>
 							<strong class="ztk-cal-title"></strong>
-							<button class="ztk-ghost" data-act="cal-next" type="button">下一月</button>
-							<button class="ztk-ghost" data-act="cal-today" type="button">今天</button>
+							<button class="ztk-ghost ztk-cal-month-nav" data-act="cal-next" type="button" title="下一月" aria-label="下一月">›</button>
 							<span class="ztk-spacer"></span>
 							<button class="ztk-ghost ztk-cal-day-toggle ztk-cal-day-toggle--bar" data-act="toggle-cal-day" type="button">折叠详情</button>
 							<button class="ztk-ghost" data-act="goto-gantt" type="button">甘特图</button>
@@ -394,6 +405,10 @@ export class ZTaskingView extends ItemView {
 				</div>
 				<div class="ztk-page on" id="ztk-view-report"></div>
 				<div class="ztk-page" id="ztk-view-web"></div>
+				<div class="ztk-detail-drawer" aria-hidden="true">
+					<div class="ztk-detail-backdrop" data-act="close-detail"></div>
+					<article class="ztk-detail"></article>
+				</div>
 			</main>
 			<div class="ztk-modal">
 				<form class="ztk-modal-card">
@@ -635,6 +650,13 @@ export class ZTaskingView extends ItemView {
 		});
 		root.addEventListener("click", (e) => {
 			const target = e.target as HTMLElement;
+			if (
+				this.calPickerOpen
+				&& !target.closest(".ztk-cal-jump-wrap")
+			) {
+				this.calPickerOpen = false;
+				this.renderCalendar();
+			}
 			const selected = window.getSelection()?.toString() ?? "";
 			if (selected && !target.closest("button, a, textarea, input, select, [data-act]")) {
 				return;
@@ -701,16 +723,60 @@ export class ZTaskingView extends ItemView {
 				}
 				if (a === "cal-prev") {
 					this.calCursor.setMonth(this.calCursor.getMonth() - 1);
+					this.calHighlight = null;
 					this.refreshCalendar();
+					return;
 				}
 				if (a === "cal-next") {
 					this.calCursor.setMonth(this.calCursor.getMonth() + 1);
+					this.calHighlight = null;
 					this.refreshCalendar();
+					return;
 				}
 				if (a === "cal-today") {
-					this.calCursor = new Date();
-					this.selectedDay = todayStr();
-					this.refreshCalendar();
+					this.calPickerOpen = false;
+					this.jumpCalendarTo(todayStr(), null);
+					return;
+				}
+				if (a === "cal-last7") {
+					this.calPickerOpen = false;
+					const end = todayStr();
+					const start = fmt(addDays(new Date(), -6));
+					this.jumpCalendarTo(end, { start, end });
+					return;
+				}
+				if (a === "cal-this-month") {
+					this.calPickerOpen = false;
+					const now = new Date();
+					const start = fmt(new Date(now.getFullYear(), now.getMonth(), 1));
+					const end = fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+					const today = todayStr();
+					const day = today >= start && today <= end ? today : start;
+					this.jumpCalendarTo(day, { start, end });
+					return;
+				}
+				if (a === "cal-picker-toggle") {
+					this.calPickerOpen = !this.calPickerOpen;
+					if (this.calPickerOpen) {
+						this.calPickerCursor = monthCursorFromDay(this.selectedDay);
+					}
+					this.renderCalendar();
+					return;
+				}
+				if (a === "cal-picker-prev") {
+					this.calPickerCursor = shiftMonth(this.calPickerCursor, -1);
+					this.renderCalendar();
+					return;
+				}
+				if (a === "cal-picker-next") {
+					this.calPickerCursor = shiftMonth(this.calPickerCursor, 1);
+					this.renderCalendar();
+					return;
+				}
+				if (a === "cal-picker-day" && act.dataset.day) {
+					this.calPickerOpen = false;
+					this.jumpCalendarTo(act.dataset.day, null);
+					return;
 				}
 				if (a === "toggle-cal-day") {
 					void this.toggleCalDayPane();
@@ -745,6 +811,25 @@ export class ZTaskingView extends ItemView {
 					void this.paintMarkdown(gen);
 					return;
 				}
+				if (a === "edit-report-log") {
+					const path = act.dataset.path ?? act.closest<HTMLElement>("[data-path]")?.dataset.path ?? "";
+					const date = act.dataset.date ?? act.closest<HTMLElement>("[data-date]")?.dataset.date ?? "";
+					if (!path || !date) return;
+					const task = this.tasks().find((t) => t.path === path);
+					if (!task) {
+						new Notice("任务不存在");
+						return;
+					}
+					this.openTaskDetail(task.id);
+					this.editingLogDate = date;
+					this.syncDetailDrawer();
+					this.rerenderDetail();
+					requestAnimationFrame(() => {
+						const ta = this.contentEl.querySelector(".ztk-log.is-editing textarea") as HTMLTextAreaElement | null;
+						ta?.focus();
+					});
+					return;
+				}
 				if (a === "copy-report-logs") {
 					void this.copyReportLogs();
 					return;
@@ -767,13 +852,23 @@ export class ZTaskingView extends ItemView {
 					void this.addTomorrowPlanItem(input?.value);
 					return;
 				}
+				if (a === "add-yp-plan-item") {
+					const wrap = act.closest(".ztk-plan-add");
+					const input = wrap?.querySelector<HTMLInputElement>(".ztk-plan-add-input");
+					const report = act.closest<HTMLElement>("[data-yp-report]")?.dataset.ypReport;
+					void this.addYpPlanItemInline(input?.value, report);
+					return;
+				}
 				if (a === "del-plan-item" && act.dataset.planId) {
 					void this.removeTomorrowPlanItem(act.dataset.planId);
 					return;
 				}
-				if (a === "add-yesterday-plan") {
-					const report = act.closest<HTMLElement>("[data-yp-report]")?.dataset.ypReport;
-					void this.openYpDrawer(null, report);
+				if (a === "edit-tomorrow-plan" && act.dataset.planId) {
+					void this.openTpDrawer(act.dataset.planId);
+					return;
+				}
+				if (a === "toggle-tomorrow-plan" && act.dataset.planId) {
+					void this.toggleTomorrowPlanDone(act.dataset.planId);
 					return;
 				}
 				if (a === "yp-quick-add") {
@@ -819,7 +914,7 @@ export class ZTaskingView extends ItemView {
 					return;
 				}
 				if (a === "edit-log" || a === "save-log" || a === "cancel-log" || a === "del-log") {
-					if (this.ypDrawerId) {
+					if (this.ypDrawerId && this.planDrawerKind === "yp") {
 						const idxRaw = act.closest<HTMLElement>("[data-yp-note-idx]")?.dataset.ypNoteIdx;
 						const idx = idxRaw !== undefined ? Number(idxRaw) : NaN;
 						if (Number.isInteger(idx) && idx >= 0) void this.handleYpNoteAction(a, idx);
@@ -832,7 +927,7 @@ export class ZTaskingView extends ItemView {
 					return;
 				}
 				if (a === "copy-log") {
-					if (this.ypDrawerId) {
+					if (this.ypDrawerId && this.planDrawerKind === "yp") {
 						const idxRaw = act.closest<HTMLElement>("[data-yp-note-idx]")?.dataset.ypNoteIdx;
 						const idx = idxRaw !== undefined ? Number(idxRaw) : NaN;
 						if (Number.isInteger(idx) && idx >= 0) void this.copyYpNote(idx);
@@ -899,6 +994,8 @@ export class ZTaskingView extends ItemView {
 			const day = target.closest<HTMLElement>(".ztk-day");
 			if (day?.dataset.day) {
 				this.selectedDay = day.dataset.day;
+				this.calHighlight = null;
+				this.calPickerOpen = false;
 				this.refreshCalendar();
 				return;
 			}
@@ -1018,7 +1115,12 @@ export class ZTaskingView extends ItemView {
 			if (!el.classList.contains("ztk-plan-add-input")) return;
 			if (e.key !== "Enter") return;
 			e.preventDefault();
-			void this.addTomorrowPlanItem(el.value);
+			if (el.closest(".ztk-yesterday-plan")) {
+				const report = el.closest<HTMLElement>("[data-yp-report]")?.dataset.ypReport;
+				void this.addYpPlanItemInline(el.value, report);
+			} else {
+				void this.addTomorrowPlanItem(el.value);
+			}
 		});
 		this.$(".ztk-modal-card").addEventListener("submit", (e) => {
 			e.preventDefault();
@@ -1193,6 +1295,7 @@ export class ZTaskingView extends ItemView {
 			this.editingTitle = false;
 		}
 		this.ypDrawerId = null;
+		this.planDrawerKind = "yp";
 		this.editingYpNoteIdx = null;
 		this.projectMgrOpen = false;
 		this.projectMgrRenameFrom = null;
@@ -1201,8 +1304,10 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private closeDetailDrawer(): void {
+		const wasTp = this.planDrawerKind === "tp" && !!this.ypDrawerId;
 		this.detailOpen = false;
 		this.ypDrawerId = null;
+		this.planDrawerKind = "yp";
 		this.editingYpNoteIdx = null;
 		this.projectMgrOpen = false;
 		this.projectMgrRenameFrom = null;
@@ -1211,16 +1316,17 @@ export class ZTaskingView extends ItemView {
 		this.editingTitle = false;
 		this.syncDetailDrawer();
 		this.renderBoardYesterday();
+		if (wasTp) this.renderBoardPlan();
 		this.renderCatalog();
 	}
 
 	private syncDetailDrawer(): void {
-		const board = this.contentEl.querySelector("#ztk-view-board") as HTMLElement | null;
-		if (!board) return;
+		const main = this.contentEl.querySelector(".ztk-main") as HTMLElement | null;
+		if (!main) return;
 		const open = this.detailOpen && (!!this.selectedId || !!this.ypDrawerId || this.projectMgrOpen);
-		board.dataset.detailOpen = open ? "1" : "0";
-		board.classList.toggle("is-detail-open", open);
-		const drawer = board.querySelector(".ztk-detail-drawer");
+		main.dataset.detailOpen = open ? "1" : "0";
+		main.classList.toggle("is-detail-open", open);
+		const drawer = main.querySelector(".ztk-detail-drawer");
 		if (drawer) drawer.setAttribute("aria-hidden", open ? "false" : "true");
 	}
 
@@ -1232,6 +1338,10 @@ export class ZTaskingView extends ItemView {
 				|| this.view === "cal"
 				|| this.view === "web",
 		);
+		const projectFilter = this.contentEl.querySelector<HTMLElement>(".ztk-project-filter");
+		if (projectFilter) {
+			projectFilter.classList.toggle("is-hidden", this.view === "web");
+		}
 		const newBtn = this.contentEl.querySelector<HTMLElement>("[data-act=\"new\"]");
 		if (newBtn) {
 			newBtn.classList.toggle("is-hidden", this.view !== "board");
@@ -1498,6 +1608,15 @@ export class ZTaskingView extends ItemView {
 				new Notice("标题不能为空");
 				return;
 			}
+			if (this.planDrawerKind === "tp") {
+				const ok = await this.tpDrawerSaveFields({ quiet: true });
+				if (!ok) return;
+				this.editingTitle = false;
+				this.rerenderDetail();
+				this.renderBoardPlan();
+				new Notice("已更新标题");
+				return;
+			}
 			const projectEl = this.contentEl.querySelector<HTMLSelectElement>(".ztk-yp-project");
 			const project = projectEl?.value.trim() || YP_NO_PROJECT;
 			const desc = this.readYpDescValue();
@@ -1735,6 +1854,15 @@ export class ZTaskingView extends ItemView {
 		if (act === "save-desc") {
 			const box = this.contentEl.querySelector("#ztk-desc-text") as HTMLTextAreaElement | null;
 			const desc = box?.value.trim() ?? "";
+			if (this.planDrawerKind === "tp") {
+				const ok = await this.tpDrawerSaveFields({ quiet: true });
+				if (!ok) return;
+				this.editingDesc = false;
+				this.rerenderDetail();
+				this.renderBoardPlan();
+				new Notice("已更新说明");
+				return;
+			}
 			if (this.ypDrawerId === YP_DRAWER_NEW) {
 				const fields = this.readYpDrawerFields();
 				fields.desc = desc;
@@ -2014,6 +2142,7 @@ export class ZTaskingView extends ItemView {
 		this.selectedId = "";
 		this.projectMgrOpen = false;
 		this.projectMgrRenameFrom = null;
+		this.planDrawerKind = "yp";
 		this.ypEditReportDate = (reportDate?.trim()
 			|| (this.view === "cal" ? planReportDateForDay(this.selectedDay) : this.boardYpReportDate()));
 		if (this.view === "cal" && this.calPlanCache.reportDate !== this.ypEditReportDate) {
@@ -2023,23 +2152,37 @@ export class ZTaskingView extends ItemView {
 			await this.refreshBoardPlanCache();
 		}
 		if (!id) {
-			this.ypDrawerId = YP_DRAWER_NEW;
-			this.editingTitle = true;
-		} else {
-			const item = this.ypActiveCache().items.find((it) => it.id === id);
-			if (!item) return;
-			this.ypDrawerId = id;
-			this.editingTitle = false;
+			// 兼容旧入口：改为行内新增，不再开空抽屉
+			return;
 		}
+		const item = this.ypActiveCache().items.find((it) => it.id === id);
+		if (!item) return;
+		this.ypDrawerId = id;
+		this.editingTitle = false;
 		this.detailOpen = true;
 		this.syncDetailDrawer();
 		this.renderDetail();
 		this.renderBoardYesterday();
 		if (this.view === "cal") this.renderCalendar();
+	}
 
-		requestAnimationFrame(() => {
-			this.contentEl.querySelector<HTMLInputElement>("#ztk-title-input")?.focus();
-		});
+	private async openTpDrawer(id: string): Promise<void> {
+		const draft = this.syncDailyReportDraft();
+		const item = draft.planItems.find((it) => it.id === id);
+		if (!item) return;
+		this.editingLogDate = null;
+		this.editingYpNoteIdx = null;
+		this.editingDesc = false;
+		this.editingTitle = false;
+		this.selectedId = "";
+		this.projectMgrOpen = false;
+		this.projectMgrRenameFrom = null;
+		this.planDrawerKind = "tp";
+		this.ypDrawerId = id;
+		this.detailOpen = true;
+		this.syncDetailDrawer();
+		this.renderDetail();
+		this.renderBoardPlan();
 	}
 
 	/** 工作台中间上：复用汇总页「我的今天」卡片 */
@@ -2093,7 +2236,9 @@ export class ZTaskingView extends ItemView {
 					</div>
 				</div>
 				<div class="ztk-collapsible-body">
-					${tomorrowPlanListHtml(draft.planItems)}
+					${tomorrowPlanListHtml(draft.planItems, {
+						selectedId: this.planDrawerKind === "tp" && this.ypDrawerId ? this.ypDrawerId : null,
+					})}
 				</div>
 			</div>
 		`;
@@ -2104,6 +2249,9 @@ export class ZTaskingView extends ItemView {
 			const box = this.contentEl.querySelector<HTMLTextAreaElement>("#ztk-desc-text");
 			if (box) return box.value.trim();
 		}
+		if (this.planDrawerKind === "tp" && this.ypDrawerId) {
+			return this.syncDailyReportDraft().planItems.find((it) => it.id === this.ypDrawerId)?.desc.trim() ?? "";
+		}
 		if (this.ypDrawerId && this.ypDrawerId !== YP_DRAWER_NEW) {
 			return this.ypActiveCache().items.find((it) => it.id === this.ypDrawerId)?.desc.trim() ?? "";
 		}
@@ -2113,9 +2261,12 @@ export class ZTaskingView extends ItemView {
 	private readYpDrawerFields(): { title: string; project: string; desc: string } {
 		const titleInput = this.contentEl.querySelector<HTMLInputElement>("#ztk-title-input");
 		const titleEl = this.contentEl.querySelector<HTMLElement>(".ztk-detail-title");
-		const fromCache = this.ypDrawerId && this.ypDrawerId !== YP_DRAWER_NEW
-			? this.ypActiveCache().items.find((it) => it.id === this.ypDrawerId)?.title ?? ""
-			: "";
+		let fromCache = "";
+		if (this.planDrawerKind === "tp" && this.ypDrawerId) {
+			fromCache = this.syncDailyReportDraft().planItems.find((it) => it.id === this.ypDrawerId)?.title ?? "";
+		} else if (this.ypDrawerId && this.ypDrawerId !== YP_DRAWER_NEW) {
+			fromCache = this.ypActiveCache().items.find((it) => it.id === this.ypDrawerId)?.title ?? "";
+		}
 		const title = (titleInput?.value ?? titleEl?.textContent ?? fromCache).trim();
 		const project = this.contentEl.querySelector<HTMLSelectElement>(".ztk-yp-project")?.value.trim()
 			|| YP_NO_PROJECT;
@@ -2124,6 +2275,7 @@ export class ZTaskingView extends ItemView {
 
 	private async ypDrawerSaveFields(opts?: { quiet?: boolean }): Promise<boolean> {
 		if (!this.ypDrawerId) return false;
+		if (this.planDrawerKind === "tp") return this.tpDrawerSaveFields(opts);
 		const fields = this.readYpDrawerFields();
 		if (!fields.title) {
 			if (!opts?.quiet) {
@@ -2162,8 +2314,45 @@ export class ZTaskingView extends ItemView {
 		return true;
 	}
 
+	private async tpDrawerSaveFields(opts?: { quiet?: boolean }): Promise<boolean> {
+		if (!this.ypDrawerId) return false;
+		const fields = this.readYpDrawerFields();
+		if (!fields.title) {
+			if (!opts?.quiet) {
+				new Notice("请填写标题");
+				this.editingTitle = true;
+				this.rerenderDetail();
+				this.contentEl.querySelector<HTMLInputElement>("#ztk-title-input")?.focus();
+			}
+			return false;
+		}
+		const draft = this.syncDailyReportDraft();
+		const cur = draft.planItems.find((it) => it.id === this.ypDrawerId);
+		if (!cur) return false;
+		if (
+			cur.title === fields.title
+			&& cur.project === fields.project
+			&& cur.desc === fields.desc
+		) {
+			return false;
+		}
+		draft.planItems = draft.planItems.map((it) =>
+			it.id === this.ypDrawerId
+				? { ...it, title: fields.title, project: fields.project, desc: fields.desc }
+				: it,
+		);
+		draft.planCustom = true;
+		draft.plan = planItemsToText(draft.planItems);
+		this.plugin.settings.dailyReportDraft = draft;
+		await this.plugin.saveSettings();
+		if (!opts?.quiet) new Notice("已保存");
+		this.rerenderDetail();
+		this.renderBoardPlan();
+		return true;
+	}
+
 	private async ypDrawerAddLog(): Promise<void> {
-		if (!this.ypDrawerId) return;
+		if (!this.ypDrawerId || this.planDrawerKind === "tp") return;
 		const text = this.contentEl.querySelector<HTMLTextAreaElement>("#ztk-yp-log-text")?.value.trim() ?? "";
 		if (!text) {
 			new Notice("请填写进展内容");
@@ -2484,40 +2673,96 @@ export class ZTaskingView extends ItemView {
 		void this.plugin.saveSettings();
 	}
 
-	private persistPlanItemInput(el: HTMLInputElement): void {
-		const id = el.dataset.planId ?? "";
-		if (!id) return;
-		const draft = this.syncDailyReportDraft();
-		const item = draft.planItems.find((it) => it.id === id);
-		if (!item) return;
-		item.text = el.value;
-		draft.planCustom = true;
-		draft.plan = planItemsToText(draft.planItems);
-		this.plugin.settings.dailyReportDraft = draft;
-		void this.plugin.saveSettings();
+	private persistPlanItemInput(_el: HTMLInputElement): void {
+		/* 明日计划改为抽屉编辑，不再行内改标题 */
 	}
 
 	private async addTomorrowPlanItem(raw?: string): Promise<void> {
 		const draft = this.syncDailyReportDraft();
 		const input = this.contentEl.querySelector<HTMLInputElement>(
-			".ztk-board-plan .ztk-plan-add-input",
+			".ztk-board-plan .ztk-plan-add-input, .ztk-daily-report .ztk-plan-add-input",
 		);
 		const text = (raw ?? input?.value ?? "").trim().replace(/^[-*•]\s+/, "");
 		if (!text) {
 			input?.focus();
 			return;
 		}
-		draft.planItems.push({ id: newPlanItemId(), text });
+		draft.planItems.push(emptyPlanItem(text, {
+			project: resolveYpDefaultProject(this.projectFilter),
+		}));
 		draft.planCustom = true;
 		draft.plan = planItemsToText(draft.planItems);
 		this.plugin.settings.dailyReportDraft = draft;
 		await this.plugin.saveSettings();
 		this.refreshPlanSurfaces();
+		if (input) input.value = "";
+		requestAnimationFrame(() => {
+			this.contentEl.querySelector<HTMLInputElement>(
+				".ztk-board-plan .ztk-plan-add-input, .ztk-daily-report .ztk-plan-add-input",
+			)?.focus();
+		});
+	}
+
+	private async addYpPlanItemInline(raw?: string, reportDate?: string): Promise<void> {
+		const input = this.contentEl.querySelector<HTMLInputElement>(
+			".ztk-yesterday-plan .ztk-plan-add-input",
+		);
+		const text = (raw ?? input?.value ?? "").trim().replace(/^[-*•]\s+/, "");
+		if (!text) {
+			input?.focus();
+			return;
+		}
+		if (reportDate) this.ypEditReportDate = reportDate;
+		const date = this.ypEditReportDate || this.boardYpReportDate();
+		if (this.ypActiveCache().reportDate !== date) {
+			try {
+				const data = await this.plugin.store.readYesterdayPlan(date);
+				if (this.boardYpReportDate() === date) {
+					this.boardPlanCache = {
+						path: data.path,
+						items: data.items,
+						baseline: data.baseline,
+						reportDate: data.reportDate,
+					};
+				}
+			} catch {
+				/* keep cache */
+			}
+		}
+		const baseline = this.ypActiveCache().baseline.map((it) => ({ ...it }));
+		const item: YesterdayPlanItem = {
+			id: newYesterdayPlanItemId(),
+			title: text,
+			project: resolveYpDefaultProject(this.projectFilter),
+			desc: "",
+			notes: [],
+			done: false,
+		};
+		await this.persistYesterdayPlan([...this.ypActiveCache().items, item], baseline, date);
+		if (input) input.value = "";
+		requestAnimationFrame(() => {
+			this.contentEl.querySelector<HTMLInputElement>(".ztk-yesterday-plan .ztk-plan-add-input")?.focus();
+		});
 	}
 
 	private async removeTomorrowPlanItem(id: string): Promise<void> {
 		const draft = this.syncDailyReportDraft();
 		draft.planItems = draft.planItems.filter((it) => it.id !== id);
+		draft.planCustom = true;
+		draft.plan = planItemsToText(draft.planItems);
+		this.plugin.settings.dailyReportDraft = draft;
+		await this.plugin.saveSettings();
+		if (this.planDrawerKind === "tp" && this.ypDrawerId === id) this.closeDetailDrawer();
+		this.refreshPlanSurfaces();
+	}
+
+	private async toggleTomorrowPlanDone(id: string): Promise<void> {
+		const draft = this.syncDailyReportDraft();
+		const cur = draft.planItems.find((it) => it.id === id);
+		if (!cur) return;
+		draft.planItems = draft.planItems.map((it) =>
+			it.id === id ? { ...it, done: !it.done } : it,
+		);
 		draft.planCustom = true;
 		draft.plan = planItemsToText(draft.planItems);
 		this.plugin.settings.dailyReportDraft = draft;
@@ -2695,7 +2940,7 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private activeDetail(): HTMLElement {
-		return this.$("#ztk-view-board .ztk-detail");
+		return this.$(".ztk-detail-drawer .ztk-detail");
 	}
 
 	private renderProjectMgrDetail(el: HTMLElement): void {
@@ -2742,10 +2987,16 @@ export class ZTaskingView extends ItemView {
 
 	private renderYpDetail(el: HTMLElement): void {
 		el.classList.remove("is-pm-drawer");
-		const isNew = this.ypDrawerId === YP_DRAWER_NEW;
-		const item = isNew
-			? null
-			: this.ypActiveCache().items.find((it) => it.id === this.ypDrawerId) ?? null;
+		const isTp = this.planDrawerKind === "tp";
+		const isNew = !isTp && this.ypDrawerId === YP_DRAWER_NEW;
+		let item: { title: string; project: string; desc: string; notes: { date: string; text: string }[] } | null = null;
+		if (isTp && this.ypDrawerId) {
+			const tp = this.syncDailyReportDraft().planItems.find((it) => it.id === this.ypDrawerId);
+			item = tp ? { title: tp.title, project: tp.project, desc: tp.desc, notes: tp.notes } : null;
+		} else if (!isNew) {
+			const yp = this.ypActiveCache().items.find((it) => it.id === this.ypDrawerId) ?? null;
+			item = yp;
+		}
 		const title = item?.title ?? "";
 		const project = item?.project
 			|| resolveYpDefaultProject(this.projectFilter);
@@ -2771,38 +3022,49 @@ export class ZTaskingView extends ItemView {
 		const closeBtn = this.editingTitle && !isNew
 			? ""
 			: `<button type="button" class="ztk-ghost ztk-detail-close" data-act="close-detail" title="关闭" aria-label="关闭">×</button>`;
+		const kicker = isTp ? "明日计划" : (isNew ? "新增计划" : "昨日计划");
+		const notesBlock = isTp
+			? ""
+			: `
+			<section class="ztk-yp-section ztk-yp-notes-section">
+				<div class="ztk-yp-section-head">
+					<span class="ztk-yp-section-label">进展</span>
+					<span class="ztk-yp-section-hint">${todayStr()}</span>
+				</div>
+				<div class="ztk-composer ztk-yp-composer">
+					<textarea id="ztk-yp-log-text" placeholder="写进展（无需工时）"></textarea>
+					<div class="ztk-composer-row">
+						<button class="ztk-btn" data-act="yp-drawer-add-log" type="button">记一笔</button>
+					</div>
+				</div>
+				<div class="ztk-log-list">
+					${item
+						? (notes.map((n) => this.ypNoteRowHtml(n, n.idx)).join("")
+							|| `<p class="ztk-muted ztk-yp-empty-hint">还没有进展，从上面记第一笔。</p>`)
+						: `<p class="ztk-muted ztk-yp-empty-hint">保存计划后可记进展。</p>`}
+				</div>
+			</section>`;
 		el.innerHTML = `
 			<div class="ztk-detail-head ztk-yp-detail-head">
 				<div class="ztk-detail-head-top">
-					<div class="ztk-title-block">
-						${titleActions}
-					</div>
+					<span class="ztk-kicker ztk-yp-kicker">${kicker}</span>
 					${closeBtn}
 				</div>
-				<div class="ztk-kicker ztk-yp-kicker">${isNew ? "新增计划" : "编辑计划"}</div>
-				<div class="ztk-meta-fields">
-					<label>所属项目
-						<select class="ztk-yp-project">${projectOpts}</select>
-					</label>
+				<div class="ztk-title-block">
+					${titleActions}
 				</div>
+				<label class="ztk-yp-project-field">
+					<span class="ztk-yp-field-label">所属项目</span>
+					<select class="ztk-yp-project">${projectOpts}</select>
+				</label>
 			</div>
-			${descBlockHtml({ editing: this.editingDesc, desc, path: "" })}
-			<div class="ztk-yp-drawer-actions">
-				<button type="button" class="ztk-btn" data-act="yp-drawer-save">${isNew ? "保存计划" : "保存"}</button>
-			</div>
-			<div class="ztk-composer">
-				<label>记一笔 · ${todayStr()}</label>
-				<textarea id="ztk-yp-log-text" placeholder="写进展（无需工时）"></textarea>
-				<div class="ztk-composer-row">
-					<button class="ztk-btn" data-act="yp-drawer-add-log" type="button">记一笔</button>
+			<section class="ztk-yp-section">
+				<div class="ztk-yp-section-head">
+					<span class="ztk-yp-section-label">说明</span>
 				</div>
-			</div>
-			<div class="ztk-log-list">
-				${item
-					? (notes.map((n) => this.ypNoteRowHtml(n, n.idx)).join("")
-						|| `<p class="ztk-muted">还没有进展，从上面记第一笔。</p>`)
-					: `<p class="ztk-muted">保存计划后可记进展。</p>`}
-			</div>
+				${descBlockHtml({ editing: this.editingDesc, desc, path: "" })}
+			</section>
+			${notesBlock}
 		`;
 		el.classList.add("is-yp-drawer");
 		const projectEl = el.querySelector(".ztk-yp-project") as HTMLSelectElement | null;
@@ -2953,14 +3215,51 @@ export class ZTaskingView extends ItemView {
 		</div>`;
 	}
 
+	private jumpCalendarTo(day: string, highlight: { start: string; end: string } | null): void {
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
+		this.selectedDay = day;
+		this.calCursor = parseDate(day);
+		this.calHighlight = highlight;
+		this.refreshCalendar();
+	}
+
 	private renderCalendar(): void {
 		this.syncCalDayPane();
 		const y = this.calCursor.getFullYear();
 		const m = this.calCursor.getMonth();
 		this.$(".ztk-cal-title").textContent = `${y} 年 ${m + 1} 月`;
+		const jumpWrap = this.contentEl.querySelector<HTMLElement>(".ztk-cal-jump-wrap");
+		if (jumpWrap) {
+			jumpWrap.innerHTML = calJumpButtonHtml(this.selectedDay)
+				+ (this.calPickerOpen
+					? calPickerPanelHtml({
+						cursor: this.calPickerCursor,
+						selectedDay: this.selectedDay,
+					})
+					: "");
+			jumpWrap.classList.toggle("is-open", this.calPickerOpen);
+		}
+		this.contentEl.querySelectorAll<HTMLButtonElement>(".ztk-cal-shortcut").forEach((btn) => {
+			const act = btn.dataset.act;
+			let on = false;
+			if (act === "cal-today") {
+				on = this.selectedDay === todayStr() && !this.calHighlight;
+			} else if (act === "cal-last7" && this.calHighlight) {
+				const end = todayStr();
+				const start = fmt(addDays(new Date(), -6));
+				on = this.calHighlight.start === start && this.calHighlight.end === end;
+			} else if (act === "cal-this-month" && this.calHighlight) {
+				const now = new Date();
+				const start = fmt(new Date(now.getFullYear(), now.getMonth(), 1));
+				const end = fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+				on = this.calHighlight.start === start && this.calHighlight.end === end;
+			}
+			btn.classList.toggle("on", on);
+		});
 		const first = new Date(y, m, 1);
 		const startOffset = (first.getDay() + 6) % 7;
 		const gridStart = addDays(first, -startOffset);
+		const hl = this.calHighlight;
 		let html = "";
 		for (let i = 0; i < 42; i++) {
 			const d = addDays(gridStart, i);
@@ -2968,11 +3267,13 @@ export class ZTaskingView extends ItemView {
 			const logs = this.logsOn(key);
 			const dayTotal = sumHours(logs);
 			const hoursLabel = dayTotal > 0 ? `<span class="ztk-day-hours">${esc(formatHours(dayTotal))}</span>` : "";
+			const inRange = !!(hl && key >= hl.start && key <= hl.end);
 			const cls = [
 				"ztk-day",
 				d.getMonth() !== m ? "out" : "",
 				key === todayStr() ? "today" : "",
 				key === this.selectedDay ? "sel" : "",
+				inRange ? "in-range" : "",
 			].join(" ");
 			const items = logs.slice(0, 3).map((l) => `<div class="ztk-day-item">${esc(l.task.title)}</div>`).join("");
 			const more = logs.length > 3 ? `<div class="ztk-day-item">+${logs.length - 3}</div>` : "";
@@ -3141,9 +3442,10 @@ export class ZTaskingView extends ItemView {
 			hours: l.hours,
 			showProject,
 		}));
+		const projectGroups = groupReportLogsByProject(logItems);
 		const taskGroups = groupReportLogsByTask(logItems);
 		const listHtml = this.reportByTask
-			? taskGroups.map((g) => reportMergedGroupHtml(g, showProject)).join("")
+			? projectGroups.map((g) => reportMergedGroupHtml(g)).join("")
 			: logItems.map((l) => reportLogRowHtml(l)).join("");
 		this.$("#ztk-view-report").innerHTML = `
 			<div class="ztk-report-top">

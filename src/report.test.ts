@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
 	formatReportLogsCopyText,
+	groupReportLogsByProject,
 	groupReportLogsByTask,
 	hoursBadgeHtml,
 	reportLogRowHtml,
@@ -12,24 +13,25 @@ import {
 	todayDigestHtml,
 } from "./report.ts";
 
-test("汇总进展行：日期+标题同一行，工时在末尾，正文用 markdown 槽", () => {
+test("汇总进展行：日期+标题同一行，工时在末尾，正文用 markdown 槽，图标打开任务抽屉", () => {
 	const html = reportLogRowHtml({
 		date: "2026-08-13",
 		title: "插件开发",
 		path: "Z-Tasking/长期/插件开发.md",
-		text: "**加粗** 和 [[笔记]]",
 		hours: 1.5,
 	});
 	assert.match(html, /class="ztk-report-row"/);
+	assert.match(html, /data-act="edit-report-log"/);
+	assert.equal(html.includes('data-act="copy-md"'), false);
+	assert.match(html, /data-path="Z-Tasking\/长期\/插件开发.md"/);
+	assert.match(html, /data-date="2026-08-13"/);
+	assert.doesNotMatch(html, /<article class="ztk-report-row"[^>]*data-act=/);
 	assert.match(
 		html,
 		/<div class="ztk-report-row-head">\s*<time class="ztk-report-date">2026-08-13<\/time>\s*<strong class="ztk-report-title">插件开发<\/strong>\s*<span class="ztk-hours-badge">1\.5h<\/span>\s*<\/div>/,
 	);
 	assert.match(html, /class="ztk-md markdown-rendered"/);
 	assert.match(html, /data-src="Z-Tasking\/长期\/插件开发.md"/);
-	assert.match(html, /data-date="2026-08-13"/);
-	assert.equal(html.includes("**加粗**"), false);
-	assert.equal(html.includes("[[笔记]]"), false);
 });
 
 test("按任务计数行结构含笔数与工时", () => {
@@ -139,14 +141,14 @@ test("按任务查看：同 path 归为一组，组内日期倒序，组间按�
 	assert.equal(second.hours, 1.5);
 });
 
-test("进展明细表头：时间/任务 Tab，搜索在复制左侧", () => {
+test("进展明细表头：时间/项目 Tab，搜索在复制左侧", () => {
 	const byTime = reportLogsHeadHtml("本周", false, "任务");
 	assert.match(byTime, /本周进展明细/);
 	assert.match(byTime, /data-act="report-view-mode"/);
 	assert.match(byTime, /data-mode="time"/);
 	assert.match(byTime, /data-mode="task"/);
 	assert.match(byTime, /按时间展示/);
-	assert.match(byTime, /按任务展示/);
+	assert.match(byTime, /按项目展示/);
 	assert.match(byTime, /class="ztk-report-search"/);
 	assert.match(byTime, /value="任务"/);
 	assert.match(byTime, /data-act="copy-report-logs"/);
@@ -175,16 +177,17 @@ test("复制明细：按日期导出标题工时与正文", () => {
 	);
 });
 
-test("复制明细：按任务合并导出", () => {
+test("复制明细：按项目合并导出", () => {
 	const text = formatReportLogsCopyText([
-		{ date: "2026-08-13", title: "插件开发", path: "a.md", text: "修 UI", hours: 1.5 },
-		{ date: "2026-08-11", title: "插件开发", path: "a.md", text: "搭骨架", hours: 2 },
-		{ date: "2026-08-12", title: "评审", path: "b.md", text: "对方案", hours: 1 },
+		{ date: "2026-08-13", title: "插件开发", path: "a.md", project: "KVAD", text: "修 UI", hours: 1.5 },
+		{ date: "2026-08-11", title: "插件开发", path: "a.md", project: "KVAD", text: "搭骨架", hours: 2 },
+		{ date: "2026-08-12", title: "评审", path: "b.md", project: "终端", text: "对方案", hours: 1 },
+		{ date: "2026-08-10", title: "联调", path: "c.md", project: "KVAD", text: "接口", hours: 0.5 },
 	], true);
-	assert.equal(
-		text,
-		"插件开发 · 2 笔 · 3.5h\n2026-08-13 1.5h\n修 UI\n\n2026-08-11 2h\n搭骨架\n\n评审 · 1 笔 · 1h\n2026-08-12 1h\n对方案",
-	);
+	assert.match(text, /^KVAD · 3 笔 · 4h\n/);
+	assert.match(text, /插件开发 · 2 笔 · 3\.5h\n2026-08-13 1\.5h\n修 UI/);
+	assert.match(text, /联调 · 1 笔 · 0\.5h\n2026-08-10 0\.5h\n接口/);
+	assert.match(text, /终端 · 1 笔 · 1h\n评审 · 1 笔 · 1h\n2026-08-12 1h\n对方案/);
 });
 
 test("复制明细：空列表返回空串", () => {
@@ -192,23 +195,46 @@ test("复制明细：空列表返回空串", () => {
 	assert.equal(formatReportLogsCopyText([], true), "");
 });
 
-test("按任务分组 HTML：标题一次，笔数与合计工时，多日期 markdown 槽", () => {
+test("按项目分组 HTML：项目下再按任务合并堆叠", () => {
 	const html = reportMergedGroupHtml({
-		title: "插件开发",
-		path: "Z-Tasking/长期/插件开发.md",
-		hours: 3.5,
-		count: 2,
+		project: "KVAD",
+		hours: 4,
+		count: 3,
 		logs: [
-			{ date: "2026-08-13", hours: 1.5 },
-			{ date: "2026-08-11", hours: 2 },
+			{ date: "2026-08-13", title: "插件开发", path: "a.md", hours: 1.5 },
+			{ date: "2026-08-11", title: "插件开发", path: "a.md", hours: 2 },
+			{ date: "2026-08-10", title: "联调", path: "c.md", hours: 0.5 },
 		],
 	});
-	assert.match(html, /ztk-report-group/);
+	assert.match(html, /ztk-report-task-card/);
+	assert.match(html, /ztk-report-project-tasks/);
+	assert.match(html, /ztk-report-task-block/);
+	assert.match(html, /ztk-report-entry-card/);
+	assert.match(html, /data-act="edit-report-log"/);
+	assert.equal(html.includes('data-act="copy-md"'), false);
+	assert.match(html, /KVAD/);
+	assert.match(html, /3 笔/);
+	assert.match(html, /4h/);
 	assert.match(html, /插件开发/);
+	assert.match(html, /联调/);
 	assert.match(html, /2 笔/);
-	assert.match(html, /3\.5h/);
 	assert.match(html, /data-date="2026-08-13"/);
-	assert.match(html, /data-date="2026-08-11"/);
-	assert.match(html, /data-src="Z-Tasking\/长期\/插件开发.md"/);
-	assert.equal((html.match(/ztk-md/g) || []).length, 2);
+	assert.match(html, /data-src="a\.md"/);
+	assert.match(html, /data-src="c\.md"/);
+	assert.equal((html.match(/class="ztk-report-task-block"/g) || []).length, 2);
+	assert.equal((html.match(/class="ztk-report-entry-card"/g) || []).length, 3);
+	assert.equal((html.match(/插件开发/g) || []).length, 1);
+});
+
+test("groupReportLogsByProject：同项目归并", () => {
+	const groups = groupReportLogsByProject([
+		{ date: "2026-08-13", title: "插件开发", path: "a.md", project: "KVAD", hours: 1.5 },
+		{ date: "2026-08-12", title: "评审", path: "b.md", project: "终端", hours: 1 },
+		{ date: "2026-08-10", title: "联调", path: "c.md", project: "KVAD", hours: 0.5 },
+	]);
+	assert.equal(groups.length, 2);
+	assert.equal(groups[0]?.project, "KVAD");
+	assert.equal(groups[0]?.count, 2);
+	assert.equal(groups[0]?.hours, 2);
+	assert.equal(groups[1]?.project, "终端");
 });

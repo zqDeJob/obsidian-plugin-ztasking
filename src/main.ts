@@ -86,9 +86,32 @@ export default class ZTaskingPlugin extends Plugin {
 				plan: typeof draft?.plan === "string" ? draft.plan : "",
 				planItems: Array.isArray(draft?.planItems)
 					? draft!.planItems
-						.filter((it): it is { id: string; text: string } =>
-							!!it && typeof it.id === "string" && typeof it.text === "string")
-						.map((it) => ({ id: it.id, text: it.text }))
+						.map((it) => {
+							if (!it || typeof it !== "object") return null;
+							const o = it as unknown as Record<string, unknown>;
+							const id = typeof o.id === "string" ? o.id : "";
+							const legacy = typeof o.text === "string" ? o.text.trim() : "";
+							const title = typeof o.title === "string" ? o.title.trim() : legacy;
+							if (!id || !title) return null;
+							return {
+								id,
+								title,
+								project: typeof o.project === "string" && o.project.trim()
+									? o.project.trim()
+									: "无项目",
+								desc: typeof o.desc === "string" ? o.desc : "",
+								notes: Array.isArray(o.notes)
+									? o.notes
+										.filter((n): n is { date: string; text: string } =>
+											!!n && typeof n === "object"
+											&& typeof (n as { date?: unknown }).date === "string"
+											&& typeof (n as { text?: unknown }).text === "string")
+										.map((n) => ({ date: n.date, text: n.text }))
+									: [],
+								done: o.done === true,
+							};
+						})
+						.filter((it): it is NonNullable<typeof it> => !!it)
 					: [],
 				discuss: typeof draft?.discuss === "string" ? draft.discuss : "- 无",
 				workCustom: draft?.workCustom === true,

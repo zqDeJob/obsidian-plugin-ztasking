@@ -1,19 +1,31 @@
-import { esc, type Task } from "./model.ts";
+import { esc, YP_NO_PROJECT, type Task } from "./model.ts";
+import { iconBtn } from "./icons.ts";
+import { projectBadgeHtml } from "./report.ts";
 
 export type DailyReportSourceLog = {
 	title: string;
 	text: string;
 };
 
+export type TomorrowPlanNote = {
+	date: string;
+	text: string;
+};
+
+/** 与昨日计划条目同构，便于归档后直接成为「昨日计划」 */
 export type TomorrowPlanItem = {
 	id: string;
-	text: string;
+	title: string;
+	project: string;
+	desc: string;
+	notes: TomorrowPlanNote[];
+	done: boolean;
 };
 
 export type DailyReportDraft = {
 	date: string;
 	work: string;
-	/** 兼容旧字段：由 planItems 派生 */
+	/** 兼容旧字段：由 planItems 标题派生（复制日报用） */
 	plan: string;
 	/** 明日计划待办（工作台 / 汇总共用） */
 	planItems: TomorrowPlanItem[];
@@ -30,39 +42,74 @@ export function newPlanItemId(): string {
 	return `plan-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-/** 待办 → 日报「明日计划」正文（`- ` 列表） */
+export function emptyPlanItem(title: string, opts?: Partial<TomorrowPlanItem>): TomorrowPlanItem {
+	return {
+		id: opts?.id ?? newPlanItemId(),
+		title: title.trim(),
+		project: (opts?.project ?? YP_NO_PROJECT).trim() || YP_NO_PROJECT,
+		desc: opts?.desc?.trim() ?? "",
+		notes: Array.isArray(opts?.notes) ? opts!.notes.map((n) => ({ ...n })) : [],
+		done: opts?.done === true,
+	};
+}
+
+/** 兼容旧 settings `{ id, text }` 与富结构 */
+export function coercePlanItem(raw: unknown): TomorrowPlanItem | null {
+	if (!raw || typeof raw !== "object") return null;
+	const o = raw as Record<string, unknown>;
+	const id = typeof o.id === "string" && o.id ? o.id : newPlanItemId();
+	const legacyText = typeof o.text === "string" ? o.text.trim() : "";
+	const title = typeof o.title === "string" ? o.title.trim() : legacyText;
+	if (!title) return null;
+	const project = typeof o.project === "string" && o.project.trim()
+		? o.project.trim()
+		: YP_NO_PROJECT;
+	const desc = typeof o.desc === "string" ? o.desc : "";
+	const notes = Array.isArray(o.notes)
+		? o.notes
+			.filter((n): n is { date: string; text: string } =>
+				!!n && typeof n === "object"
+				&& typeof (n as { date?: unknown }).date === "string"
+				&& typeof (n as { text?: unknown }).text === "string")
+			.map((n) => ({ date: n.date, text: n.text }))
+		: [];
+	return {
+		id,
+		title,
+		project,
+		desc,
+		notes,
+		done: o.done === true,
+	};
+}
+
+/** 待办 → 日报复制用「明日计划」正文（`- ` 标题列表） */
 export function planItemsToText(items: TomorrowPlanItem[]): string {
 	return items
-		.map((it) => it.text.trim())
+		.map((it) => it.title.trim())
 		.filter(Boolean)
 		.map((t) => (t.startsWith("- ") ? t : `- ${t.replace(/^[-*•]\s+/, "")}`))
 		.join("\n");
 }
 
-/** 纯文本 / 旧 plan 字段 → 待办列表 */
+/** 纯文本 / 旧 plan 字段 → 待办列表（仅标题） */
 export function textToPlanItems(text: string): TomorrowPlanItem[] {
 	return text
 		.split(/\r?\n/)
 		.map((s) => s.trim())
 		.filter(Boolean)
-		.map((s) => ({
-			id: newPlanItemId(),
-			text: s.replace(/^[-*•]\s+/, "").trim(),
-		}))
-		.filter((it) => it.text);
+		.map((s) => emptyPlanItem(s.replace(/^[-*•]\s+/, "").trim()))
+		.filter((it) => it.title);
 }
 
 /** 规范化草稿中的 planItems，并回写 plan 字符串 */
 export function normalizePlanItems(draft: DailyReportDraft): TomorrowPlanItem[] {
-	const items = Array.isArray(draft.planItems)
-		? draft.planItems
-			.map((it) => ({
-				id: typeof it?.id === "string" && it.id ? it.id : newPlanItemId(),
-				text: typeof it?.text === "string" ? it.text.trim() : "",
-			}))
-			.filter((it) => it.text)
-		: textToPlanItems(draft.plan || "");
-	return items;
+	if (!Array.isArray(draft.planItems)) {
+		return textToPlanItems(draft.plan || "");
+	}
+	return draft.planItems
+		.map((it) => coercePlanItem(it))
+		.filter((it): it is TomorrowPlanItem => !!it);
 }
 
 /** 从任务标题提取 ONES 编号（YCPK6-169252 / #161794 等） */
@@ -183,17 +230,33 @@ export function refreshDailyDraft(
 	return next;
 }
 
-/** 明日计划待办列表 HTML（工作台 / 汇总共用） */
-export function tomorrowPlanListHtml(items: TomorrowPlanItem[], opts?: { compact?: boolean }): string {
+/** 明日计划待办列表 HTML（工作台 / 汇总共用）：无勾选，编辑走右侧图标 */
+export function tomorrowPlanListHtml(
+	items: TomorrowPlanItem[],
+	opts?: { compact?: boolean; selectedId?: string | null },
+): string {
+	const selectedId = opts?.selectedId ?? null;
 	const list = items.length
-		? items.map((it) => `
-			<li class="ztk-plan-item" data-plan-id="${esc(it.id)}">
-				<input type="text" class="ztk-plan-item-input" data-plan-id="${esc(it.id)}" value="${esc(it.text)}" placeholder="计划内容" />
-				<button type="button" class="ztk-plan-item-del" data-act="del-plan-item" data-plan-id="${esc(it.id)}" title="删除" aria-label="删除">×</button>
-			</li>`).join("")
-		: `<li class="ztk-plan-empty">暂无明日计划，在下方添加</li>`;
+		? items.map((it) => {
+			const projectTag = it.project.trim() && it.project.trim() !== YP_NO_PROJECT
+				? projectBadgeHtml(it.project)
+				: "";
+			const meta = projectTag ? `<div class="ztk-meta">${projectTag}</div>` : "";
+			return `
+			<div class="ztk-task ztk-yp-task ztk-tp-task${it.done ? " is-done" : ""}${selectedId === it.id ? " sel" : ""}" data-plan-id="${esc(it.id)}">
+				<div class="ztk-task-main">
+					<h3>${esc(it.title)}</h3>
+					${meta}
+				</div>
+				<div class="ztk-task-trail">
+					${iconBtn("edit-tomorrow-plan", "edit", "编辑", `data-plan-id="${esc(it.id)}"`)}
+					${iconBtn("del-plan-item", "del", "删除", `data-plan-id="${esc(it.id)}"`)}
+				</div>
+			</div>`;
+		}).join("")
+		: `<p class="ztk-yesterday-plan-empty">暂无明日计划，在下方添加</p>`;
 	return `
-		<ul class="ztk-plan-list${opts?.compact ? " is-compact" : ""}">${list}</ul>
+		<div class="ztk-yesterday-plan-list${opts?.compact ? " is-compact" : ""}">${list}</div>
 		<div class="ztk-plan-add">
 			<input type="text" class="ztk-plan-add-input" placeholder="新建明日计划，回车添加" />
 			<button type="button" class="ztk-ghost ztk-plan-add-btn" data-act="add-plan-item" title="添加" aria-label="添加">+</button>

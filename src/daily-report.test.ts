@@ -4,11 +4,14 @@ import {
 	assembleDailyReportText,
 	buildTodayWorkBody,
 	cleanTaskDisplayName,
+	coercePlanItem,
 	extractIssueId,
 	logTextToBullets,
+	normalizePlanItems,
 	planItemsToText,
 	refreshDailyDraft,
 	textToPlanItems,
+	tomorrowPlanListHtml,
 } from "./daily-report.ts";
 import type { Task } from "./model.ts";
 
@@ -64,11 +67,48 @@ test("assembleDailyReportText 紧凑三段且待讨论独立", () => {
 
 test("planItems 与文本互转；默认明日计划为空", () => {
 	assert.equal(planItemsToText([]), "");
-	assert.equal(planItemsToText([{ id: "1", text: "写单测" }]), "- 写单测");
+	assert.equal(planItemsToText([{
+		id: "1", title: "写单测", project: "无项目", desc: "", notes: [], done: false,
+	}]), "- 写单测");
 	const items = textToPlanItems("- a\nb\n");
 	assert.equal(items.length, 2);
-	assert.equal(items[0]?.text, "a");
-	assert.equal(items[1]?.text, "b");
+	assert.equal(items[0]?.title, "a");
+	assert.equal(items[1]?.title, "b");
+	assert.equal(items[0]?.project, "无项目");
+});
+
+test("coercePlanItem：兼容旧 { text } 与富结构", () => {
+	const legacy = coercePlanItem({ id: "a", text: "旧标题" });
+	assert.equal(legacy?.title, "旧标题");
+	assert.equal(legacy?.project, "无项目");
+	const rich = coercePlanItem({
+		id: "b", title: "新", project: "KVAD", desc: "说明", notes: [], done: true,
+	});
+	assert.equal(rich?.title, "新");
+	assert.equal(rich?.project, "KVAD");
+	assert.equal(rich?.done, true);
+	assert.equal(coercePlanItem({ id: "c" }), null);
+});
+
+test("tomorrowPlanListHtml：无勾选，编辑图标 + 底部另起一行新增", () => {
+	const html = tomorrowPlanListHtml([
+		{ id: "p1", title: "写接口", project: "KVAD", desc: "细节", notes: [], done: false },
+	], { selectedId: "p1" });
+	assert.match(html, /ztk-yp-task/);
+	assert.match(html, /ztk-tp-task/);
+	assert.match(html, /data-act="edit-tomorrow-plan"/);
+	assert.match(html, /ztk-icon-btn--edit/);
+	assert.match(html, /data-plan-id="p1"/);
+	assert.match(html, /写接口/);
+	assert.match(html, /ztk-project-badge/);
+	assert.match(html, /data-act="del-plan-item"/);
+	assert.match(html, /ztk-icon-btn--del/);
+	assert.match(html, /ztk-plan-add-input/);
+	assert.match(html, /data-act="add-plan-item"/);
+	assert.doesNotMatch(html, /ztk-yp-check/);
+	assert.doesNotMatch(html, /toggle-tomorrow-plan/);
+	assert.doesNotMatch(html, /ztk-plan-item-input/);
+	assert.match(html, /sel/);
 });
 
 test("refreshDailyDraft：换日清空明日计划；未定制保持空", () => {
@@ -81,7 +121,7 @@ test("refreshDailyDraft：换日清空明日计划；未定制保持空", () => 
 			date: "2026-09-17",
 			work: "旧",
 			plan: "- 自定义计划",
-			planItems: [{ id: "x", text: "自定义计划" }],
+			planItems: [{ id: "x", title: "自定义计划", project: "无项目", desc: "", notes: [], done: false }],
 			discuss: "- 无",
 			workCustom: true,
 			planCustom: true,
@@ -96,4 +136,20 @@ test("refreshDailyDraft：换日清空明日计划；未定制保持空", () => 
 	assert.match(draft.work, /任务 #161794/);
 	assert.equal(draft.plan, "");
 	assert.deepEqual(draft.planItems, []);
+
+	const kept = refreshDailyDraft(
+		{
+			date: "2026-09-18",
+			work: "",
+			plan: "",
+			planItems: [{ id: "legacy", text: "兼容旧字段" } as never],
+			discuss: "- 无",
+			workCustom: false,
+			planCustom: true,
+		},
+		"2026-09-18",
+		[],
+		tasks,
+	);
+	assert.equal(normalizePlanItems(kept)[0]?.title, "兼容旧字段");
 });

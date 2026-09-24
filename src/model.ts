@@ -50,9 +50,21 @@ export interface WebBookmark {
 	url: string;
 }
 
+/** 计划条目默认/空项目（昨日计划 & 明日计划共用） */
+export const YP_NO_PROJECT = "无项目";
+
+export interface TomorrowPlanNoteSettings {
+	date: string;
+	text: string;
+}
+
 export interface TomorrowPlanItemSettings {
 	id: string;
-	text: string;
+	title: string;
+	project: string;
+	desc: string;
+	notes: TomorrowPlanNoteSettings[];
+	done: boolean;
 }
 
 export interface DailyReportDraftSettings {

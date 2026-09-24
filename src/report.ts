@@ -1,4 +1,5 @@
 import { esc, formatHours } from "./model.ts";
+import { iconBtn } from "./icons.ts";
 
 export type ReportLogItem = {
 	date: string;
@@ -41,11 +42,10 @@ export function reportLogRowHtml(log: {
 	title: string;
 	path: string;
 	project?: string;
-	text?: string;
 	hours?: number;
 	showProject?: boolean;
 }): string {
-	return `<article class="ztk-report-row">
+	return `<article class="ztk-report-row" data-path="${esc(log.path)}" data-date="${esc(log.date)}">
 		<div class="ztk-report-row-head">
 			<time class="ztk-report-date">${esc(log.date)}</time>
 			${log.showProject ? projectBadgeHtml(log.project) : ""}
@@ -53,6 +53,9 @@ export function reportLogRowHtml(log: {
 			${hoursBadgeHtml(log.hours)}
 		</div>
 		<div class="ztk-report-body">${mdSlotHtml(log.path, log.date)}</div>
+		<div class="ztk-log-actions ztk-report-row-actions">
+			${iconBtn("edit-report-log", "edit", "编辑", `data-path="${esc(log.path)}" data-date="${esc(log.date)}"`)}
+		</div>
 	</article>`;
 }
 
@@ -145,12 +148,50 @@ export function highlightElementText(root: HTMLElement, query: string): void {
 	}
 }
 
+/** 同项目合并为一组；组内日期倒序；组间按最近日期倒序。 */
+export function groupReportLogsByProject(logs: ReportLogItem[]): ReportProjectGroup[] {
+	const map = new Map<string, ReportProjectGroup>();
+	for (const log of logs) {
+		const project = (log.project ?? "").trim() || "无项目";
+		let group = map.get(project);
+		if (!group) {
+			group = { project, hours: 0, count: 0, logs: [] };
+			map.set(project, group);
+		}
+		group.logs.push({
+			date: log.date,
+			title: log.title,
+			path: log.path,
+			hours: log.hours,
+		});
+		group.count += 1;
+	}
+	for (const group of map.values()) {
+		group.logs.sort((a, b) =>
+			b.date.localeCompare(a.date) || a.title.localeCompare(b.title, "zh"),
+		);
+		group.hours = sumHours(group.logs);
+	}
+	return [...map.values()].sort((a, b) => {
+		const aLatest = a.logs[0]?.date ?? "";
+		const bLatest = b.logs[0]?.date ?? "";
+		return bLatest.localeCompare(aLatest) || a.project.localeCompare(b.project, "zh");
+	});
+}
+
+export type ReportProjectGroup = {
+	project: string;
+	hours: number;
+	count: number;
+	logs: { date: string; title: string; path: string; hours?: number }[];
+};
+
 export function reportLogsHeadHtml(label: string, byTask: boolean, query = ""): string {
 	return `<div class="ztk-report-logs-head">
 		<h2>${esc(label)}进展明细</h2>
 		<div class="ztk-report-view-tabs" role="tablist" aria-label="进展明细视图">
 			<button type="button" role="tab" class="ztk-report-view-tab${!byTask ? " on" : ""}" data-act="report-view-mode" data-mode="time" aria-selected="${!byTask}">按时间展示</button>
-			<button type="button" role="tab" class="ztk-report-view-tab${byTask ? " on" : ""}" data-act="report-view-mode" data-mode="task" aria-selected="${byTask}">按任务展示</button>
+			<button type="button" role="tab" class="ztk-report-view-tab${byTask ? " on" : ""}" data-act="report-view-mode" data-mode="task" aria-selected="${byTask}">按项目展示</button>
 		</div>
 		<input class="ztk-report-search" type="search" placeholder="搜索明细" value="${esc(query)}" aria-label="搜索进展明细" />
 		<button type="button" class="ztk-ghost ztk-report-copy" data-act="copy-report-logs">复制</button>
@@ -163,7 +204,7 @@ function hoursSuffix(hours?: number): string {
 	return hours !== undefined && hours > 0 ? ` ${formatHours(hours)}` : "";
 }
 
-/** 导出进展明细纯文本，供一键复制；byTask 时按任务聚合。 */
+/** 导出进展明细纯文本，供一键复制；byTask 时按项目→任务聚合。 */
 export function formatReportLogsCopyText(logs: ReportCopyLog[], byTask: boolean): string {
 	if (!logs.length) return "";
 	if (!byTask) {
@@ -173,49 +214,74 @@ export function formatReportLogsCopyText(logs: ReportCopyLog[], byTask: boolean)
 			return body ? `${head}\n${body}` : head;
 		}).join("\n\n");
 	}
-	const byPath = new Map<string, ReportCopyLog[]>();
-	for (const log of logs) {
-		const list = byPath.get(log.path) ?? [];
-		list.push(log);
-		byPath.set(log.path, list);
-	}
-	const groups = groupReportLogsByTask(logs);
-	return groups.map((g) => {
+	const textByKey = new Map<string, string>();
+	for (const log of logs) textByKey.set(`${log.path}::${log.date}`, log.text);
+	const projectGroups = groupReportLogsByProject(logs);
+	return projectGroups.map((g) => {
 		const hours = g.hours > 0 ? ` · ${formatHours(g.hours)}` : "";
-		const head = `${g.title} · ${g.count} 笔${hours}`;
-		const items = (byPath.get(g.path) ?? [])
-			.slice()
-			.sort((a, b) => b.date.localeCompare(a.date))
-			.map((l) => {
+		const head = `${g.project} · ${g.count} 笔${hours}`;
+		const taskGroups = groupReportLogsByTask(
+			g.logs.map((l) => ({ ...l, project: g.project })),
+		);
+		const tasks = taskGroups.map((tg) => {
+			const th = tg.hours > 0 ? ` · ${formatHours(tg.hours)}` : "";
+			const taskHead = `${tg.title} · ${tg.count} 笔${th}`;
+			const items = tg.logs.map((l) => {
 				const line = `${l.date}${hoursSuffix(l.hours)}`;
-				const body = l.text.trim();
+				const body = (textByKey.get(`${tg.path}::${l.date}`) ?? "").trim();
 				return body ? `${line}\n${body}` : line;
-			})
-			.join("\n\n");
-		return items ? `${head}\n${items}` : head;
+			}).join("\n\n");
+			return items ? `${taskHead}\n${items}` : taskHead;
+		}).join("\n\n");
+		return tasks ? `${head}\n${tasks}` : head;
 	}).join("\n\n");
 }
 
-export function reportMergedGroupHtml(group: ReportLogGroup, showProject = false): string {
-	const items = group.logs.map((l) => `
-		<div class="ztk-report-group-item">
-			<div class="ztk-report-row-head">
-				<time class="ztk-report-date">${esc(l.date)}</time>
-				${hoursBadgeHtml(l.hours)}
+function reportEntryCardHtml(
+	path: string,
+	entry: { date: string; hours?: number },
+): string {
+	return `
+		<article class="ztk-report-entry-card" data-path="${esc(path)}" data-date="${esc(entry.date)}">
+			<div class="ztk-report-entry-card-head">
+				<time class="ztk-report-date">${esc(entry.date)}</time>
+				${hoursBadgeHtml(entry.hours)}
 			</div>
-			<div class="ztk-report-body">${mdSlotHtml(group.path, l.date)}</div>
-		</div>`).join("");
-	return `<article class="ztk-report-row ztk-report-group">
-		<div class="ztk-report-row-head">
-			${showProject ? projectBadgeHtml(group.project) : ""}
-			<strong class="ztk-report-title">${esc(group.title)}</strong>
+			<div class="ztk-report-body">${mdSlotHtml(path, entry.date)}</div>
+			<div class="ztk-log-actions ztk-report-row-actions">
+				${iconBtn("edit-report-log", "edit", "编辑", `data-path="${esc(path)}" data-date="${esc(entry.date)}"`)}
+			</div>
+		</article>`;
+}
+
+export function reportMergedGroupHtml(group: ReportProjectGroup): string {
+	const taskGroups = groupReportLogsByTask(
+		group.logs.map((l) => ({ ...l, project: group.project })),
+	);
+	const tasks = taskGroups.map((tg) => {
+		const items = tg.logs.map((l) => reportEntryCardHtml(tg.path, l)).join("");
+		return `<section class="ztk-report-task-block">
+			<header class="ztk-report-task-block-head">
+				<strong class="ztk-report-entry-title">${esc(tg.title)}</strong>
+				<span class="ztk-report-group-meta">
+					<span class="ztk-report-count">${tg.count} 笔</span>
+					${hoursBadgeHtml(tg.hours)}
+				</span>
+			</header>
+			<div class="ztk-report-task-card-stack">${items}</div>
+		</section>`;
+	}).join("");
+	return `<section class="ztk-report-task-card">
+		<header class="ztk-report-task-card-head">
+			${projectBadgeHtml(group.project)}
+			<strong class="ztk-report-title">${esc(group.project)}</strong>
 			<span class="ztk-report-group-meta">
 				<span class="ztk-report-count">${group.count} 笔</span>
 				${hoursBadgeHtml(group.hours)}
 			</span>
-		</div>
-		<div class="ztk-report-group-logs">${items}</div>
-	</article>`;
+		</header>
+		<div class="ztk-report-project-tasks">${tasks}</div>
+	</section>`;
 }
 
 export function reportTaskCountRowHtml(title: string, count: number, hours?: number): string {

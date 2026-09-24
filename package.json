@@ -1,6 +1,6 @@
 {
 	"name": "z-tasking",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "多项目 Obsidian 任务台：长期 / 临时 / 缺陷笔记，每日进展、日历、甘特图与汇总。",
 	"main": "main.js",
 	"type": "module",

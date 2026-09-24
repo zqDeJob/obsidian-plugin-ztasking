@@ -6,7 +6,7 @@ import {
 	type TaskStatus,
 	type TaskType,
 } from "./model.ts";
-import { iconBtn } from "./icons.ts";
+import { iconBtn, searchFieldHtml } from "./icons.ts";
 
 export type ReportLogItem = {
 	date: string;
@@ -210,7 +210,12 @@ export function reportLogsHeadHtml(
 			<button type="button" role="tab" class="ztk-report-view-tab${!byTask ? " on" : ""}" data-act="report-view-mode" data-mode="time" aria-selected="${!byTask}">按时间展示</button>
 			<button type="button" role="tab" class="ztk-report-view-tab${byTask ? " on" : ""}" data-act="report-view-mode" data-mode="task" aria-selected="${byTask}">按项目展示</button>
 		</div>
-		<input class="ztk-report-search" type="search" placeholder="搜索明细" value="${esc(query)}" aria-label="搜索进展明细" />
+		${searchFieldHtml({
+			inputClass: "ztk-report-search",
+			placeholder: "搜索明细",
+			value: query,
+			ariaLabel: "搜索进展明细",
+		})}
 		<button type="button" class="ztk-ghost ztk-report-copy" data-act="copy-report-logs">复制</button>
 	</div>`;
 }

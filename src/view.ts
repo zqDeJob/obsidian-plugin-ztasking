@@ -40,7 +40,7 @@ import {
 	tomorrowPlanListHtml,
 } from "./daily-report";
 import { descBlockHtml } from "./desc";
-import { iconBtn } from "./icons";
+import { iconBtn, searchFieldHtml } from "./icons";
 import {
 	buildGanttUnits,
 	ganttScaleForDays,
@@ -2931,7 +2931,11 @@ export class ZTaskingView extends ItemView {
 
 	private renderFilters(): void {
 		this.$(".ztk-filters").innerHTML = this.filterBarHtml(
-			`<input class="ztk-search" type="search" placeholder="搜索标题或说明" value="${esc(this.query)}" />
+			`${searchFieldHtml({
+				inputClass: "ztk-search",
+				placeholder: "搜索标题或说明",
+				value: this.query,
+			})}
 			<span class="ztk-catalog-count">${this.catalogFiltered().length} / ${this.projectTasks().length}</span>`,
 		);
 		this.contentEl.querySelectorAll<HTMLSelectElement>(".ztk-type-filter").forEach((el) => {

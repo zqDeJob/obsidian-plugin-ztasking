@@ -156,6 +156,8 @@ test("进展明细表头：时间/项目 Tab，搜索在复制左侧，汇总在
 	assert.match(byTime, /按时间展示/);
 	assert.match(byTime, /按项目展示/);
 	assert.match(byTime, /class="ztk-report-search"/);
+	assert.match(byTime, /ztk-search-field/);
+	assert.match(byTime, /ztk-search-field-icon/);
 	assert.match(byTime, /value="任务"/);
 	assert.match(byTime, /data-act="copy-report-logs"/);
 	assert.match(byTime, />复制</);

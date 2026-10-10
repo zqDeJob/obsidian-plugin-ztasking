@@ -3161,6 +3161,19 @@
 	margin-left: 0;
 	flex: 0 0 auto;
 }
+.ztk-view .ztk-report-logs-head .ztk-report-copy,
+.ztk-report-logs-head .ztk-report-copy {
+	background: var(--ztk-teal) !important;
+	border-color: var(--ztk-teal) !important;
+	color: #fff !important;
+	box-shadow: 0 2px 8px rgba(209, 122, 69, .22);
+}
+.ztk-view .ztk-report-logs-head .ztk-report-copy:hover,
+.ztk-report-logs-head .ztk-report-copy:hover {
+	background: var(--ztk-teal-deep) !important;
+	border-color: var(--ztk-teal-deep) !important;
+	color: #fff !important;
+}
 .ztk-report-list mark.ztk-hl {
 	padding: 0 1px;
 	border-radius: 2px;

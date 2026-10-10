@@ -342,13 +342,10 @@ function todayItemHtml(
 	const drag = board
 		? `<button type="button" class="ztk-drag-handle" draggable="true" title="拖拽排序" aria-label="拖拽排序">⋮⋮</button>`
 		: "";
-	let body = "";
-	if (it.text === undefined || it.text.trim()) {
-		body = mdSlotHtml(it.path, today);
-	} else if (!board) {
-		// 汇总页提示仅工时；工作台只保留标题与工时徽章
-		body = `<p class="ztk-muted ztk-today-hours-only">仅登记工时</p>`;
-	}
+	// 有正文才渲染 markdown 槽；仅工时只保留标题与工时徽章（汇总/工作台一致）
+	const body = it.text === undefined || it.text.trim()
+		? mdSlotHtml(it.path, today)
+		: "";
 	return `<div class="ztk-today-item" data-id="${esc(it.id)}" data-path="${esc(it.path)}" data-date="${esc(today)}" data-project="${esc(project)}">
 		<div class="ztk-today-head">
 			${drag}

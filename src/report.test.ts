@@ -68,13 +68,14 @@ test("我的今天列出今日任务、工时徽章与合计，不含笔数", ()
 	assert.doesNotMatch(html, /data-act="toggle-board-section"/);
 });
 
-test("我的今天仅工时显示占位且计入合计", () => {
+test("我的今天仅工时不显示占位文案且计入合计", () => {
 	const html = todayDigestHtml("2026-10-10", [
 		{ id: "a.md", title: "联调", path: "a.md", hours: 2, text: "" },
 	]);
 	assert.match(html, /我的今天 · 2026-10-10 · 2h/);
-	assert.match(html, /仅登记工时/);
+	assert.doesNotMatch(html, /仅登记工时/);
 	assert.doesNotMatch(html, /class="ztk-md/);
+	assert.match(html, /ztk-hours-badge/);
 });
 
 test("工作台我的今天仅工时不显示占位文案", () => {

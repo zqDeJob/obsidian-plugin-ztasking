@@ -81,6 +81,7 @@ import {
 	type CatalogSortKey,
 } from "./catalog";
 import { isSidebarStatusFilter, matchSidebarStatus, mergeSidebarOrder, reorderSidebarIds, type SidebarStatusFilter } from "./sidebar";
+import { mergeTodayOrder, orderByTodayIds, todayDropAllowed, todayProjectKey } from "./today-order";
 import { helpCenterHtml } from "./help";
 import {
 	isTopTabChange,
@@ -1155,20 +1156,36 @@ export class ZTaskingView extends ItemView {
 	private bindListReorder(): void {
 		const root = this.contentEl;
 		let dragId = "";
-		const rowOf = (el: HTMLElement | null) =>
+		let dragKind: "" | "sidebar" | "today" = "";
+		const sidebarRowOf = (el: HTMLElement | null) =>
 			el?.closest<HTMLElement>("tr[data-id], .ztk-task[data-id]") ?? null;
+		const todayRowOf = (el: HTMLElement | null) =>
+			el?.closest<HTMLElement>(".ztk-today-item[data-id]") ?? null;
+		const rowOf = (el: HTMLElement | null) =>
+			dragKind === "today" ? todayRowOf(el) : sidebarRowOf(el);
 		const clearMarks = () => {
 			root.querySelectorAll(".is-dragging, .is-drag-over").forEach((el) => {
 				el.classList.remove("is-dragging", "is-drag-over");
 			});
 		};
+		const todayDropOk = (fromRow: HTMLElement | null, toRow: HTMLElement | null) => {
+			if (!fromRow || !toRow) return false;
+			return todayDropAllowed(
+				this.plugin.settings.todayGroupByProject === true,
+				fromRow.dataset.project ?? "",
+				toRow.dataset.project ?? "",
+			);
+		};
 		root.addEventListener("dragstart", (e) => {
 			const handle = (e.target as HTMLElement).closest(".ztk-drag-handle") as HTMLElement | null;
-			const row = rowOf(handle);
+			const todayRow = todayRowOf(handle);
+			const sideRow = sidebarRowOf(handle);
+			const row = todayRow ?? sideRow;
 			if (!handle || !row?.dataset.id) {
 				e.preventDefault();
 				return;
 			}
+			dragKind = todayRow ? "today" : "sidebar";
 			dragId = row.dataset.id;
 			row.classList.add("is-dragging");
 			e.dataTransfer?.setData("text/plain", dragId);
@@ -1176,6 +1193,7 @@ export class ZTaskingView extends ItemView {
 		});
 		root.addEventListener("dragend", () => {
 			dragId = "";
+			dragKind = "";
 			clearMarks();
 			this.suppressTaskClick = true;
 			window.setTimeout(() => { this.suppressTaskClick = false; }, 0);
@@ -1183,6 +1201,10 @@ export class ZTaskingView extends ItemView {
 		root.addEventListener("dragover", (e) => {
 			const row = rowOf(e.target as HTMLElement);
 			if (!row?.dataset.id || !dragId || row.dataset.id === dragId) return;
+			if (dragKind === "today") {
+				const fromRow = root.querySelector<HTMLElement>(".ztk-today-item.is-dragging");
+				if (!todayDropOk(fromRow, row)) return;
+			}
 			e.preventDefault();
 			if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
 			root.querySelectorAll(".is-drag-over").forEach((el) => {
@@ -1197,14 +1219,54 @@ export class ZTaskingView extends ItemView {
 			row?.classList.remove("is-drag-over");
 		});
 		root.addEventListener("drop", (e) => {
+			const kind = dragKind;
 			const row = rowOf(e.target as HTMLElement);
 			const toId = row?.dataset.id ?? "";
 			const fromId = dragId || e.dataTransfer?.getData("text/plain") || "";
+			const fromRow = kind === "today"
+				? root.querySelector<HTMLElement>(".ztk-today-item.is-dragging")
+				: null;
 			clearMarks();
+			dragKind = "";
 			if (!fromId || !toId || fromId === toId) return;
+			if (kind === "today" && !todayDropOk(fromRow, row)) return;
 			e.preventDefault();
-			void this.commitSidebarReorder(fromId, toId);
+			if (kind === "today") void this.commitTodayReorder(fromId, toId);
+			else void this.commitSidebarReorder(fromId, toId);
 		});
+	}
+
+	private todayLogsOrdered(day: string) {
+		const logs = this.logsOn(day, "all").map((l) => ({ ...l, id: l.task.id }));
+		return orderByTodayIds(logs, this.plugin.settings.todayDigestOrder, day);
+	}
+
+	private async commitTodayReorder(fromId: string, toId: string): Promise<void> {
+		const today = todayStr();
+		const logs = this.logsOn(today, "all");
+		const from = logs.find((l) => l.task.id === fromId);
+		const to = logs.find((l) => l.task.id === toId);
+		if (!from || !to) return;
+		if (!todayDropAllowed(
+			this.plugin.settings.todayGroupByProject === true,
+			todayProjectKey(from.task.project),
+			todayProjectKey(to.task.project),
+		)) return;
+		const natural = logs.map((l) => l.task.id);
+		const current = mergeTodayOrder(natural, this.plugin.settings.todayDigestOrder, today);
+		this.plugin.settings.todayDigestOrder = {
+			date: today,
+			ids: reorderSidebarIds(current, fromId, toId),
+		};
+		const draft = this.syncDailyReportDraft();
+		await this.plugin.saveSettings();
+		this.mdGen += 1;
+		const gen = this.mdGen;
+		this.renderBoardToday(this.view === "board");
+		if (this.view === "report") this.renderReport();
+		const work = this.contentEl.querySelector<HTMLTextAreaElement>("#ztk-daily-work");
+		if (work && !draft.workCustom && document.activeElement !== work) work.value = draft.work;
+		void this.paintMarkdown(gen);
 	}
 
 	private async commitSidebarReorder(fromId: string, toId: string): Promise<void> {
@@ -1450,8 +1512,12 @@ export class ZTaskingView extends ItemView {
 			order.long = remapPathsAfterProjectRename(order.long ?? [], root, result.from, result.to);
 			order.temp = remapPathsAfterProjectRename(order.temp ?? [], root, result.from, result.to);
 			order.bug = remapPathsAfterProjectRename(order.bug ?? [], root, result.from, result.to);
-			await this.plugin.saveSettings();
 		}
+		const todayOrder = this.plugin.settings.todayDigestOrder;
+		if (todayOrder?.ids?.length) {
+			todayOrder.ids = remapPathsAfterProjectRename(todayOrder.ids, root, result.from, result.to);
+		}
+		if (order || todayOrder?.ids?.length) await this.plugin.saveSettings();
 		if (this.projectFilter === result.from) this.projectFilter = result.to;
 		if (this.selectedId) {
 			const prefix = `${root}/${result.from}/`;
@@ -1517,12 +1583,11 @@ export class ZTaskingView extends ItemView {
 		const t = this.tasks().find((x) => x.id === this.selectedId);
 		const textEl = this.contentEl.querySelector("#ztk-log-text") as HTMLTextAreaElement | null;
 		const hoursEl = this.contentEl.querySelector("#ztk-log-hours") as HTMLInputElement | null;
-		const text = textEl?.value.trim();
+		const text = textEl?.value.trim() ?? "";
 		const hoursRaw = hoursEl?.value ?? "";
 		const hours = parseHoursInput(hoursRaw);
-		if (!t || !text) {
-			new Notice("请填写进展内容");
-			this.restoreInputFocus(textEl ?? hoursEl);
+		if (!t) {
+			new Notice("请先选择任务");
 			return;
 		}
 		if (hours === null) {
@@ -1532,7 +1597,7 @@ export class ZTaskingView extends ItemView {
 		}
 		this.selectedId = await this.plugin.store.addLog(t, todayStr(), text, hours);
 		this.renderAll();
-		new Notice("已写入今日进展");
+		new Notice(text ? "已写入今日进展" : "已写入今日工时");
 		this.restoreInputFocus(this.contentEl.querySelector("#ztk-log-text") as HTMLTextAreaElement | null);
 	}
 
@@ -1942,11 +2007,6 @@ export class ZTaskingView extends ItemView {
 			const nextDate = (dateEl?.value ?? date).trim();
 			const targetId = taskEl?.value || t.id;
 			const target = this.tasks().find((x) => x.id === targetId) ?? t;
-			if (!text) {
-				new Notice("进展内容不能为空");
-				this.restoreInputFocus(textEl);
-				return;
-			}
 			if (hours === null) {
 				new Notice("请填写有效工时（小时，须大于 0）");
 				this.restoreInputFocus(hoursEl);
@@ -1960,7 +2020,7 @@ export class ZTaskingView extends ItemView {
 			this.selectedId = await this.plugin.store.saveLogEdit(
 				t,
 				date,
-				{ date: nextDate, text, hours: hours ?? 0 },
+				{ date: nextDate, text, hours },
 				target,
 			);
 			this.detailOpen = true;
@@ -2257,7 +2317,7 @@ export class ZTaskingView extends ItemView {
 			return;
 		}
 		const today = todayStr();
-		const todayLogs = this.logsOn(today, "all");
+		const todayLogs = this.todayLogsOrdered(today);
 		const collapsed = this.boardCollapsed.today;
 		box.classList.toggle("is-collapsed", collapsed);
 		box.innerHTML = todayDigestHtml(
@@ -2267,12 +2327,15 @@ export class ZTaskingView extends ItemView {
 				title: l.task.title,
 				path: l.task.path,
 				project: l.task.project,
+				type: l.task.type,
 				hours: l.hours,
+				text: l.text,
 			})),
 			{
 				groupByProject: this.plugin.settings.todayGroupByProject === true,
 				collapsible: true,
 				collapsed,
+				board: true,
 			},
 		);
 	}
@@ -2679,9 +2742,10 @@ export class ZTaskingView extends ItemView {
 
 	private syncDailyReportDraft() {
 		const today = todayStr();
-		const todayLogs = this.logsOn(today, "all").map((l) => ({
+		const todayLogs = this.todayLogsOrdered(today).map((l) => ({
 			title: l.task.title,
 			text: l.text,
+			hours: l.hours,
 		}));
 		const prev = this.plugin.settings.dailyReportDraft ?? emptyDailyDraft(today);
 		if (prev.date && prev.date !== today) {
@@ -2850,7 +2914,11 @@ export class ZTaskingView extends ItemView {
 		this.plugin.settings.dailyReportDraft = refreshDailyDraft(
 			draft,
 			today,
-			this.logsOn(today, "all").map((l) => ({ title: l.task.title, text: l.text })),
+			this.todayLogsOrdered(today).map((l) => ({
+				title: l.task.title,
+				text: l.text,
+				hours: l.hours,
+			})),
 			this.tasks(),
 		);
 		await this.plugin.saveSettings();
@@ -2960,16 +3028,21 @@ export class ZTaskingView extends ItemView {
 			const hoursLabel = hours > 0 ? esc(formatHours(hours)) : "—";
 			return `
 			<tr data-act="goto-task" data-id="${esc(t.id)}" class="${t.id === this.selectedId && this.detailOpen ? "sel" : ""}">
-				<td class="ztk-catalog-drag">
+				<td class="ztk-col-drag">
 					<button type="button" class="ztk-drag-handle" draggable="true" title="拖拽排序" aria-label="拖拽排序">⋮⋮</button>
 				</td>
-				<td><span class="ztk-rail-dot ${t.type}"></span>${esc(t.title)}</td>
-				<td>${projectBadgeHtml(t.project)}</td>
-				<td>${TYPE_LABEL[t.type]}</td>
-				<td><span class="ztk-st ${t.status}">${STATUS_LABEL[t.status]}</span></td>
-				<td>${esc(t.start)} → ${esc(t.end)}</td>
-				<td>${t.logs.length} 笔</td>
-				<td class="ztk-catalog-hours">${hoursLabel}</td>
+				<td class="ztk-catalog-title">
+					<div class="ztk-catalog-title-inner">
+						<span class="ztk-rail-dot ${t.type}"></span>
+						<span class="ztk-catalog-title-text">${esc(t.title)}</span>
+					</div>
+				</td>
+				<td class="ztk-col-project">${projectBadgeHtml(t.project)}</td>
+				<td class="ztk-col-type">${TYPE_LABEL[t.type]}</td>
+				<td class="ztk-col-status"><span class="ztk-st ${t.status}">${STATUS_LABEL[t.status]}</span></td>
+				<td class="ztk-col-period">${esc(t.start)} → ${esc(t.end)}</td>
+				<td class="ztk-col-count">${t.logs.length} 笔</td>
+				<td class="ztk-catalog-hours ztk-col-hours">${hoursLabel}</td>
 				<td class="ztk-catalog-actions">
 					<button type="button" class="ztk-task-del" data-act="del-task" data-id="${esc(t.id)}" title="删除任务" aria-label="删除任务">×</button>
 				</td>
@@ -2979,18 +3052,18 @@ export class ZTaskingView extends ItemView {
 			<table>
 				<thead>
 					<tr>
-						<th></th>
+						<th class="ztk-col-drag"></th>
 						<th>标题</th>
-						<th>项目</th>
-						<th>
+						<th class="ztk-col-project">项目</th>
+						<th class="ztk-col-type">
 							<button type="button" class="ztk-th-sort${sortClass("type")}" data-act="catalog-sort" data-key="type" title="按类型排序">类型${sortMark("type")}</button>
 						</th>
-						<th>
+						<th class="ztk-col-status">
 							<button type="button" class="ztk-th-sort${sortClass("status")}" data-act="catalog-sort" data-key="status" title="按状态排序">状态${sortMark("status")}</button>
 						</th>
-						<th>周期</th>
-						<th>进展</th>
-						<th>
+						<th class="ztk-col-period">周期</th>
+						<th class="ztk-col-count">进展</th>
+						<th class="ztk-col-hours">
 							<button type="button" class="ztk-th-sort${sortClass("hours")}" data-act="catalog-sort" data-key="hours" title="按工时排序">工时${sortMark("hours")}</button>
 						</th>
 						<th></th>
@@ -3212,7 +3285,7 @@ export class ZTaskingView extends ItemView {
 			${descBlockHtml({ editing: this.editingDesc, desc: t.desc, path: t.path })}
 			<div class="ztk-composer">
 				<label>记今天 · ${todayStr()}</label>
-				<textarea id="ztk-log-text" placeholder="支持 Markdown：列表、加粗、链接、[[笔记]]"></textarea>
+				<textarea id="ztk-log-text" placeholder="可选：支持 Markdown；也可只填工时"></textarea>
 				<div class="ztk-composer-row">
 					<label class="ztk-hours-field">工时 (h)
 						<input id="ztk-log-hours" type="number" min="0.1" step="0.1" inputmode="decimal" placeholder="必填" />
@@ -3488,7 +3561,7 @@ export class ZTaskingView extends ItemView {
 	private renderReport(): void {
 		const r = this.periodRange();
 		const today = todayStr();
-		const todayLogs = this.logsOn(today, "all");
+		const todayLogs = this.todayLogsOrdered(today);
 		const logs = this.logsInPeriod().sort((a, b) => b.date.localeCompare(a.date));
 		const countByDay: Record<string, number> = {};
 		for (const l of logs) countByDay[l.date] = (countByDay[l.date] ?? 0) + 1;
@@ -3540,6 +3613,7 @@ export class ZTaskingView extends ItemView {
 						path: l.task.path,
 						project: l.task.project,
 						hours: l.hours,
+						text: l.text,
 					})),
 					{ groupByProject: this.plugin.settings.todayGroupByProject === true },
 				)}

@@ -98,6 +98,20 @@ test("appendTaskLog 当日正文为空时直接写入新内容", () => {
 	assert.equal(next[0]?.hours, 1.25);
 });
 
+test("appendTaskLog 允许只记工时（正文为空）", () => {
+	const created = appendTaskLog([], "2026-08-20", "", 1.5);
+	assert.deepEqual(created, [{ date: "2026-08-20", text: "", hours: 1.5 }]);
+
+	const appended = appendTaskLog(
+		[{ date: "2026-08-20", text: "上午做了 A", hours: 1 }],
+		"2026-08-20",
+		"  ",
+		0.5,
+	);
+	assert.equal(appended[0]?.text, "上午做了 A");
+	assert.equal(appended[0]?.hours, 1.5);
+});
+
 test("relocateTaskLog：同任务改日期，目标日无内容则挪过去", () => {
 	const { sourceLogs, targetLogs } = relocateTaskLog(
 		[

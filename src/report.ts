@@ -7,6 +7,7 @@ import {
 	type TaskType,
 } from "./model.ts";
 import { iconBtn, searchFieldHtml } from "./icons.ts";
+import { todayProjectKey } from "./today-order.ts";
 
 export type ReportLogItem = {
 	date: string;
@@ -321,24 +322,44 @@ export type TodayDigestItem = {
 	title: string;
 	path: string;
 	project?: string;
+	type?: TaskType;
 	hours?: number;
+	/** 当日进展正文；空表示仅登记工时 */
+	text?: string;
 };
 
 function todayItemHtml(
 	today: string,
 	it: TodayDigestItem,
 	index?: number,
+	board = false,
 ): string {
 	const label = index !== undefined ? `${index}、${it.title}` : it.title;
-	return `<div class="ztk-today-item" data-id="${esc(it.id)}" data-path="${esc(it.path)}" data-date="${esc(today)}">
+	const project = todayProjectKey(it.project);
+	const rail = board && it.type
+		? `<span class="ztk-rail-dot ${esc(it.type)}"></span>`
+		: "";
+	const drag = board
+		? `<button type="button" class="ztk-drag-handle" draggable="true" title="拖拽排序" aria-label="拖拽排序">⋮⋮</button>`
+		: "";
+	let body = "";
+	if (it.text === undefined || it.text.trim()) {
+		body = mdSlotHtml(it.path, today);
+	} else if (!board) {
+		// 汇总页提示仅工时；工作台只保留标题与工时徽章
+		body = `<p class="ztk-muted ztk-today-hours-only">仅登记工时</p>`;
+	}
+	return `<div class="ztk-today-item" data-id="${esc(it.id)}" data-path="${esc(it.path)}" data-date="${esc(today)}" data-project="${esc(project)}">
 		<div class="ztk-today-head">
+			${drag}
 			<div class="ztk-today-title">
+				${rail}
 				<button class="ztk-ghost" data-act="goto-task" data-id="${esc(it.id)}" type="button">${esc(label)}</button>
 				${hoursBadgeHtml(it.hours)}
 			</div>
 			<button type="button" class="ztk-task-del" data-act="del-log" data-id="${esc(it.id)}" data-date="${esc(today)}" title="删除今日进展" aria-label="删除今日进展">×</button>
 		</div>
-		${mdSlotHtml(it.path, today)}
+		${body}
 	</div>`;
 }
 
@@ -346,7 +367,7 @@ function todayItemHtml(
 export function groupTodayItemsByProject(items: TodayDigestItem[]): { project: string; items: TodayDigestItem[] }[] {
 	const map = new Map<string, TodayDigestItem[]>();
 	for (const it of items) {
-		const project = (it.project ?? "").trim() || "未分组";
+		const project = todayProjectKey(it.project);
 		const list = map.get(project) ?? [];
 		list.push(it);
 		map.set(project, list);
@@ -359,11 +380,12 @@ export function groupTodayItemsByProject(items: TodayDigestItem[]): { project: s
 export function todayDigestHtml(
 	today: string,
 	items: TodayDigestItem[],
-	opts?: { groupByProject?: boolean; collapsible?: boolean; collapsed?: boolean },
+	opts?: { groupByProject?: boolean; collapsible?: boolean; collapsed?: boolean; board?: boolean },
 ): string {
 	const groupByProject = opts?.groupByProject === true;
 	const collapsible = opts?.collapsible === true;
 	const collapsed = collapsible && opts?.collapsed === true;
+	const board = opts?.board === true;
 	const total = sumHours(items);
 	const totalLabel = total > 0 ? ` · ${formatHours(total)}` : "";
 	let body: string;
@@ -373,10 +395,10 @@ export function todayDigestHtml(
 		body = groupTodayItemsByProject(items).map((g) => `
 			<section class="ztk-today-project">
 				<div class="ztk-today-project-label">【${esc(g.project)}】</div>
-				${g.items.map((it, i) => todayItemHtml(today, it, i + 1)).join("")}
+				${g.items.map((it, i) => todayItemHtml(today, it, i + 1, board)).join("")}
 			</section>`).join("");
 	} else {
-		body = items.map((it) => todayItemHtml(today, it)).join("");
+		body = items.map((it) => todayItemHtml(today, it, undefined, board)).join("");
 	}
 	const collapseBtn = collapsible
 		? `<button type="button" class="ztk-ghost ztk-section-collapse" data-act="toggle-board-section" data-section="today" title="${collapsed ? "展开" : "折叠"}" aria-expanded="${collapsed ? "false" : "true"}" aria-label="${collapsed ? "展开" : "折叠"}">${collapsed ? "▸" : "▾"}</button>`

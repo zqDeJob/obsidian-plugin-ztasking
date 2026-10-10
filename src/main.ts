@@ -65,6 +65,7 @@ export default class ZTaskingPlugin extends Plugin {
 	async loadSettings(): Promise<void> {
 		const raw = (await this.loadData()) as Partial<ZTaskingSettings> | null;
 		const order = raw?.sidebarOrder;
+		const todayOrder = raw?.todayDigestOrder;
 		const draft = raw?.dailyReportDraft;
 		this.settings = {
 			...DEFAULT_SETTINGS,
@@ -79,6 +80,12 @@ export default class ZTaskingPlugin extends Plugin {
 				long: Array.isArray(order?.long) ? order!.long.filter((x) => typeof x === "string") : [],
 				temp: Array.isArray(order?.temp) ? order!.temp.filter((x) => typeof x === "string") : [],
 				bug: Array.isArray(order?.bug) ? order!.bug.filter((x) => typeof x === "string") : [],
+			},
+			todayDigestOrder: {
+				date: typeof todayOrder?.date === "string" ? todayOrder.date : "",
+				ids: Array.isArray(todayOrder?.ids)
+					? todayOrder.ids.filter((x) => typeof x === "string")
+					: [],
 			},
 			dailyReportDraft: {
 				date: typeof draft?.date === "string" ? draft.date : "",

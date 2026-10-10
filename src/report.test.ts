@@ -50,8 +50,8 @@ test("按任务计数行结构含笔数与工时", () => {
 
 test("我的今天列出今日任务、工时徽章与合计，不含笔数", () => {
 	const html = todayDigestHtml("2026-08-13", [
-		{ id: "Z-Tasking/长期/插件开发.md", title: "插件开发", path: "Z-Tasking/长期/插件开发.md", hours: 1.5 },
-		{ id: "Z-Tasking/临时/评审.md", title: "评审", path: "Z-Tasking/临时/评审.md", hours: 1 },
+		{ id: "Z-Tasking/长期/插件开发.md", title: "插件开发", path: "Z-Tasking/长期/插件开发.md", hours: 1.5, text: "写代码" },
+		{ id: "Z-Tasking/临时/评审.md", title: "评审", path: "Z-Tasking/临时/评审.md", hours: 1, text: "开会" },
 	]);
 	assert.match(html, /我的今天 · 2026-08-13 · 2\.5h/);
 	assert.equal(html.includes("笔"), false);
@@ -60,11 +60,38 @@ test("我的今天列出今日任务、工时徽章与合计，不含笔数", ()
 	assert.match(html, /1\.5h/);
 	assert.match(html, /data-act="goto-task"/);
 	assert.match(html, /data-act="del-log"/);
+	assert.equal(html.includes("ztk-drag-handle"), false);
 	assert.match(html, /删除今日进展/);
 	assert.equal(html.includes('data-act="copy-md"'), false);
 	assert.match(html, /data-src="Z-Tasking\/长期\/插件开发.md"/);
 	assert.match(html, /data-date="2026-08-13"/);
 	assert.doesNotMatch(html, /data-act="toggle-board-section"/);
+});
+
+test("我的今天仅工时显示占位且计入合计", () => {
+	const html = todayDigestHtml("2026-10-10", [
+		{ id: "a.md", title: "联调", path: "a.md", hours: 2, text: "" },
+	]);
+	assert.match(html, /我的今天 · 2026-10-10 · 2h/);
+	assert.match(html, /仅登记工时/);
+	assert.doesNotMatch(html, /class="ztk-md/);
+});
+
+test("工作台我的今天仅工时不显示占位文案", () => {
+	const html = todayDigestHtml("2026-10-10", [
+		{ id: "a.md", title: "联调", path: "a.md", type: "long", hours: 2, text: "" },
+	], { board: true });
+	assert.match(html, /我的今天 · 2026-10-10 · 2h/);
+	assert.doesNotMatch(html, /仅登记工时/);
+	assert.match(html, /ztk-hours-badge/);
+});
+
+test("工作台我的今天才出现拖拽手柄", () => {
+	const html = todayDigestHtml("2026-08-13", [
+		{ id: "a", title: "插件开发", path: "a.md", type: "long", hours: 1 },
+	], { board: true });
+	assert.match(html, /class="ztk-drag-handle"/);
+	assert.match(html, /ztk-rail-dot long/);
 });
 
 test("我的今天可折叠：工作台传入 collapsible 时显示折叠按钮", () => {

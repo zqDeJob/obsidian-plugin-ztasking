@@ -7,7 +7,9 @@ import {
 	coercePlanItem,
 	extractIssueId,
 	logTextToBullets,
+	mergeCodeReviewBullets,
 	normalizePlanItems,
+	parseMergeRequestRef,
 	planItemsToText,
 	refreshDailyDraft,
 	textToPlanItems,
@@ -33,15 +35,70 @@ test("logTextToBullets 去掉工时与加粗", () => {
 	);
 });
 
-test("buildTodayWorkBody 按约定任务行生成", () => {
+test("buildTodayWorkBody：1～2 条子项收成一行括号", () => {
 	const body = buildTodayWorkBody([
+		{ title: "YCPK6-170199 V2R010 优化总单-后端支持配置时区-vue", text: "验证" },
 		{ title: "YCPK6-169252 需求A", text: "写接口\n联调" },
-		{ title: "临时杂事", text: "回邮件" },
 	]);
 	assert.equal(
 		body,
-		["任务 #169252 需求A", "- 写接口", "- 联调", "任务 临时杂事", "- 回邮件"].join("\n"),
+		[
+			"任务 #170199 V2R010 优化总单-后端支持配置时区-vue （验证）",
+			"任务 #169252 需求A （写接口；联调）",
+		].join("\n"),
 	);
+});
+
+test("buildTodayWorkBody：3 条及以上保持多行列表", () => {
+	const body = buildTodayWorkBody([
+		{ title: "临时杂事", text: "a\nb\nc" },
+	]);
+	assert.equal(
+		body,
+		["任务 临时杂事", "- a", "- b", "- c"].join("\n"),
+	);
+});
+
+test("buildTodayWorkBody 仅工时只写任务行、无子内容", () => {
+	const body = buildTodayWorkBody([
+		{ title: "联调支持", text: "", hours: 1.5 },
+		{ title: "评审", text: "", hours: 1 },
+		{ title: "无正文无工时", text: "" },
+	]);
+	assert.equal(body, ["任务 联调支持", "任务 评审"].join("\n"));
+});
+
+test("parseMergeRequestRef 从 URL 拆出项目与单号", () => {
+	assert.deepEqual(
+		parseMergeRequestRef("代码审核：http://192.168.120.13/module_server/kvad/-/merge_requests/477"),
+		{ project: "kvad", iid: 477 },
+	);
+	assert.deepEqual(
+		parseMergeRequestRef("http://192.168.120.13/module_server/kvad/-/merge_requests/481"),
+		{ project: "kvad", iid: 481 },
+	);
+	assert.equal(parseMergeRequestRef("普通进展"), null);
+});
+
+test("mergeCodeReviewBullets 同项目 MR 汇总为一行", () => {
+	const merged = mergeCodeReviewBullets([
+		"- 代码审核：http://192.168.120.13/module_server/kvad/-/merge_requests/477",
+		"- http://192.168.120.13/module_server/kvad/-/merge_requests/481",
+		"- 代码评审：http://192.168.120.13/module_server/kvad/-/merge_requests/483",
+	]);
+	assert.deepEqual(merged, ["- 代码审核：MR kvad 477、481、483"]);
+});
+
+test("buildTodayWorkBody：代码审核 MR 合并后可收成一行", () => {
+	const body = buildTodayWorkBody([{
+		title: "代码评审",
+		text: [
+			"代码审核：http://192.168.120.13/module_server/kvad/-/merge_requests/477",
+			"- http://192.168.120.13/module_server/kvad/-/merge_requests/481",
+			"- 代码评审：http://192.168.120.13/module_server/kvad/-/merge_requests/483",
+		].join("\n"),
+	}]);
+	assert.equal(body, "任务 代码评审 （代码审核：MR kvad 477、481、483）");
 });
 
 test("assembleDailyReportText 紧凑三段且待讨论独立", () => {

@@ -91,7 +91,7 @@ export function serializeLogHeading(log: TaskLog): string {
 	return `### [[${log.date}]]${hours}`;
 }
 
-/** 「记一笔」：无当日进展则新增；已有则追加正文并累加工时（不覆盖） */
+/** 「记一笔」：无当日进展则新增；已有则追加正文并累加工时（不覆盖）。正文可空（只记工时）。 */
 export function appendTaskLog(
 	logs: TaskLog[],
 	date: string,
@@ -104,7 +104,7 @@ export function appendTaskLog(
 		return [...logs, { date, text: trimmed, hours }];
 	}
 	const prev = existing.text.trim();
-	const mergedText = prev ? `${prev}\n\n${trimmed}` : trimmed;
+	const mergedText = trimmed ? (prev ? `${prev}\n\n${trimmed}` : trimmed) : prev;
 	const mergedHours = Math.round(((existing.hours ?? 0) + hours) * 1000) / 1000;
 	return logs.map((l) =>
 		l.date === date ? { date, text: mergedText, hours: mergedHours } : l,

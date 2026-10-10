@@ -489,7 +489,7 @@ export class TaskStore {
 	): Promise<string> {
 		const date = next.date.trim();
 		const text = next.text.trim();
-		if (!date || !text || !(next.hours > 0)) return source.path;
+		if (!date || !(next.hours > 0)) return source.path;
 
 		this.beginMute();
 		try {

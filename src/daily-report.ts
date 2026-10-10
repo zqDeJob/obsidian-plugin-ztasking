@@ -5,6 +5,8 @@ import { projectBadgeHtml } from "./report.ts";
 export type DailyReportSourceLog = {
 	title: string;
 	text: string;
+	/** 可选：仅工时记录也要进「今日工作」（只出任务行，无子内容） */
+	hours?: number;
 };
 
 export type TomorrowPlanNote = {
@@ -147,17 +149,76 @@ export function logTextToBullets(text: string): string[] {
 	return bullets;
 }
 
+/** 从含 GitLab MR 链接的一行拆出项目名与 MR 单号 */
+export function parseMergeRequestRef(line: string): { project: string; iid: number } | null {
+	const m = line.match(/([\w.-]+)\/-\/merge_requests\/(\d+)\b/i);
+	if (!m?.[1] || !m[2]) return null;
+	const iid = Number(m[2]);
+	if (!Number.isFinite(iid) || iid <= 0) return null;
+	return { project: m[1], iid };
+}
+
+/**
+ * 将多条代码审核/评审 MR 链接按项目汇总：
+ * `代码审核：MR kvad 477、481、483`
+ * 非 MR 行保持原序；汇总行插在首条 MR 的位置。
+ */
+export function mergeCodeReviewBullets(bullets: string[]): string[] {
+	const byProject = new Map<string, number[]>();
+	for (const b of bullets) {
+		const ref = parseMergeRequestRef(b);
+		if (!ref) continue;
+		const list = byProject.get(ref.project) ?? [];
+		if (!list.includes(ref.iid)) list.push(ref.iid);
+		byProject.set(ref.project, list);
+	}
+	if (!byProject.size) return bullets;
+
+	const merged = [...byProject.entries()]
+		.sort((a, b) => a[0].localeCompare(b[0], "en"))
+		.map(([project, iids]) => {
+			const nums = [...iids].sort((a, b) => a - b).join("、");
+			return `- 代码审核：MR ${project} ${nums}`;
+		});
+
+	const out: string[] = [];
+	let emitted = false;
+	for (const b of bullets) {
+		if (parseMergeRequestRef(b)) {
+			if (!emitted) {
+				out.push(...merged);
+				emitted = true;
+			}
+			continue;
+		}
+		const text = b.replace(/^[-*•]\s+/, "").trim();
+		if (text) out.push(`- ${text}`);
+	}
+	return out;
+}
+
 /** 按「我的今天」日志智能生成「今日工作」正文（不含 section 标题） */
 export function buildTodayWorkBody(logs: DailyReportSourceLog[]): string {
 	if (!logs.length) return "";
 	const blocks: string[] = [];
 	for (const log of logs) {
-		const bullets = logTextToBullets(log.text);
-		if (!bullets.length) continue;
+		const bullets = mergeCodeReviewBullets(logTextToBullets(log.text));
+		const hoursOnly = !bullets.length && (log.hours ?? 0) > 0;
+		if (!bullets.length && !hoursOnly) continue;
 		const id = extractIssueId(log.title);
 		const name = cleanTaskDisplayName(log.title);
 		const head = id ? `任务 #${id} ${name}` : `任务 ${name}`;
-		blocks.push([head, ...bullets].join("\n"));
+		if (!bullets.length) {
+			blocks.push(head);
+			continue;
+		}
+		// 1～2 条：收成一行；3 条及以上：保持多行列表
+		if (bullets.length <= 2) {
+			const items = bullets.map((b) => b.replace(/^[-*•]\s+/, "").trim()).filter(Boolean);
+			blocks.push(`${head} （${items.join("；")}）`);
+		} else {
+			blocks.push([head, ...bullets].join("\n"));
+		}
 	}
 	return blocks.join("\n");
 }

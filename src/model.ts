@@ -89,6 +89,8 @@ export interface ZTaskingSettings {
 	todayGroupByProject: boolean;
 	/** 工作台侧栏手动顺序（按类型存任务 id）；空数组表示仍用时间倒序 */
 	sidebarOrder: { long: string[]; temp: string[]; bug: string[] };
+	/** 「我的今天」手动顺序（仅当天有效）；空数组表示保持原顺序 */
+	todayDigestOrder: { date: string; ids: string[] };
 	/** 汇总「今日日报」草稿（含明日计划待办） */
 	dailyReportDraft: DailyReportDraftSettings;
 }
@@ -103,6 +105,7 @@ export const DEFAULT_SETTINGS: ZTaskingSettings = {
 	calDayPaneCollapsed: false,
 	todayGroupByProject: false,
 	sidebarOrder: { long: [], temp: [], bug: [] },
+	todayDigestOrder: { date: "", ids: [] },
 	dailyReportDraft: {
 		date: "",
 		work: "",

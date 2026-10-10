@@ -10,13 +10,34 @@ import {
 } from "./model.ts";
 import { projectFromPath } from "./project.ts";
 
+/** 解析 frontmatter 标量：支持 "…" / '…' 引号 */
+export function parseYamlScalar(raw: string): string {
+	const s = raw.trim();
+	if (s.length >= 2) {
+		const q = s[0];
+		if ((q === '"' || q === "'") && s[s.length - 1] === q) {
+			const inner = s.slice(1, -1);
+			return q === '"' ? inner.replace(/\\"/g, '"').replace(/\\\\/g, "\\") : inner.replace(/\\'/g, "'");
+		}
+	}
+	return s;
+}
+
+/** 写入 frontmatter：含特殊字符时双引号包裹 */
+export function formatYamlScalar(value: string): string {
+	if (value === "" || /[:#{}[\],&*?|<>=!%@`"'\\\r\n]/.test(value) || value !== value.trim()) {
+		return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+	}
+	return value;
+}
+
 function parseFrontmatter(content: string): { fields: Record<string, string>; body: string } {
 	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
 	if (!match) return { fields: {}, body: content };
 	const fields: Record<string, string> = {};
 	for (const line of (match[1] ?? "").split(/\r?\n/)) {
 		const kv = line.match(/^(\w+):\s*(.*)$/);
-		if (kv?.[1]) fields[kv[1]] = (kv[2] ?? "").trim();
+		if (kv?.[1]) fields[kv[1]] = parseYamlScalar(kv[2] ?? "");
 	}
 	return { fields, body: content.slice(match[0].length) };
 }
@@ -71,10 +92,12 @@ export function parseTaskMarkdown(path: string, content: string, root = "Z-Taski
 	const desc = (parts[0] ?? "").trim();
 	const logs = parseLogs(parts[1] ?? "");
 	const file = path.split("/").pop() ?? path;
+	const fileTitle = file.replace(/\.md$/i, "");
+	const title = (fields.title ?? "").trim() || fileTitle;
 	return {
 		id: path,
 		path,
-		title: file.replace(/\.md$/i, ""),
+		title,
 		project: projectFromPath(root, path),
 		type,
 		status,
@@ -142,6 +165,7 @@ export function serializeTaskMarkdown(task: Task): string {
 		: "";
 	return [
 		"---",
+		`title: ${formatYamlScalar(task.title.trim())}`,
 		`type: ${task.type}`,
 		`status: ${task.status}`,
 		`start: ${task.start}`,

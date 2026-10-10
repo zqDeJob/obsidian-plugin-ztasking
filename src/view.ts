@@ -819,9 +819,26 @@ export class ZTaskingView extends ItemView {
 					}
 					return;
 				}
+				if (a === "clear-search") {
+					const field = act.closest(".ztk-search-field");
+					const input = field?.querySelector<HTMLInputElement>("input[type='search']");
+					if (!input) return;
+					input.value = "";
+					field?.classList.remove("has-value");
+					if (act instanceof HTMLButtonElement) act.hidden = true;
+					if (input.classList.contains("ztk-search")) {
+						this.query = "";
+						this.renderCatalog();
+					} else if (input.classList.contains("ztk-report-search")) {
+						this.reportQuery = "";
+						this.applyReportHighlight();
+					}
+					input.focus({ preventScroll: true });
+					return;
+				}
 				if (a === "catalog-sort") {
 					const key = act.dataset.key as CatalogSortKey | undefined;
-					if (key === "type" || key === "status" || key === "hours") {
+					if (key === "project" || key === "type" || key === "status" || key === "hours") {
 						this.catalogSort = nextCatalogSort(this.catalogSort, key);
 						this.renderCatalog();
 					}
@@ -1103,6 +1120,13 @@ export class ZTaskingView extends ItemView {
 		});
 		root.addEventListener("input", (e) => {
 			const el = e.target as HTMLElement;
+			if (el.classList.contains("ztk-search") || el.classList.contains("ztk-report-search")) {
+				const field = el.closest(".ztk-search-field");
+				const has = !!(el as HTMLInputElement).value.trim();
+				field?.classList.toggle("has-value", has);
+				const clearBtn = field?.querySelector<HTMLButtonElement>(".ztk-search-clear");
+				if (clearBtn) clearBtn.hidden = !has;
+			}
 			if (el.classList.contains("ztk-search")) {
 				this.query = (el as HTMLInputElement).value;
 				this.renderCatalog();
@@ -3087,7 +3111,9 @@ export class ZTaskingView extends ItemView {
 					<tr>
 						<th class="ztk-col-drag"></th>
 						<th>标题</th>
-						<th class="ztk-col-project">项目</th>
+						<th class="ztk-col-project">
+							<button type="button" class="ztk-th-sort${sortClass("project")}" data-act="catalog-sort" data-key="project" title="按项目排序">项目${sortMark("project")}</button>
+						</th>
 						<th class="ztk-col-type">
 							<button type="button" class="ztk-th-sort${sortClass("type")}" data-act="catalog-sort" data-key="type" title="按类型排序">类型${sortMark("type")}</button>
 						</th>

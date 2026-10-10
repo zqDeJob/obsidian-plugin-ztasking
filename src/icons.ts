@@ -11,6 +11,7 @@ const SVG = {
 } as const;
 
 const SEARCH_SVG = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>`;
+const CLEAR_SVG = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`;
 
 /** 内联色，避免被 Obsidian 主题 button 样式盖掉 */
 const STYLE: Record<IconKind, string> = {
@@ -28,7 +29,7 @@ export function iconBtn(act: string, kind: IconKind, label: string, extraAttrs =
 	return `<button type="button" class="ztk-icon-btn ztk-icon-btn--${kind}" data-act="${act}"${attrs ? ` ${attrs}` : ""} title="${label}" aria-label="${label}" style="${STYLE[kind]}">${SVG[kind]}</button>`;
 }
 
-/** 带左侧搜索图标的 input[type=search] */
+/** 带左侧搜索图标、右侧清除按钮的 input[type=search] */
 export function searchFieldHtml(opts: {
 	inputClass: string;
 	placeholder: string;
@@ -36,8 +37,10 @@ export function searchFieldHtml(opts: {
 	ariaLabel?: string;
 }): string {
 	const aria = opts.ariaLabel ? ` aria-label="${esc(opts.ariaLabel)}"` : "";
-	return `<label class="ztk-search-field">
+	const hasValue = !!(opts.value ?? "").trim();
+	return `<div class="ztk-search-field${hasValue ? " has-value" : ""}">
 		<span class="ztk-search-field-icon" aria-hidden="true">${SEARCH_SVG}</span>
 		<input class="${esc(opts.inputClass)}" type="search" placeholder="${esc(opts.placeholder)}" value="${esc(opts.value ?? "")}"${aria} />
-	</label>`;
+		<button type="button" class="ztk-search-clear" data-act="clear-search" title="清除搜索" aria-label="清除搜索"${hasValue ? "" : " hidden"}>${CLEAR_SVG}</button>
+	</div>`;
 }

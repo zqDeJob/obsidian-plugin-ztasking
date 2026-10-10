@@ -1,6 +1,6 @@
 import type { Task, TaskStatus, TaskType } from "./model.ts";
 
-export type CatalogSortKey = "type" | "status" | "hours";
+export type CatalogSortKey = "project" | "type" | "status" | "hours";
 export type CatalogSortDir = "asc" | "desc";
 export type CatalogSort = { key: CatalogSortKey; dir: CatalogSortDir } | null;
 
@@ -9,6 +9,10 @@ const STATUS_RANK: Record<TaskStatus, number> = { todo: 0, doing: 1, done: 2 };
 
 function taskHours(task: Task): number {
 	return task.logs.reduce((sum, l) => sum + (l.hours ?? 0), 0);
+}
+
+function projectKey(task: Task): string {
+	return (task.project ?? "").trim();
 }
 
 /** 任务周期与日期区间是否有交集；起/止为空表示该端不限制 */
@@ -35,13 +39,17 @@ export function nextCatalogSort(current: CatalogSort, key: CatalogSortKey): Cata
 export function applyCatalogSort(tasks: Task[], sort: CatalogSort): Task[] {
 	if (!sort) return tasks.slice();
 	const dir = sort.dir === "asc" ? 1 : -1;
-	const rank = (t: Task): number => {
-		if (sort.key === "type") return TYPE_RANK[t.type];
-		if (sort.key === "status") return STATUS_RANK[t.status];
-		return taskHours(t);
-	};
 	return tasks.slice().sort((a, b) => {
-		const d = (rank(a) - rank(b)) * dir;
+		let d = 0;
+		if (sort.key === "project") {
+			d = projectKey(a).localeCompare(projectKey(b), "zh") * dir;
+		} else if (sort.key === "type") {
+			d = (TYPE_RANK[a.type] - TYPE_RANK[b.type]) * dir;
+		} else if (sort.key === "status") {
+			d = (STATUS_RANK[a.status] - STATUS_RANK[b.status]) * dir;
+		} else {
+			d = (taskHours(a) - taskHours(b)) * dir;
+		}
 		if (d !== 0) return d;
 		return a.title.localeCompare(b.title, "zh");
 	});

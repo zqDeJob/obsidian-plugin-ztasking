@@ -206,4 +206,37 @@ test("serialize / parse 缺陷类型往返", () => {
 	assert.equal(task.type, "bug");
 	assert.equal(task.status, "doing");
 	assert.equal(task.project, "KVAD");
+	assert.equal(task.title, "某缺陷");
+});
+
+test("serialize / parse 保留标题中的方括号（文件名可被清洗）", () => {
+	const title = "AIMPV3R010-213 [KS-AIMP][V3R010]-【2026年】非项目事务类工时登记单";
+	const md = serializeTaskMarkdown({
+		id: "p",
+		path: "Z-Tasking/KVAD/临时/AIMPV3R010-213 _KS-AIMP__V3R010_-【2026年】非项目事务类工时登记单.md",
+		title,
+		project: "KVAD",
+		type: "temp",
+		status: "todo",
+		start: "2026-01-01",
+		end: "2026-12-31",
+		desc: "",
+		logs: [],
+		updatedAt: 0,
+	});
+	assert.match(md, /^title:\s+/m);
+	assert.doesNotMatch(md, /_KS-AIMP__/);
+	const task = parseTaskMarkdown(
+		"Z-Tasking/KVAD/临时/AIMPV3R010-213 _KS-AIMP__V3R010_-【2026年】非项目事务类工时登记单.md",
+		md,
+	);
+	assert.equal(task.title, title);
+});
+
+test("parseTaskMarkdown：无 title 字段时回落文件名", () => {
+	const task = parseTaskMarkdown(
+		"Z-Tasking/KVAD/长期/旧任务.md",
+		"---\ntype: long\nstatus: todo\nstart: \nend: \n---\n\n说明\n",
+	);
+	assert.equal(task.title, "旧任务");
 });

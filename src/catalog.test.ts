@@ -60,6 +60,22 @@ test("nextCatalogSort：工时列可循环", () => {
 	assert.deepEqual(nextCatalogSort({ key: "hours", dir: "desc" }, "hours"), null);
 });
 
+test("applyCatalogSort：按项目名中文序升降", () => {
+	const tasks = [
+		task({ id: "k", title: "k", type: "long", status: "todo", project: "KVAD" }),
+		task({ id: "g", title: "g", type: "long", status: "todo", project: "公共类" }),
+		task({ id: "z", title: "z", type: "temp", status: "todo", project: "终端" }),
+	];
+	assert.deepEqual(applyCatalogSort(tasks, { key: "project", dir: "asc" }).map((t) => t.id), ["g", "z", "k"]);
+	assert.deepEqual(applyCatalogSort(tasks, { key: "project", dir: "desc" }).map((t) => t.id), ["k", "z", "g"]);
+});
+
+test("nextCatalogSort：项目列可循环", () => {
+	assert.deepEqual(nextCatalogSort(null, "project"), { key: "project", dir: "asc" });
+	assert.deepEqual(nextCatalogSort({ key: "project", dir: "asc" }, "project"), { key: "project", dir: "desc" });
+	assert.deepEqual(nextCatalogSort({ key: "project", dir: "desc" }, "project"), null);
+});
+
 test("applyPinnedFirst：置顶优先，其余保持原序；置顶顺序跟 pinnedIds", () => {
 	const tasks = [
 		task({ id: "a", title: "a", type: "long", status: "todo" }),

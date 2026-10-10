@@ -232,7 +232,7 @@ export function helpCenterHtml(): string {
 				body: `<p>当前顶栏项目筛选下的任务目录。</p>
 				<ul>
 					<li>类型 Chip、状态筛选、日期范围、搜索。</li>
-					<li>列排序或拖拽手动排序。</li>
+					<li>列排序或拖拽手动排序；hover 可<strong>置顶</strong>（左侧色条变明黄）或删除。</li>
 					<li>点任务 → 打开详情抽屉。</li>
 				</ul>`,
 			}),

@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
 	applyCatalogSort,
+	applyPinnedFirst,
 	nextCatalogSort,
 	taskPeriodOverlaps,
+	togglePinnedId,
 } from "./catalog.ts";
 import type { Task } from "./model.ts";
 
@@ -56,4 +58,21 @@ test("nextCatalogSort：工时列可循环", () => {
 	assert.deepEqual(nextCatalogSort(null, "hours"), { key: "hours", dir: "asc" });
 	assert.deepEqual(nextCatalogSort({ key: "hours", dir: "asc" }, "hours"), { key: "hours", dir: "desc" });
 	assert.deepEqual(nextCatalogSort({ key: "hours", dir: "desc" }, "hours"), null);
+});
+
+test("applyPinnedFirst：置顶优先，其余保持原序；置顶顺序跟 pinnedIds", () => {
+	const tasks = [
+		task({ id: "a", title: "a", type: "long", status: "todo" }),
+		task({ id: "b", title: "b", type: "long", status: "todo" }),
+		task({ id: "c", title: "c", type: "temp", status: "todo" }),
+	];
+	assert.deepEqual(applyPinnedFirst(tasks, []).map((t) => t.id), ["a", "b", "c"]);
+	assert.deepEqual(applyPinnedFirst(tasks, ["c", "a"]).map((t) => t.id), ["c", "a", "b"]);
+	assert.deepEqual(applyPinnedFirst(tasks, ["gone", "b"]).map((t) => t.id), ["b", "a", "c"]);
+});
+
+test("togglePinnedId：置顶插到最前，再点取消", () => {
+	assert.deepEqual(togglePinnedId([], "a"), ["a"]);
+	assert.deepEqual(togglePinnedId(["b"], "a"), ["a", "b"]);
+	assert.deepEqual(togglePinnedId(["a", "b"], "a"), ["b"]);
 });

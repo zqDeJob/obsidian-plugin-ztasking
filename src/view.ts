@@ -75,8 +75,10 @@ import {
 } from "./report";
 import {
 	applyCatalogSort,
+	applyPinnedFirst,
 	nextCatalogSort,
 	taskPeriodOverlaps,
+	togglePinnedId,
 	type CatalogSort,
 	type CatalogSortKey,
 } from "./catalog";
@@ -576,21 +578,25 @@ export class ZTaskingView extends ItemView {
 			if (q && !t.title.toLowerCase().includes(q) && !t.desc.toLowerCase().includes(q)) return false;
 			return taskPeriodOverlaps(t, this.catalogDateStart, this.catalogDateEnd);
 		});
-		if (this.catalogSort) return applyCatalogSort(base, this.catalogSort);
-		const byType: Record<TaskType, Task[]> = { long: [], temp: [], bug: [] };
-		for (const t of base) byType[t.type].push(t);
-		const out: Task[] = [];
-		for (const type of ["long", "temp", "bug"] as const) {
-			const group = byType[type];
-			if (!group.length) continue;
-			const saved = this.plugin.settings.sidebarOrder?.[type] ?? [];
-			const ids = mergeSidebarOrder(group, saved);
-			for (const id of ids) {
-				const t = group.find((x) => x.id === id);
-				if (t) out.push(t);
+		let ordered: Task[];
+		if (this.catalogSort) {
+			ordered = applyCatalogSort(base, this.catalogSort);
+		} else {
+			const byType: Record<TaskType, Task[]> = { long: [], temp: [], bug: [] };
+			for (const t of base) byType[t.type].push(t);
+			ordered = [];
+			for (const type of ["long", "temp", "bug"] as const) {
+				const group = byType[type];
+				if (!group.length) continue;
+				const saved = this.plugin.settings.sidebarOrder?.[type] ?? [];
+				const ids = mergeSidebarOrder(group, saved);
+				for (const id of ids) {
+					const t = group.find((x) => x.id === id);
+					if (t) ordered.push(t);
+				}
 			}
 		}
-		return out;
+		return applyPinnedFirst(ordered, this.plugin.settings.pinnedTaskIds ?? []);
 	}
 
 	private topTabFor(view: BoardView): TopTab {
@@ -987,6 +993,10 @@ export class ZTaskingView extends ItemView {
 					}
 					return;
 				}
+				if (a === "pin-task" && act.dataset.id) {
+					void this.togglePinTask(act.dataset.id);
+					return;
+				}
 				if (a === "del-task" && act.dataset.id) {
 					void this.deleteTaskById(act.dataset.id);
 					return;
@@ -1285,6 +1295,15 @@ export class ZTaskingView extends ItemView {
 		this.renderCatalog();
 	}
 
+	private async togglePinTask(id: string): Promise<void> {
+		const next = togglePinnedId(this.plugin.settings.pinnedTaskIds ?? [], id);
+		const pinned = next.includes(id);
+		this.plugin.settings.pinnedTaskIds = next;
+		await this.plugin.saveSettings();
+		this.renderCatalog();
+		new Notice(pinned ? "已置顶" : "已取消置顶");
+	}
+
 	private async deleteTaskById(id: string): Promise<void> {
 		const task = this.tasks().find((t) => t.id === id);
 		if (!task) return;
@@ -1297,11 +1316,18 @@ export class ZTaskingView extends ItemView {
 		if (!ok) return;
 		const type = task.type;
 		await this.plugin.store.deleteTask(task);
+		let settingsDirty = false;
 		if (this.plugin.settings.sidebarOrder?.[type]) {
 			this.plugin.settings.sidebarOrder[type] = this.plugin.settings.sidebarOrder[type]
 				.filter((x) => x !== id);
-			await this.plugin.saveSettings();
+			settingsDirty = true;
 		}
+		if ((this.plugin.settings.pinnedTaskIds ?? []).includes(id)) {
+			this.plugin.settings.pinnedTaskIds = (this.plugin.settings.pinnedTaskIds ?? [])
+				.filter((x) => x !== id);
+			settingsDirty = true;
+		}
+		if (settingsDirty) await this.plugin.saveSettings();
 		if (this.selectedId === id) {
 			const next = this.catalogFiltered()[0] ?? this.tasks()[0];
 			this.selectedId = next?.id ?? "";
@@ -3023,11 +3049,17 @@ export class ZTaskingView extends ItemView {
 		};
 		const sortClass = (key: CatalogSortKey) =>
 			this.catalogSort?.key === key ? " is-sorted" : "";
+		const pinned = new Set(this.plugin.settings.pinnedTaskIds ?? []);
 		const rows = items.map((t) => {
 			const hours = sumHours(t.logs);
 			const hoursLabel = hours > 0 ? esc(formatHours(hours)) : "—";
+			const isPinned = pinned.has(t.id);
+			const rowClass = [
+				t.id === this.selectedId && this.detailOpen ? "sel" : "",
+				isPinned ? "is-pinned" : "",
+			].filter(Boolean).join(" ");
 			return `
-			<tr data-act="goto-task" data-id="${esc(t.id)}" class="${t.id === this.selectedId && this.detailOpen ? "sel" : ""}">
+			<tr data-act="goto-task" data-id="${esc(t.id)}" class="${rowClass}">
 				<td class="ztk-col-drag">
 					<button type="button" class="ztk-drag-handle" draggable="true" title="拖拽排序" aria-label="拖拽排序">⋮⋮</button>
 				</td>
@@ -3044,6 +3076,7 @@ export class ZTaskingView extends ItemView {
 				<td class="ztk-col-count">${t.logs.length} 笔</td>
 				<td class="ztk-catalog-hours ztk-col-hours">${hoursLabel}</td>
 				<td class="ztk-catalog-actions">
+					<button type="button" class="ztk-task-pin${isPinned ? " is-on" : ""}" data-act="pin-task" data-id="${esc(t.id)}" title="${isPinned ? "取消置顶" : "置顶"}" aria-label="${isPinned ? "取消置顶" : "置顶"}" aria-pressed="${isPinned ? "true" : "false"}">📌</button>
 					<button type="button" class="ztk-task-del" data-act="del-task" data-id="${esc(t.id)}" title="删除任务" aria-label="删除任务">×</button>
 				</td>
 			</tr>`;

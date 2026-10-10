@@ -91,6 +91,8 @@ export interface ZTaskingSettings {
 	sidebarOrder: { long: string[]; temp: string[]; bug: string[] };
 	/** 「我的今天」手动顺序（仅当天有效）；空数组表示保持原顺序 */
 	todayDigestOrder: { date: string; ids: string[] };
+	/** 工作台右侧任务表置顶（任务 id / path） */
+	pinnedTaskIds: string[];
 	/** 汇总「今日日报」草稿（含明日计划待办） */
 	dailyReportDraft: DailyReportDraftSettings;
 }
@@ -106,6 +108,7 @@ export const DEFAULT_SETTINGS: ZTaskingSettings = {
 	todayGroupByProject: false,
 	sidebarOrder: { long: [], temp: [], bug: [] },
 	todayDigestOrder: { date: "", ids: [] },
+	pinnedTaskIds: [],
 	dailyReportDraft: {
 		date: "",
 		work: "",

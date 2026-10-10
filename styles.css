@@ -1666,7 +1666,12 @@
 	align-self: center;
 }
 .ztk-view .ztk-task-del,
-.ztk-task-del {
+.ztk-task-del,
+.ztk-view .ztk-task-pin,
+.ztk-task-pin {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	width: 26px;
 	height: 26px;
 	padding: 0 !important;
@@ -1677,14 +1682,21 @@
 	color: var(--ztk-muted);
 	font-size: 18px;
 	line-height: 1;
+	vertical-align: middle;
 	cursor: pointer;
 	opacity: 0;
-	flex-shrink: 0;
+}
+.ztk-view .ztk-task-pin,
+.ztk-task-pin {
+	font-size: 13px;
 }
 .ztk-task:hover .ztk-task-del,
 .ztk-task.sel .ztk-task-del,
 .ztk-catalog-body tr:hover .ztk-task-del,
-.ztk-catalog-body tr.sel .ztk-task-del {
+.ztk-catalog-body tr.sel .ztk-task-del,
+.ztk-catalog-body tr:hover .ztk-task-pin,
+.ztk-catalog-body tr.sel .ztk-task-pin,
+.ztk-catalog-body tr.is-pinned .ztk-task-pin {
 	opacity: 1;
 }
 .ztk-view .ztk-task-del:hover,
@@ -1692,10 +1704,23 @@
 	background: #fdecea !important;
 	color: #b42318;
 }
+.ztk-view .ztk-task-pin:hover,
+.ztk-task-pin:hover,
+.ztk-task-pin.is-on {
+	background: color-mix(in srgb, #ffd60a 28%, #fff) !important;
+	color: #9a7b00;
+}
+.ztk-catalog-body tr.is-pinned .ztk-rail-dot {
+	--ztk-rail-color: #ffd60a;
+	background: #ffd60a;
+	box-shadow: 0 0 0 1px color-mix(in srgb, #e6b800 55%, transparent);
+}
+/* 勿对 td 设 display:flex，否则行底边线会与邻格错位 */
 .ztk-catalog-actions {
-	width: 40px;
+	width: 64px;
 	text-align: right;
 	white-space: nowrap;
+	vertical-align: middle;
 }
 .ztk-catalog-hours {
 	white-space: nowrap;

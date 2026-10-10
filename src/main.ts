@@ -87,6 +87,9 @@ export default class ZTaskingPlugin extends Plugin {
 					? todayOrder.ids.filter((x) => typeof x === "string")
 					: [],
 			},
+			pinnedTaskIds: Array.isArray(raw?.pinnedTaskIds)
+				? raw!.pinnedTaskIds.filter((x): x is string => typeof x === "string" && !!x.trim())
+				: [],
 			dailyReportDraft: {
 				date: typeof draft?.date === "string" ? draft.date : "",
 				work: typeof draft?.work === "string" ? draft.work : "",

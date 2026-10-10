@@ -46,3 +46,27 @@ export function applyCatalogSort(tasks: Task[], sort: CatalogSort): Task[] {
 		return a.title.localeCompare(b.title, "zh");
 	});
 }
+
+/** 置顶任务按 pinnedIds 顺序排前，其余保持传入顺序 */
+export function applyPinnedFirst(tasks: Task[], pinnedIds: string[]): Task[] {
+	if (!pinnedIds.length) return tasks.slice();
+	const present = new Set(tasks.map((t) => t.id));
+	const byId = new Map(tasks.map((t) => [t.id, t]));
+	const pinned: Task[] = [];
+	for (const id of pinnedIds) {
+		if (!present.has(id)) continue;
+		const t = byId.get(id);
+		if (t) pinned.push(t);
+	}
+	const pinnedSet = new Set(pinned.map((t) => t.id));
+	const rest = tasks.filter((t) => !pinnedSet.has(t.id));
+	return [...pinned, ...rest];
+}
+
+/** 置顶：插到列表最前；已置顶则取消 */
+export function togglePinnedId(pinnedIds: string[], id: string): string[] {
+	const key = id.trim();
+	if (!key) return pinnedIds.slice();
+	if (pinnedIds.includes(key)) return pinnedIds.filter((x) => x !== key);
+	return [key, ...pinnedIds.filter((x) => x !== key)];
+}

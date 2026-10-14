@@ -14,12 +14,13 @@ test("pageIdForScopeView：detail 并入 board", () => {
 	assert.equal(pageIdForScopeView("gantt"), "gantt");
 });
 
-test("topTabForScopeView：cal/gantt 同属 schedule", () => {
+test("topTabForScopeView：cal/gantt 同属 schedule；projects 独立", () => {
 	assert.equal(topTabForScopeView("cal"), "schedule");
 	assert.equal(topTabForScopeView("gantt"), "schedule");
 	assert.equal(topTabForScopeView("board"), "work");
 	assert.equal(topTabForScopeView("report"), "report");
 	assert.equal(topTabForScopeView("help"), "help");
+	assert.equal(topTabForScopeView("projects"), "projects");
 });
 
 test("isTopTabChange：同 schedule 内 cal↔gantt 不算顶栏切换", () => {
@@ -52,4 +53,5 @@ test("shellRenderTargets：每次只刷当前壳", () => {
 	assert.deepEqual(shellRenderTargets("gantt"), ["gantt"]);
 	assert.deepEqual(shellRenderTargets("web"), ["web"]);
 	assert.deepEqual(shellRenderTargets("help"), ["help"]);
+	assert.deepEqual(shellRenderTargets("projects"), ["projects"]);
 });

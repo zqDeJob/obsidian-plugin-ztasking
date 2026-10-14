@@ -1,7 +1,7 @@
 /** 与 view.ts 的 BoardView 对齐；抽离便于单测「只 paint 当前页」。 */
-export type ScopeView = "board" | "detail" | "cal" | "gantt" | "report" | "web" | "help";
+export type ScopeView = "board" | "detail" | "cal" | "gantt" | "report" | "web" | "help" | "projects";
 
-export type ScopeTopTab = "report" | "work" | "schedule" | "web" | "help";
+export type ScopeTopTab = "report" | "work" | "schedule" | "web" | "help" | "projects";
 
 export function pageIdForScopeView(view: ScopeView): Exclude<ScopeView, "detail"> {
 	if (view === "detail") return "board";
@@ -13,6 +13,7 @@ export function topTabForScopeView(view: ScopeView): ScopeTopTab {
 	if (view === "cal" || view === "gantt") return "schedule";
 	if (view === "web") return "web";
 	if (view === "help") return "help";
+	if (view === "projects") return "projects";
 	return "work";
 }
 
@@ -31,7 +32,7 @@ export function markdownPaintRootSelectors(view: ScopeView, detailOpen: boolean)
 	return roots;
 }
 
-export type ShellRenderTarget = "board" | "cal" | "gantt" | "report" | "web" | "help";
+export type ShellRenderTarget = "board" | "cal" | "gantt" | "report" | "web" | "help" | "projects";
 
 /** 当前 view 需要刷新的壳层目标（不含抽屉；抽屉由 detailOpen 单独决定）。 */
 export function shellRenderTargets(view: ScopeView): ShellRenderTarget[] {
@@ -41,5 +42,6 @@ export function shellRenderTargets(view: ScopeView): ShellRenderTarget[] {
 	if (page === "gantt") return ["gantt"];
 	if (page === "report") return ["report"];
 	if (page === "help") return ["help"];
+	if (page === "projects") return ["projects"];
 	return ["web"];
 }

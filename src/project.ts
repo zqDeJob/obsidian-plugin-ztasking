@@ -4,10 +4,43 @@ import { TYPE_DIR, type TaskType } from "./model.ts";
 /** 现有扁平任务迁入的默认业务项目 */
 export const DEFAULT_PROJECT = "KVAD";
 
+/** 项目知识库目录名（位于 {root}/{project}/ 下） */
+export const PROJECT_MATERIALS_DIR = "_资料";
+/** 项目公告固定文件名 */
+export const PROJECT_NOTICE_FILE = "公告.md";
+
 const TYPE_DIR_NAMES = new Set<string>(Object.values(TYPE_DIR));
 
 function normalizeRoot(root: string): string {
 	return root.replace(/\/+$/, "");
+}
+
+export function materialsDir(root: string, project: string): string {
+	return `${normalizeRoot(root)}/${project.trim()}/${PROJECT_MATERIALS_DIR}`;
+}
+
+export function noticePath(root: string, project: string): string {
+	return `${materialsDir(root, project)}/${PROJECT_NOTICE_FILE}`;
+}
+
+/** 材料笔记路径；title 去掉路径分隔与首尾空白 */
+export function materialNotePath(root: string, project: string, title: string): string {
+	const safe = title.trim().replace(/[\\/]/g, "").replace(/\s+/g, " ") || "未命名";
+	const base = safe.toLowerCase().endsWith(".md") ? safe.slice(0, -3) : safe;
+	return `${materialsDir(root, project)}/${base}.md`;
+}
+
+/**
+ * 合并拖拽序与磁盘项目名：
+ * saved 中仍存在的保持相对序；disk 有而 saved 无的插到最前；剔除已不存在的。
+ */
+export function mergeProjectOrder(saved: string[], diskNames: string[]): string[] {
+	const disk = [...new Set(diskNames.map((n) => n.trim()).filter(Boolean))];
+	const diskSet = new Set(disk);
+	const kept = saved.map((n) => n.trim()).filter((n) => n && diskSet.has(n));
+	const keptSet = new Set(kept);
+	const fresh = disk.filter((n) => !keptSet.has(n));
+	return [...fresh, ...kept];
 }
 
 export function isTypeDirName(name: string): boolean {

@@ -7,8 +7,12 @@ import {
 	isLegacyRootTypeFolder,
 	isTaskPath,
 	listProjectNames,
+	materialNotePath,
+	materialsDir,
+	mergeProjectOrder,
 	needsLegacyMigration,
 	normalizeProjectName,
+	noticePath,
 	prepareRenameProject,
 	projectFromPath,
 	remapPathsAfterProjectRename,
@@ -17,6 +21,21 @@ import {
 	rootFolderNamesFromListing,
 	taskDir,
 } from "./project.ts";
+
+test("mergeProjectOrder：新项目置前，已删剔除，相对序保留", () => {
+	assert.deepEqual(mergeProjectOrder(["B", "A", "Gone"], ["C", "A", "B"]), ["C", "B", "A"]);
+});
+
+test("materialsDir / noticePath / materialNotePath", () => {
+	assert.equal(materialsDir("Z-Tasking", "KVAD"), "Z-Tasking/KVAD/_资料");
+	assert.equal(noticePath("Z-Tasking", "KVAD"), "Z-Tasking/KVAD/_资料/公告.md");
+	assert.equal(materialNotePath("Z-Tasking", "KVAD", "片段"), "Z-Tasking/KVAD/_资料/片段.md");
+	assert.equal(materialNotePath("Z-Tasking", "KVAD", "a/b.md"), "Z-Tasking/KVAD/_资料/ab.md");
+});
+
+test("isTaskPath：_资料 下笔记不是任务", () => {
+	assert.equal(isTaskPath("Z-Tasking", "Z-Tasking/KVAD/_资料/片段.md"), false);
+});
 
 test("taskDir：项目/类型分层", () => {
 	assert.equal(taskDir("Z-Tasking", "KVAD", "long"), "Z-Tasking/KVAD/长期");

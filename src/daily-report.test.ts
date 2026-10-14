@@ -178,12 +178,12 @@ test("tomorrowPlanListHtml：无勾选，编辑图标 + 底部另起一行新增
 	assert.match(html, /ztk-yp-task/);
 	assert.match(html, /ztk-tp-task/);
 	assert.match(html, /data-act="edit-tomorrow-plan"/);
-	assert.match(html, /ztk-icon-btn--edit/);
+	assert.match(html, /ztk-task-edit/);
 	assert.match(html, /data-plan-id="p1"/);
 	assert.match(html, /写接口/);
 	assert.match(html, /ztk-project-badge/);
 	assert.match(html, /data-act="del-plan-item"/);
-	assert.match(html, /ztk-icon-btn--del/);
+	assert.match(html, /ztk-task-del/);
 	assert.match(html, /ztk-plan-add-input/);
 	assert.match(html, /data-act="add-plan-item"/);
 	assert.doesNotMatch(html, /ztk-yp-check/);

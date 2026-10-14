@@ -97,6 +97,10 @@ export interface ZTaskingSettings {
 	pinnedTaskIds: string[];
 	/** 项目页拖拽顺序（项目名）；未入册的新项目插到最前 */
 	projectOrder: string[];
+	/** 各项目材料拖拽序（文件名含 .md）；未入册的新材料插到最前 */
+	materialOrderByProject: Record<string, string[]>;
+	/** 各项目材料置顶（文件名含 .md） */
+	pinnedMaterialsByProject: Record<string, string[]>;
 	/** 项目页上次选中的项目名 */
 	lastProjectId: string;
 	/** 各项目下分支拖拽序 */
@@ -122,6 +126,8 @@ export const DEFAULT_SETTINGS: ZTaskingSettings = {
 	todayDigestOrder: { date: "", ids: [] },
 	pinnedTaskIds: [],
 	projectOrder: [],
+	materialOrderByProject: {},
+	pinnedMaterialsByProject: {},
 	lastProjectId: "",
 	branchOrderByProject: {},
 	lastBranchByProject: {},

@@ -471,8 +471,8 @@ export function yesterdayPlanListHtml(opts: {
 					${meta}
 				</div>
 				<div class="ztk-task-trail">
-					${iconBtn("edit-yesterday-plan", "edit", "编辑", `data-yp-id="${esc(it.id)}"`)}
-					${iconBtn("del-yesterday-plan", "del", "删除", `data-yp-id="${esc(it.id)}"`)}
+					<button type="button" class="ztk-task-edit" data-act="edit-yesterday-plan" data-yp-id="${esc(it.id)}" title="编辑">✎</button>
+					<button type="button" class="ztk-task-del" data-act="del-yesterday-plan" data-yp-id="${esc(it.id)}" title="删除">×</button>
 				</div>
 			</div>`;
 		})

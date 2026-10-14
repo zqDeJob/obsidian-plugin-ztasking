@@ -59,7 +59,9 @@ import {
 	filterByProject,
 	materialNotePath,
 	materialsDir,
+	applyPinnedMaterialsFirst,
 	mergeBranchOrder,
+	mergeMaterialOrder,
 	mergeProjectOrder,
 	normalizeBranchName,
 	normalizeProjectName,
@@ -510,6 +512,9 @@ export class ZTaskingView extends ItemView {
 	private webPanel: WebPanel;
 	/** 工作台两列：左侧三卡 / 右侧任务表 的相对宽度 */
 	private leftPaneRatio = 0.30;
+	/** 项目页左右栏宽度比（仅本次会话，不持久化） */
+	private projectsLeftPaneRatio = 0.38;
+	private projectsSplittersBound = false;
 	private boardSplittersBound = false;
 	/** 拖拽排序结束后抑制一次 click，避免误选中 */
 	private suppressTaskClick = false;
@@ -527,6 +532,8 @@ export class ZTaskingView extends ItemView {
 	private projectPageBranchRenameFrom: string | null = null;
 	/** 项目页拖拽源 */
 	private projectDragFrom: string | null = null;
+	/** 材料列表拖拽源（文件名） */
+	private materialDragFrom: string | null = null;
 	/** 材料抽屉：正在编辑的笔记路径 */
 	private materialDrawerPath: string | null = null;
 	/** 新建任务时锁定项目（项目页内新建，隐藏项目选择） */
@@ -720,6 +727,7 @@ export class ZTaskingView extends ItemView {
 		`;
 		this.bind();
 		this.bindBoardSplitters();
+		this.bindProjectsSplitters();
 		this.applyPeriodShortcut("week");
 		try {
 			const { settingsDirty } = await this.plugin.store.reload();
@@ -1140,6 +1148,10 @@ export class ZTaskingView extends ItemView {
 					void this.projectsNewMaterial();
 					return;
 				}
+				if (a === "pin-material" && act.dataset.name) {
+					void this.togglePinMaterial(act.dataset.name);
+					return;
+				}
 				if (a === "move-material" && act.dataset.path) {
 					this.openMoveMaterialMenu(act.dataset.path, e);
 					return;
@@ -1161,7 +1173,10 @@ export class ZTaskingView extends ItemView {
 					const id = row.dataset.id;
 					if (id) {
 						this.openTaskDetail(id);
-						this.switchView("board");
+						this.syncDetailDrawer();
+						this.rerenderDetail();
+						this.mdGen += 1;
+						void this.paintMarkdown(this.mdGen);
 					}
 					return;
 				}
@@ -1690,13 +1705,14 @@ export class ZTaskingView extends ItemView {
 		this.bindListReorder();
 		window.addEventListener("resize", () => {
 			if (this.view === "board") this.applyBoardLayout();
+			if (this.view === "projects") this.applyProjectsLayout();
 		});
 	}
 
 	private bindListReorder(): void {
 		const root = this.contentEl;
 		let dragId = "";
-		let dragKind: "" | "sidebar" | "today" | "project" = "";
+		let dragKind: "" | "sidebar" | "today" | "project" | "material" = "";
 		const eventEl = (t: EventTarget | null): HTMLElement | null => {
 			if (t instanceof HTMLElement) return t;
 			if (t instanceof Node) return t.parentElement;
@@ -1711,9 +1727,15 @@ export class ZTaskingView extends ItemView {
 			if (!row || !row.closest("#ztk-view-projects")) return null;
 			return row;
 		};
+		const materialRowOf = (el: HTMLElement | null) => {
+			const row = el?.closest<HTMLElement>(".ztk-proj-mat-item[data-name]") ?? null;
+			if (!row || !row.closest("#ztk-view-projects .ztk-proj-materials")) return null;
+			return row;
+		};
 		const rowOf = (el: HTMLElement | null) => {
 			if (dragKind === "today") return todayRowOf(el);
 			if (dragKind === "project") return projectRowOf(el);
+			if (dragKind === "material") return materialRowOf(el);
 			return sidebarRowOf(el);
 		};
 		const clearMarks = () => {
@@ -1731,6 +1753,16 @@ export class ZTaskingView extends ItemView {
 		};
 		root.addEventListener("dragstart", (e) => {
 			const handle = eventEl(e.target)?.closest(".ztk-drag-handle") as HTMLElement | null;
+			const matRow = handle ? materialRowOf(handle) : null;
+			if (handle && matRow?.dataset.name) {
+				dragKind = "material";
+				dragId = matRow.dataset.name;
+				this.materialDragFrom = dragId;
+				matRow.classList.add("is-dragging");
+				e.dataTransfer?.setData("text/plain", dragId);
+				if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+				return;
+			}
 			const projRow = handle ? projectRowOf(handle) : null;
 			if (handle && projRow?.dataset.project) {
 				dragKind = "project";
@@ -1758,11 +1790,24 @@ export class ZTaskingView extends ItemView {
 			dragId = "";
 			dragKind = "";
 			this.projectDragFrom = null;
+			this.materialDragFrom = null;
 			clearMarks();
 			this.suppressTaskClick = true;
 			window.setTimeout(() => { this.suppressTaskClick = false; }, 0);
 		});
 		root.addEventListener("dragover", (e) => {
+			if (dragKind === "material") {
+				const row = materialRowOf(eventEl(e.target));
+				const from = dragId || this.materialDragFrom || "";
+				if (!row?.dataset.name || !from || row.dataset.name === from) return;
+				e.preventDefault();
+				if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+				root.querySelectorAll(".ztk-proj-mat-item.is-drag-over").forEach((el) => {
+					if (el !== row) el.classList.remove("is-drag-over");
+				});
+				row.classList.add("is-drag-over");
+				return;
+			}
 			if (dragKind === "project") {
 				const row = projectRowOf(eventEl(e.target));
 				const from = dragId || this.projectDragFrom || "";
@@ -1796,7 +1841,23 @@ export class ZTaskingView extends ItemView {
 		});
 		root.addEventListener("drop", (e) => {
 			const kind = dragKind;
-			const fromId = dragId || this.projectDragFrom || e.dataTransfer?.getData("text/plain") || "";
+			const fromId = dragId
+				|| this.materialDragFrom
+				|| this.projectDragFrom
+				|| e.dataTransfer?.getData("text/plain")
+				|| "";
+			if (kind === "material") {
+				const row = materialRowOf(eventEl(e.target));
+				const toId = row?.dataset.name ?? "";
+				clearMarks();
+				dragKind = "";
+				dragId = "";
+				this.materialDragFrom = null;
+				if (!fromId || !toId || fromId === toId) return;
+				e.preventDefault();
+				void this.materialsReorder(fromId, toId);
+				return;
+			}
 			if (kind === "project") {
 				const row = projectRowOf(eventEl(e.target));
 				const toId = row?.dataset.project ?? "";
@@ -1971,6 +2032,64 @@ export class ZTaskingView extends ItemView {
 				window.addEventListener("pointermove", onMove);
 				window.addEventListener("pointerup", onUp);
 			});
+		});
+	}
+
+	private applyProjectsLayout(): void {
+		const page = this.contentEl.querySelector("#ztk-view-projects") as HTMLElement | null;
+		if (!page || !page.classList.contains("on")) return;
+		const split = 6;
+		const w = page.clientWidth;
+		const minLeft = 240;
+		const minRight = 360;
+		const splitter = page.querySelector<HTMLElement>(".ztk-splitter[data-split=\"proj-list-detail\"]");
+		if (splitter) splitter.style.display = "";
+		if (w <= 0) {
+			page.style.gridTemplateColumns = `minmax(${minLeft}px, 0.38fr) ${split}px minmax(${minRight}px, 1fr)`;
+			return;
+		}
+		const avail = Math.max(1, w - split);
+		let leftW = Math.round(avail * this.projectsLeftPaneRatio);
+		leftW = Math.max(minLeft, Math.min(Math.floor(avail * 0.55), leftW));
+		let rightW = avail - leftW;
+		if (rightW < minRight) {
+			leftW = Math.max(minLeft, avail - minRight);
+			rightW = avail - leftW;
+		}
+		page.style.gridTemplateColumns = `${leftW}px ${split}px ${rightW}px`;
+		this.projectsLeftPaneRatio = leftW / avail;
+	}
+
+	/** 项目页 HTML 每次重绘，用委托绑定分隔条 */
+	private bindProjectsSplitters(): void {
+		if (this.projectsSplittersBound) return;
+		this.projectsSplittersBound = true;
+		this.contentEl.addEventListener("pointerdown", (ev) => {
+			const el = (ev.target as HTMLElement).closest<HTMLElement>(
+				".ztk-splitter[data-split=\"proj-list-detail\"]",
+			);
+			if (!el) return;
+			const page = this.contentEl.querySelector("#ztk-view-projects") as HTMLElement | null;
+			if (!page?.classList.contains("on")) return;
+			ev.preventDefault();
+			const startX = ev.clientX;
+			const startLeft = this.projectsLeftPaneRatio;
+			this.contentEl.classList.add("is-resizing");
+			el.classList.add("is-active");
+			const onMove = (e: PointerEvent) => {
+				const avail = Math.max(1, page.clientWidth - 6);
+				const dRatio = (e.clientX - startX) / avail;
+				this.projectsLeftPaneRatio = Math.min(0.55, Math.max(0.22, startLeft + dRatio));
+				this.applyProjectsLayout();
+			};
+			const onUp = () => {
+				this.contentEl.classList.remove("is-resizing");
+				el.classList.remove("is-active");
+				window.removeEventListener("pointermove", onMove);
+				window.removeEventListener("pointerup", onUp);
+			};
+			window.addEventListener("pointermove", onMove);
+			window.addEventListener("pointerup", onUp);
 		});
 	}
 
@@ -2262,10 +2381,22 @@ export class ZTaskingView extends ItemView {
 		const dir = materialsDir(this.plugin.store.root(), project);
 		const folder = this.app.vault.getAbstractFileByPath(dir);
 		if (!(folder instanceof TFolder)) return [];
-		return folder.children
+		const disk = folder.children
 			.filter((f): f is TFile => f instanceof TFile && f.extension === "md")
-			.map((f) => ({ name: f.name, path: f.path }))
-			.sort((a, b) => a.name.localeCompare(b.name, "zh"));
+			.map((f) => ({ name: f.name, path: f.path }));
+		const byName = new Map(disk.map((m) => [m.name, m]));
+		const order = mergeMaterialOrder(
+			this.plugin.settings.materialOrderByProject?.[project] ?? [],
+			disk.map((m) => m.name),
+		);
+		const prev = (this.plugin.settings.materialOrderByProject?.[project] ?? []).join("\0");
+		if (order.join("\0") !== prev) {
+			const map = { ...(this.plugin.settings.materialOrderByProject ?? {}) };
+			map[project] = order;
+			this.plugin.settings.materialOrderByProject = map;
+			void this.plugin.saveSettings();
+		}
+		return order.map((name) => byName.get(name)!).filter(Boolean);
 	}
 
 	private async ensureVaultFolder(path: string): Promise<void> {
@@ -2313,7 +2444,12 @@ export class ZTaskingView extends ItemView {
 			noticeExists = !!this.app.vault.getAbstractFileByPath(noticeFilePath);
 			noticeHistory = this.listNoticeHistory(selected, branchSelected);
 		}
-		const materials = selected ? this.listProjectMaterials(selected) : [];
+		const pinnedMaterialNames = selected
+			? (this.plugin.settings.pinnedMaterialsByProject?.[selected] ?? [])
+			: [];
+		const materials = selected
+			? applyPinnedMaterialsFirst(this.listProjectMaterials(selected), pinnedMaterialNames)
+			: [];
 		const tasks = selected
 			? this.plugin.store.tasks
 				.filter((t) => {
@@ -2337,6 +2473,7 @@ export class ZTaskingView extends ItemView {
 				hoursByProject,
 				renameFrom: this.projectPageRenameFrom,
 			}) +
+			`<div class="ztk-splitter" data-split="proj-list-detail" title="拖拽调整宽度"></div>` +
 			projectDetailHtml({
 				project: selected,
 				activity,
@@ -2350,6 +2487,7 @@ export class ZTaskingView extends ItemView {
 					: "",
 				showCreateNotice: !!selected && !needBranchForNotice && !noticeExists,
 				materials,
+				pinnedMaterialNames,
 				tasks,
 				branches,
 				branchSelected,
@@ -2357,6 +2495,7 @@ export class ZTaskingView extends ItemView {
 			});
 		this.mdGen += 1;
 		void this.paintMarkdown(this.mdGen);
+		requestAnimationFrame(() => this.applyProjectsLayout());
 	}
 
 	private listNoticeHistory(project: string, branch: string): NoticeHistoryItem[] {
@@ -2763,6 +2902,9 @@ export class ZTaskingView extends ItemView {
 			return;
 		}
 		await this.app.vault.create(path, `# ${safe}\n\n`);
+		const fileName = path.split("/").pop() ?? `${safe}.md`;
+		this.patchMaterialOrder(project, (order) => [fileName, ...order.filter((n) => n !== fileName)]);
+		await this.plugin.saveSettings();
 		await this.renderProjects();
 		await this.openMaterialDrawer(path);
 	}
@@ -2810,11 +2952,20 @@ export class ZTaskingView extends ItemView {
 		}
 		const dir = materialsDir(this.plugin.store.root(), to);
 		await this.ensureVaultFolder(dir);
+		const fromProject = this.projectsSelected();
+		const oldName = file.name;
+		const newName = dest.split("/").pop() ?? `${file.basename}.md`;
 		try {
 			if (this.materialDrawerPath === path) {
 				this.closeDetailDrawer({ skipShellRefresh: true });
 			}
 			await this.app.fileManager.renameFile(file, dest);
+			if (fromProject) {
+				this.patchMaterialOrder(fromProject, (order) => order.filter((n) => n !== oldName));
+				this.patchPinnedMaterials(fromProject, (pinned) => pinned.filter((n) => n !== oldName));
+			}
+			this.patchMaterialOrder(to, (order) => [newName, ...order.filter((n) => n !== newName)]);
+			await this.plugin.saveSettings();
 			await this.renderProjects();
 			new Notice(`已迁移到「${to}」`);
 		} catch (err) {
@@ -2829,7 +2980,9 @@ export class ZTaskingView extends ItemView {
 			new Notice("找不到材料笔记");
 			return;
 		}
+		const project = this.projectsSelected();
 		const cur = file.basename;
+		const oldName = file.name;
 		const next = await askText(this.app, "重命名材料", "新标题", cur);
 		if (next === null) return;
 		const safe = next.trim().replace(/[\\/]/g, "").replace(/\s+/g, " ");
@@ -2843,8 +2996,16 @@ export class ZTaskingView extends ItemView {
 			new Notice("同名材料已存在");
 			return;
 		}
+		const newName = `${safe}.md`;
 		try {
 			await this.app.fileManager.renameFile(file, dest);
+			if (project) {
+				this.patchMaterialOrder(project, (order) =>
+					order.map((n) => (n === oldName ? newName : n)));
+				this.patchPinnedMaterials(project, (pinned) =>
+					pinned.map((n) => (n === oldName ? newName : n)));
+				await this.plugin.saveSettings();
+			}
 			await this.renderProjects();
 			new Notice(`已重命名为「${safe}」`);
 		} catch (err) {
@@ -2859,6 +3020,8 @@ export class ZTaskingView extends ItemView {
 			new Notice("找不到材料笔记");
 			return;
 		}
+		const project = this.projectsSelected();
+		const name = file.name;
 		const ok = await askConfirm(
 			this.app,
 			"删除材料",
@@ -2868,6 +3031,11 @@ export class ZTaskingView extends ItemView {
 		if (!ok) return;
 		try {
 			await this.app.vault.delete(file);
+			if (project) {
+				this.patchMaterialOrder(project, (order) => order.filter((n) => n !== name));
+				this.patchPinnedMaterials(project, (pinned) => pinned.filter((n) => n !== name));
+				await this.plugin.saveSettings();
+			}
 			await this.renderProjects();
 			new Notice("已删除材料");
 		} catch (err) {
@@ -2887,6 +3055,57 @@ export class ZTaskingView extends ItemView {
 		this.plugin.settings.projectOrder = order;
 		await this.plugin.saveSettings();
 		await this.renderProjects();
+	}
+
+	/** 材料拖拽：from/to 为文件名（含 .md） */
+	private async materialsReorder(from: string, to: string): Promise<void> {
+		const project = this.projectsSelected();
+		if (!project || !from || !to || from === to) return;
+		const materials = this.listProjectMaterials(project);
+		const order = materials.map((m) => m.name);
+		const fromIdx = order.indexOf(from);
+		const toIdx = order.indexOf(to);
+		if (fromIdx < 0 || toIdx < 0) return;
+		order.splice(fromIdx, 1);
+		order.splice(toIdx, 0, from);
+		const map = { ...(this.plugin.settings.materialOrderByProject ?? {}) };
+		map[project] = order;
+		this.plugin.settings.materialOrderByProject = map;
+		await this.plugin.saveSettings();
+		await this.renderProjects();
+	}
+
+	private patchMaterialOrder(
+		project: string,
+		patch: (order: string[]) => string[],
+	): void {
+		const map = { ...(this.plugin.settings.materialOrderByProject ?? {}) };
+		map[project] = patch([...(map[project] ?? [])]);
+		this.plugin.settings.materialOrderByProject = map;
+	}
+
+	private patchPinnedMaterials(
+		project: string,
+		patch: (pinned: string[]) => string[],
+	): void {
+		const map = { ...(this.plugin.settings.pinnedMaterialsByProject ?? {}) };
+		map[project] = patch([...(map[project] ?? [])]);
+		this.plugin.settings.pinnedMaterialsByProject = map;
+	}
+
+	private async togglePinMaterial(fileName: string): Promise<void> {
+		const project = this.projectsSelected();
+		const name = fileName.trim();
+		if (!project || !name) return;
+		const next = togglePinnedId(
+			this.plugin.settings.pinnedMaterialsByProject?.[project] ?? [],
+			name,
+		);
+		const pinned = next.includes(name);
+		this.patchPinnedMaterials(project, () => next);
+		await this.plugin.saveSettings();
+		await this.renderProjects();
+		new Notice(pinned ? "已置顶材料" : "已取消置顶");
 	}
 
 	private async openMaterialDrawer(path: string): Promise<void> {
@@ -4106,8 +4325,8 @@ export class ZTaskingView extends ItemView {
 			<div class="ztk-log-body">${body}</div>
 			<div class="ztk-log-actions">
 				${iconBtn("copy-log", "copy", "复制")}
-				${iconBtn("edit-log", "edit", "编辑")}
-				${iconBtn("del-log", "del", "删除")}
+				<button type="button" class="ztk-task-edit" data-act="edit-log" title="编辑">✎</button>
+				<button type="button" class="ztk-task-del" data-act="del-log" title="删除">×</button>
 			</div>
 		</div>`;
 	}
@@ -4857,8 +5076,8 @@ export class ZTaskingView extends ItemView {
 			<div class="ztk-log-body">${this.mdSlot(taskPath, log.date)}</div>
 			<div class="ztk-log-actions">
 				${iconBtn("copy-log", "copy", "复制")}
-				${iconBtn("edit-log", "edit", "编辑")}
-				${iconBtn("del-log", "del", "删除")}
+				<button type="button" class="ztk-task-edit" data-act="edit-log" title="编辑">✎</button>
+				<button type="button" class="ztk-task-del" data-act="del-log" title="删除">×</button>
 			</div>
 		</div>`;
 	}

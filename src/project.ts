@@ -83,6 +83,28 @@ export function mergeBranchOrder(saved: string[], diskNames: string[]): string[]
 	return mergeProjectOrder(saved, diskNames);
 }
 
+/** 材料拖拽序：与项目序同一合并规则（按文件名） */
+export function mergeMaterialOrder(saved: string[], diskNames: string[]): string[] {
+	return mergeProjectOrder(saved, diskNames);
+}
+
+/** 置顶材料按 pinnedNames 顺序排前，其余保持传入顺序 */
+export function applyPinnedMaterialsFirst<T extends { name: string }>(
+	items: T[],
+	pinnedNames: string[],
+): T[] {
+	if (!pinnedNames.length) return items.slice();
+	const byName = new Map(items.map((m) => [m.name, m]));
+	const pinned: T[] = [];
+	for (const name of pinnedNames) {
+		const m = byName.get(name);
+		if (m) pinned.push(m);
+	}
+	const pinnedSet = new Set(pinned.map((m) => m.name));
+	const rest = items.filter((m) => !pinnedSet.has(m.name));
+	return [...pinned, ...rest];
+}
+
 export function isTypeDirName(name: string): boolean {
 	return TYPE_DIR_NAMES.has(name);
 }

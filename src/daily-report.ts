@@ -1,5 +1,4 @@
 import { esc, YP_NO_PROJECT, type Task } from "./model.ts";
-import { iconBtn } from "./icons.ts";
 import { projectBadgeHtml } from "./report.ts";
 
 export type DailyReportSourceLog = {
@@ -329,8 +328,8 @@ export function tomorrowPlanListHtml(
 					${meta}
 				</div>
 				<div class="ztk-task-trail">
-					${iconBtn("edit-tomorrow-plan", "edit", "编辑", `data-plan-id="${esc(it.id)}"`)}
-					${iconBtn("del-plan-item", "del", "删除", `data-plan-id="${esc(it.id)}"`)}
+					<button type="button" class="ztk-task-edit" data-act="edit-tomorrow-plan" data-plan-id="${esc(it.id)}" title="编辑">✎</button>
+					<button type="button" class="ztk-task-del" data-act="del-plan-item" data-plan-id="${esc(it.id)}" title="删除">×</button>
 				</div>
 			</div>`;
 		}).join("")

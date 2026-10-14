@@ -109,7 +109,7 @@ test("projectDetailHtml：材料任务左右分栏；材料可删改", () => {
 			{ name: "公告.md", path: "Z-Tasking/KVAD/_资料/公告.md" },
 			{ name: "片段.md", path: "Z-Tasking/KVAD/_资料/片段.md" },
 		],
-		tasks: [{ id: "t1", title: "任务甲", status: "todo", type: "long", branch: "main" }],
+		tasks: [{ id: "t1", title: "任务甲", status: "todo" }],
 		branches: ["main", "V7"],
 		branchSelected: "main",
 	});
@@ -128,6 +128,9 @@ test("projectDetailHtml：材料任务左右分栏；材料可删改", () => {
 	assert.match(html, /右键可重命名或删除/);
 	assert.match(html, /ztk-detail-title/);
 	assert.match(html, /片段/);
+	assert.match(html, /ztk-drag-handle/);
+	assert.match(html, /data-name="片段\.md"/);
+	assert.match(html, /data-act="pin-material"/);
 	assert.match(html, /data-act="move-material"/);
 	assert.match(html, /data-act="rename-material"/);
 	assert.match(html, /data-act="delete-material"/);
@@ -137,6 +140,21 @@ test("projectDetailHtml：材料任务左右分栏；材料可删改", () => {
 	assert.doesNotMatch(html, /ztk-proj-notice-empty[\s\S]*data-act="create-notice"/);
 	assert.match(html, /历史记录/);
 	assert.match(html, /任务甲/);
+	// 任务表只保留标题 + 状态，不展示分支/类型列
+	assert.match(html, /ztk-proj-task-table[\s\S]*<th>标题<\/th><th class="ztk-col-status">状态<\/th>/);
+	assert.doesNotMatch(html, /ztk-proj-task-table[\s\S]*ztk-col-branch/);
+	assert.doesNotMatch(html, /ztk-proj-task-table[\s\S]*ztk-col-type/);
 	assert.match(html, /近7天 1笔 · 2h/);
 	assert.match(html, /ztk-proj-sec-icon/);
+
+	const allBranch = projectDetailHtml({
+		project: "KVAD",
+		activity: { todo: 0, doing: 0, done: 0, d7Count: 0, d7Hours: 0, d30Count: 0, d30Hours: 0 },
+		noticeHtmlSlot: noticeSlotHtml({ exists: false, path: "x", needBranch: true }),
+		materials: [],
+		tasks: [],
+		branches: ["main"],
+		branchSelected: "all",
+	});
+	assert.doesNotMatch(allBranch, /ztk-proj-notice/);
 });

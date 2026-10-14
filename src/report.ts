@@ -6,7 +6,7 @@ import {
 	type TaskStatus,
 	type TaskType,
 } from "./model.ts";
-import { iconBtn, searchFieldHtml } from "./icons.ts";
+import { searchFieldHtml } from "./icons.ts";
 import { todayProjectKey } from "./today-order.ts";
 
 export type ReportLogItem = {
@@ -67,7 +67,7 @@ export function reportLogRowHtml(log: {
 		</div>
 		<div class="ztk-report-body">${mdSlotHtml(log.path, log.date)}</div>
 		<div class="ztk-log-actions ztk-report-row-actions">
-			${iconBtn("edit-report-log", "edit", "编辑", `data-path="${esc(log.path)}" data-date="${esc(log.date)}"`)}
+			<button type="button" class="ztk-task-edit" data-act="edit-report-log" data-path="${esc(log.path)}" data-date="${esc(log.date)}" title="编辑">✎</button>
 		</div>
 	</article>`;
 }
@@ -277,7 +277,7 @@ function reportEntryCardHtml(
 			</div>
 			<div class="ztk-report-body">${mdSlotHtml(path, entry.date)}</div>
 			<div class="ztk-log-actions ztk-report-row-actions">
-				${iconBtn("edit-report-log", "edit", "编辑", `data-path="${esc(path)}" data-date="${esc(entry.date)}"`)}
+				<button type="button" class="ztk-task-edit" data-act="edit-report-log" data-path="${esc(path)}" data-date="${esc(entry.date)}" title="编辑">✎</button>
 			</div>
 		</article>`;
 }

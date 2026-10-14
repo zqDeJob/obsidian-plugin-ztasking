@@ -1,6 +1,5 @@
 import {
 	STATUS_LABEL,
-	TYPE_LABEL,
 	addDays,
 	esc,
 	fmt,
@@ -8,7 +7,6 @@ import {
 	parseDate,
 	type Task,
 	type TaskStatus,
-	type TaskType,
 } from "./model.ts";
 import { DEFAULT_BRANCH, PROJECT_NOTICE_FILE } from "./project.ts";
 import { sumHours } from "./report.ts";
@@ -166,20 +164,26 @@ function activityBarHtml(a: ProjectActivity): string {
 function materialsHtml(opts: {
 	project: string;
 	materials: { name: string; path: string }[];
+	/** 置顶材料文件名（含 .md） */
+	pinnedNames?: string[];
 }): string {
 	const noticeName = PROJECT_NOTICE_FILE.replace(/\.md$/i, "");
 	const icon = materialSectionIcon(opts.project || "材料");
+	const pinned = new Set(opts.pinnedNames ?? []);
 	const items = opts.materials
 		.filter((m) => m.name !== PROJECT_NOTICE_FILE && m.name !== noticeName)
 		.map((m) => {
 			const title = m.name.replace(/\.md$/i, "");
-			return `<li class="ztk-proj-mat-item" data-path="${esc(m.path)}">
+			const isPinned = pinned.has(m.name);
+			return `<li class="ztk-proj-mat-item${isPinned ? " is-pinned" : ""}" data-path="${esc(m.path)}" data-name="${esc(m.name)}">
+				<span class="ztk-drag-handle" draggable="true" title="拖拽排序" aria-label="拖拽排序" role="button" tabindex="-1">⋮⋮</span>
 				<span class="ztk-proj-mat-open" data-act="open-material" data-path="${esc(m.path)}" title="${esc(title)}" role="button" tabindex="0">
 					<span class="ztk-rail-dot" aria-hidden="true"></span>
 					<span class="ztk-proj-mat-icon" aria-hidden="true">${materialSectionIcon(title)}</span>
 					<span class="ztk-proj-mat-title">${esc(title)}</span>
 				</span>
 				<span class="ztk-proj-mat-actions">
+					<button type="button" class="ztk-task-pin${isPinned ? " is-on" : ""}" data-act="pin-material" data-path="${esc(m.path)}" data-name="${esc(m.name)}" title="${isPinned ? "取消置顶" : "置顶"}" aria-pressed="${isPinned ? "true" : "false"}">📌</button>
 					${iconBtn("move-material", "move", "迁移到其他项目", `data-path="${esc(m.path)}"`)}
 					<button type="button" class="ztk-task-edit" data-act="rename-material" data-path="${esc(m.path)}" title="重命名">✎</button>
 					<button type="button" class="ztk-task-del" data-act="delete-material" data-path="${esc(m.path)}" title="删除">×</button>
@@ -199,7 +203,7 @@ function materialsHtml(opts: {
 }
 
 function tasksTableHtml(
-	tasks: { id: string; title: string; status: TaskStatus; type: TaskType; branch?: string }[],
+	tasks: { id: string; title: string; status: TaskStatus }[],
 ): string {
 	const rows = tasks
 		.map(
@@ -211,8 +215,6 @@ function tasksTableHtml(
 							<span class="ztk-proj-task-title">${esc(t.title)}</span>
 						</div>
 					</td>
-					<td class="ztk-col-branch">${esc(t.branch || DEFAULT_BRANCH)}</td>
-					<td class="ztk-col-type">${esc(TYPE_LABEL[t.type])}</td>
 					<td class="ztk-col-status">${esc(STATUS_LABEL[t.status])}</td>
 				</tr>`,
 		)
@@ -223,8 +225,8 @@ function tasksTableHtml(
 		</header>
 		<div class="ztk-catalog-body ztk-proj-task-scroll">
 			<table class="ztk-proj-task-table">
-				<thead><tr><th>标题</th><th class="ztk-col-branch">分支</th><th class="ztk-col-type">类型</th><th class="ztk-col-status">状态</th></tr></thead>
-				<tbody>${rows || `<tr><td colspan="4" class="ztk-proj-empty">暂无任务</td></tr>`}</tbody>
+				<thead><tr><th>标题</th><th class="ztk-col-status">状态</th></tr></thead>
+				<tbody>${rows || `<tr><td colspan="2" class="ztk-proj-empty">暂无任务</td></tr>`}</tbody>
 			</table>
 		</div>
 	</section>`;
@@ -267,7 +269,8 @@ export function projectDetailHtml(opts: {
 	/** 尚未有公告且已选具体分支时，在卡片右上角显示「创建公告」 */
 	showCreateNotice?: boolean;
 	materials: { name: string; path: string }[];
-	tasks: { id: string; title: string; status: TaskStatus; type: TaskType; branch?: string }[];
+	pinnedMaterialNames?: string[];
+	tasks: { id: string; title: string; status: TaskStatus }[];
 	branches?: string[];
 	branchSelected?: string;
 	branchRenameFrom?: string | null;
@@ -277,31 +280,37 @@ export function projectDetailHtml(opts: {
 	}
 	const branches = opts.branches ?? [DEFAULT_BRANCH];
 	const branchSelected = opts.branchSelected ?? "all";
-	const noticeTitle = branchSelected && branchSelected !== "all"
-		? `公告 · ${branchSelected}`
-		: "公告";
+	const showNotice = branchSelected !== "all";
+	const noticeTitle = showNotice ? `公告 · ${branchSelected}` : "公告";
 	const noticeHeadAction = opts.showCreateNotice
 		? `<button type="button" class="ztk-btn" data-act="create-notice">创建公告</button>`
+		: "";
+	const noticeCard = showNotice
+		? `<section class="ztk-card ztk-proj-notice">
+			<header class="ztk-proj-sec-head">
+				<div class="ztk-section-title"><h2>${esc(noticeTitle)}</h2></div>
+				${noticeHeadAction}
+			</header>
+			<div class="ztk-proj-notice-body">${opts.noticeHtmlSlot}</div>
+		</section>`
 		: "";
 	return `<main class="ztk-proj-detail">
 		<header class="ztk-detail-head ztk-proj-detail-head">
 			<div class="ztk-title-block"><h1 class="ztk-detail-title">${esc(opts.project)}</h1></div>
 			${activityBarHtml(opts.activity)}
 		</header>
-		<section class="ztk-card ztk-proj-notice">
-			<header class="ztk-proj-sec-head">
-				<div class="ztk-section-title"><h2>${esc(noticeTitle)}</h2></div>
-				${noticeHeadAction}
-			</header>
-			<div class="ztk-proj-notice-body">${opts.noticeHtmlSlot}</div>
-		</section>
+		${noticeCard}
 		${projectBranchesHtml({
 			branches,
 			selected: branchSelected,
 			renameFrom: opts.branchRenameFrom,
 		})}
 		<div class="ztk-proj-split">
-			${materialsHtml({ project: opts.project, materials: opts.materials })}
+			${materialsHtml({
+				project: opts.project,
+				materials: opts.materials,
+				pinnedNames: opts.pinnedMaterialNames,
+			})}
 			${tasksTableHtml(opts.tasks)}
 		</div>
 	</main>`;

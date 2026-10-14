@@ -777,45 +777,12 @@
 	align-items: center;
 	gap: 2px;
 }
-/* 计划行操作：编辑/删除统一为安静图标，悬停再上色 */
-.ztk-view .ztk-task.ztk-yp-task button.ztk-icon-btn,
-.ztk-task.ztk-yp-task .ztk-icon-btn {
-	width: 24px !important;
-	height: 24px !important;
-	min-width: 24px !important;
-	min-height: 24px !important;
-	padding: 0 !important;
-	border-radius: 6px !important;
-	opacity: 1;
-	background: transparent !important;
-	background-color: transparent !important;
-	color: var(--ztk-muted) !important;
-	box-shadow: none !important;
-}
-.ztk-view .ztk-task.ztk-yp-task button.ztk-icon-btn svg,
-.ztk-task.ztk-yp-task .ztk-icon-btn svg {
-	width: 14px;
-	height: 14px;
-}
-.ztk-view .ztk-task.ztk-yp-task button.ztk-icon-btn--edit:hover,
-.ztk-task.ztk-yp-task .ztk-icon-btn--edit:hover {
-	background: #f3ebe3 !important;
-	background-color: #f3ebe3 !important;
-	color: #a85a2a !important;
-	filter: none;
-}
-.ztk-view .ztk-task.ztk-yp-task button.ztk-icon-btn--del,
-.ztk-task.ztk-yp-task .ztk-icon-btn--del {
-	background: transparent !important;
-	background-color: transparent !important;
-	color: var(--ztk-muted) !important;
-}
-.ztk-view .ztk-task.ztk-yp-task button.ztk-icon-btn--del:hover,
-.ztk-task.ztk-yp-task .ztk-icon-btn--del:hover {
-	background: #fdecea !important;
-	background-color: #fdecea !important;
-	color: #b42318 !important;
-	filter: none;
+/* 计划行操作：与任务表同款 ✎ / ×，行悬停显示 */
+.ztk-task.ztk-yp-task .ztk-task-trail .ztk-task-edit,
+.ztk-task.ztk-yp-task .ztk-task-trail .ztk-task-del {
+	width: 24px;
+	height: 24px;
+	font-size: 14px;
 }
 .ztk-yesterday-plan-list > .ztk-task.ztk-yp-task:last-child {
 	border-bottom: 0;
@@ -2018,6 +1985,8 @@
 }
 .ztk-task:hover .ztk-task-del,
 .ztk-task.sel .ztk-task-del,
+.ztk-task:hover .ztk-task-edit,
+.ztk-task.sel .ztk-task-edit,
 .ztk-catalog-body tr:hover .ztk-task-del,
 .ztk-catalog-body tr.sel .ztk-task-del,
 .ztk-catalog-body tr:hover .ztk-task-edit,
@@ -2408,6 +2377,10 @@
 .ztk-md img { max-width: 100%; }
 .ztk-log-edit { min-height: 64px; }
 .ztk-log-actions { display: flex; gap: 6px; flex-shrink: 0; align-items: flex-start; }
+.ztk-log-actions .ztk-task-edit,
+.ztk-log-actions .ztk-task-del {
+	opacity: 1;
+}
 .ztk-view button.ztk-icon-btn {
 	display: inline-flex;
 	align-items: center;
@@ -3872,9 +3845,9 @@
 		#ffffff;
 }
 
-/* 项目页：对齐工作台（列表表 + 详情卡 + 设计 token） */
+/* 项目页：对齐工作台（列表 | 分隔条 | 详情） */
 #ztk-view-projects {
-	grid-template-columns: minmax(280px, 0.38fr) 1fr;
+	grid-template-columns: minmax(240px, 0.38fr) 6px minmax(360px, 1fr);
 	grid-template-rows: minmax(0, 1fr);
 	gap: 0;
 	background: transparent;
@@ -4190,7 +4163,7 @@
 }
 .ztk-proj-mat-item {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) auto;
+	grid-template-columns: 22px minmax(0, 1fr) auto;
 	align-items: center;
 	gap: 4px;
 	margin: 0;
@@ -4200,6 +4173,26 @@
 }
 .ztk-proj-mat-item:hover {
 	background: transparent;
+}
+.ztk-proj-mat-item .ztk-drag-handle {
+	cursor: grab;
+	opacity: .4;
+	width: 18px;
+	height: 22px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	user-select: none;
+	-webkit-user-drag: element;
+}
+.ztk-proj-mat-item:hover .ztk-drag-handle {
+	opacity: .85;
+}
+.ztk-proj-mat-item.is-dragging {
+	opacity: .45;
+}
+.ztk-proj-mat-item.is-drag-over {
+	box-shadow: inset 0 -2px 0 var(--ztk-teal);
 }
 .ztk-view .ztk-proj-mat-open,
 .ztk-view span.ztk-proj-mat-open,
@@ -4248,12 +4241,24 @@
 	transition: opacity .12s ease;
 }
 .ztk-proj-mat-item:hover .ztk-proj-mat-actions,
-.ztk-proj-mat-actions:focus-within {
+.ztk-proj-mat-actions:focus-within,
+.ztk-proj-mat-item.is-pinned .ztk-proj-mat-actions {
 	opacity: 1;
 }
 .ztk-proj-mat-actions .ztk-task-edit,
-.ztk-proj-mat-actions .ztk-task-del {
+.ztk-proj-mat-actions .ztk-task-del,
+.ztk-proj-mat-actions .ztk-icon-btn,
+.ztk-proj-mat-actions .ztk-task-pin {
 	opacity: 1;
+	transition: opacity .12s ease;
+}
+/* 已置顶：图钉常亮；其余操作仍悬停才显 */
+.ztk-proj-mat-item.is-pinned:not(:hover):not(:focus-within) .ztk-proj-mat-actions > :not(.ztk-task-pin) {
+	opacity: 0;
+	pointer-events: none;
+}
+.ztk-proj-mat-item.is-pinned .ztk-task-pin {
+	opacity: 1 !important;
 }
 .ztk-proj-task-scroll {
 	flex: 1;
@@ -5051,11 +5056,12 @@ textarea.ztk-bm-input,
 @media (max-width: 900px) {
 	#ztk-view-cal, #ztk-view-report, #ztk-view-web, #ztk-view-help { grid-template-columns: 1fr; }
 	#ztk-view-projects {
-		grid-template-columns: 1fr;
+		grid-template-columns: 1fr !important;
 		grid-template-rows: minmax(200px, .7fr) minmax(260px, 1.1fr);
 	}
-	#ztk-view-projects .ztk-proj-list { grid-row: 1; }
-	#ztk-view-projects .ztk-proj-detail { grid-row: 2; }
+	#ztk-view-projects .ztk-proj-list { grid-column: 1; grid-row: 1; }
+	#ztk-view-projects .ztk-splitter { display: none; }
+	#ztk-view-projects .ztk-proj-detail { grid-column: 1; grid-row: 2; }
 	#ztk-view-board {
 		grid-template-columns: 1fr !important;
 		grid-template-rows: minmax(220px, .9fr) minmax(240px, 1.1fr);

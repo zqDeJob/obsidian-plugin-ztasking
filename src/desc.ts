@@ -21,7 +21,7 @@ export function descBlockHtml(opts: { editing: boolean; desc: string; path: stri
 		<div class="ztk-desc-body">${body}</div>
 		<div class="ztk-log-actions">
 			${iconBtn("copy-desc", "copy", "复制")}
-			${iconBtn("edit-desc", "edit", "编辑")}
+			<button type="button" class="ztk-task-edit" data-act="edit-desc" title="编辑">✎</button>
 		</div>
 	</div>`;
 }

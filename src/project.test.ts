@@ -14,6 +14,8 @@ import {
 	listProjectNames,
 	materialNotePath,
 	materialsDir,
+	applyPinnedMaterialsFirst,
+	mergeMaterialOrder,
 	mergeProjectOrder,
 	needsLegacyMigration,
 	normalizeProjectName,
@@ -33,6 +35,25 @@ import {
 
 test("mergeProjectOrder：新项目置前，已删剔除，相对序保留", () => {
 	assert.deepEqual(mergeProjectOrder(["B", "A", "Gone"], ["C", "A", "B"]), ["C", "B", "A"]);
+});
+
+test("mergeMaterialOrder：与项目序同一规则", () => {
+	assert.deepEqual(
+		mergeMaterialOrder(["b.md", "a.md"], ["c.md", "a.md", "b.md"]),
+		["c.md", "b.md", "a.md"],
+	);
+});
+
+test("applyPinnedMaterialsFirst：置顶按序排前，其余保持原序", () => {
+	const items = [
+		{ name: "a.md", path: "p/a.md" },
+		{ name: "b.md", path: "p/b.md" },
+		{ name: "c.md", path: "p/c.md" },
+	];
+	assert.deepEqual(
+		applyPinnedMaterialsFirst(items, ["c.md", "a.md"]).map((m) => m.name),
+		["c.md", "a.md", "b.md"],
+	);
 });
 
 test("materialsDir / noticePath / materialNotePath", () => {

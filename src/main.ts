@@ -93,6 +93,22 @@ export default class ZTaskingPlugin extends Plugin {
 			projectOrder: Array.isArray(raw?.projectOrder)
 				? raw!.projectOrder.filter((x): x is string => typeof x === "string" && !!x.trim())
 				: [],
+			materialOrderByProject: raw?.materialOrderByProject && typeof raw.materialOrderByProject === "object"
+				? Object.fromEntries(
+					Object.entries(raw.materialOrderByProject).map(([k, v]) => [
+						k,
+						Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()) : [],
+					]),
+				)
+				: {},
+			pinnedMaterialsByProject: raw?.pinnedMaterialsByProject && typeof raw.pinnedMaterialsByProject === "object"
+				? Object.fromEntries(
+					Object.entries(raw.pinnedMaterialsByProject).map(([k, v]) => [
+						k,
+						Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()) : [],
+					]),
+				)
+				: {},
 			lastProjectId: typeof raw?.lastProjectId === "string" ? raw.lastProjectId : "",
 			branchOrderByProject: raw?.branchOrderByProject && typeof raw.branchOrderByProject === "object"
 				? Object.fromEntries(

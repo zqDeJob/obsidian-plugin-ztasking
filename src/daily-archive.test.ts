@@ -169,9 +169,9 @@ test("yesterdayPlanBlockHtml：可编辑列表 + 新增/重置/批量新增，�
 	assert.match(withItems, /ztk-plan-add-input/);
 	assert.match(withItems, /data-act="reset-yesterday-plan"/);
 	assert.match(withItems, /data-act="edit-yesterday-plan"/);
-	assert.match(withItems, /ztk-icon-btn--edit/);
+	assert.match(withItems, /ztk-task-edit/);
 	assert.match(withItems, /data-act="del-yesterday-plan"/);
-	assert.match(withItems, /ztk-icon-btn--del/);
+	assert.match(withItems, /ztk-task-del/);
 	assert.match(withItems, /data-yp-id="a"/);
 	assert.match(withItems, /data-act="yp-quick-add"/);
 	assert.match(withItems, /ztk-ghost/);

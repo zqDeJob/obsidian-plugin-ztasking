@@ -7,6 +7,7 @@ function task(partial: Partial<Task> & Pick<Task, "id" | "title">): Task {
 	return {
 		path: partial.path ?? partial.id,
 		project: "KVAD",
+		branch: "main",
 		type: "long",
 		status: "doing",
 		start: "2026-01-01",

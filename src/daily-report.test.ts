@@ -10,6 +10,7 @@ import {
 	mergeCodeReviewBullets,
 	normalizePlanItems,
 	parseMergeRequestRef,
+	parseMergeRequestRefs,
 	planItemsToText,
 	refreshDailyDraft,
 	textToPlanItems,
@@ -80,6 +81,17 @@ test("parseMergeRequestRef 从 URL 拆出项目与单号", () => {
 	assert.equal(parseMergeRequestRef("普通进展"), null);
 });
 
+test("parseMergeRequestRefs 一行多条链接全量解析", () => {
+	const refs = parseMergeRequestRefs(
+		"http://192.168.120.13/module_server/kvad/-/merge_requests/488 、http://192.168.120.13/module_server/mc-vue/-/merge_requests/769  、http://192.168.120.13/module_server/kvad/-/merge_requests/491",
+	);
+	assert.deepEqual(refs, [
+		{ project: "kvad", iid: 488 },
+		{ project: "mc-vue", iid: 769 },
+		{ project: "kvad", iid: 491 },
+	]);
+});
+
 test("mergeCodeReviewBullets 同项目 MR 汇总为一行", () => {
 	const merged = mergeCodeReviewBullets([
 		"- 代码审核：http://192.168.120.13/module_server/kvad/-/merge_requests/477",
@@ -87,6 +99,18 @@ test("mergeCodeReviewBullets 同项目 MR 汇总为一行", () => {
 		"- 代码评审：http://192.168.120.13/module_server/kvad/-/merge_requests/483",
 	]);
 	assert.deepEqual(merged, ["- 代码审核：MR kvad 477、481、483"]);
+});
+
+test("mergeCodeReviewBullets：空标题行丢弃，多项目一行汇总", () => {
+	const merged = mergeCodeReviewBullets(logTextToBullets([
+		"- 代码评审：",
+		"http://192.168.120.13/module_server/kvad/-/merge_requests/488 、http://192.168.120.13/module_server/mc-vue/-/merge_requests/769  、http://192.168.120.13/module_server/kvad/-/merge_requests/491",
+		"- 代码审核：",
+		"http://192.168.120.13/module_server/mc/-/merge_requests/1074",
+	].join("\n")));
+	assert.deepEqual(merged, [
+		"- 代码审核：MR kvad 488、491、MR mc-vue 769、MR mc 1074",
+	]);
 });
 
 test("buildTodayWorkBody：代码审核 MR 合并后可收成一行", () => {
@@ -170,7 +194,7 @@ test("tomorrowPlanListHtml：无勾选，编辑图标 + 底部另起一行新增
 
 test("refreshDailyDraft：换日清空明日计划；未定制保持空", () => {
 	const tasks = [{
-		id: "a", path: "a.md", title: "A", project: "KVAD", type: "long" as const, status: "doing" as const,
+		id: "a", path: "a.md", title: "A", project: "KVAD", branch: "main", type: "long" as const, status: "doing" as const,
 		start: "", end: "", desc: "推进 A", logs: [], updatedAt: 1,
 	}] satisfies Task[];
 	const draft = refreshDailyDraft(

@@ -31,6 +31,11 @@ export function projectBadgeHtml(project?: string): string {
 	return `<span class="ztk-project-badge">${esc(project)}</span>`;
 }
 
+export function branchBadgeHtml(branch?: string): string {
+	if (!branch) return "";
+	return `<span class="ztk-branch-badge">${esc(branch)}</span>`;
+}
+
 export function mdSlotHtml(path: string, date: string, kind = "log"): string {
 	return `<div class="ztk-md markdown-rendered" data-src="${esc(path)}" data-date="${esc(date)}" data-kind="${esc(kind)}"></div>`;
 }
@@ -340,7 +345,7 @@ function todayItemHtml(
 		? `<span class="ztk-rail-dot ${esc(it.type)}"></span>`
 		: "";
 	const drag = board
-		? `<button type="button" class="ztk-drag-handle" draggable="true" title="拖拽排序" aria-label="拖拽排序">⋮⋮</button>`
+		? `<button type="button" class="ztk-drag-handle" draggable="true" title="拖拽排序">⋮⋮</button>`
 		: "";
 	// 有正文才渲染 markdown 槽；仅工时只保留标题与工时徽章（汇总/工作台一致）
 	const body = it.text === undefined || it.text.trim()
@@ -354,7 +359,7 @@ function todayItemHtml(
 				<button class="ztk-ghost" data-act="goto-task" data-id="${esc(it.id)}" type="button">${esc(label)}</button>
 				${hoursBadgeHtml(it.hours)}
 			</div>
-			<button type="button" class="ztk-task-del" data-act="del-log" data-id="${esc(it.id)}" data-date="${esc(today)}" title="删除今日进展" aria-label="删除今日进展">×</button>
+			<button type="button" class="ztk-task-del" data-act="del-log" data-id="${esc(it.id)}" data-date="${esc(today)}" title="删除今日进展">×</button>
 		</div>
 		${body}
 	</div>`;
@@ -398,7 +403,7 @@ export function todayDigestHtml(
 		body = items.map((it) => todayItemHtml(today, it, undefined, board)).join("");
 	}
 	const collapseBtn = collapsible
-		? `<button type="button" class="ztk-ghost ztk-section-collapse" data-act="toggle-board-section" data-section="today" title="${collapsed ? "展开" : "折叠"}" aria-expanded="${collapsed ? "false" : "true"}" aria-label="${collapsed ? "展开" : "折叠"}">${collapsed ? "▸" : "▾"}</button>`
+		? `<button type="button" class="ztk-ghost ztk-section-collapse" data-act="toggle-board-section" data-section="today" title="${collapsed ? "展开" : "折叠"}" aria-expanded="${collapsed ? "false" : "true"}"展开" : "折叠"}">${collapsed ? "▸" : "▾"}</button>`
 		: "";
 	return `<div class="ztk-card ztk-today${collapsed ? " is-collapsed" : ""}">
 		<div class="ztk-today-bar">

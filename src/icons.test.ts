@@ -15,7 +15,7 @@ test("searchFieldHtml：左侧搜索图标 + 右侧清除按钮", () => {
 	assert.match(html, /value="关键字"/);
 	assert.match(html, /data-act="clear-search"/);
 	assert.match(html, /ztk-search-clear/);
-	assert.match(html, /aria-label="清除搜索"/);
+	assert.match(html, /title="清除搜索"/);
 	assert.doesNotMatch(html, /\shidden/);
 });
 

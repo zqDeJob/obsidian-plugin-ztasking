@@ -4,11 +4,15 @@ import {
 	dailyReportNotePath,
 	extractTomorrowPlanLines,
 	extractYesterdayPlanState,
+	formatPlanDayLabel,
 	isDailyDraftWorthArchiving,
+	isWeekendDate,
+	nextDateStr,
 	parseYesterdayPlanQuickLines,
 	planReportDateForDay,
 	prevDateStr,
 	replaceTomorrowPlanSection,
+	resolveBoardYpReportDate,
 	resolveYpDefaultProject,
 	serializeDailyReportNote,
 	serializeYesterdayPlanItems,
@@ -37,6 +41,38 @@ test("dailyReportNotePath 落在根目录/日报/日期.md", () => {
 test("prevDateStr 取前一天", () => {
 	assert.equal(prevDateStr("2026-09-21"), "2026-09-20");
 	assert.equal(prevDateStr("2026-03-01"), "2026-02-28");
+});
+
+test("nextDateStr / isWeekendDate / formatPlanDayLabel", () => {
+	assert.equal(nextDateStr("2026-10-09"), "2026-10-10");
+	assert.equal(isWeekendDate("2026-10-10"), true); // 周六
+	assert.equal(isWeekendDate("2026-10-11"), true); // 周日
+	assert.equal(isWeekendDate("2026-10-12"), false); // 周一
+	assert.equal(formatPlanDayLabel("2026-10-11"), "10月11日");
+});
+
+test("resolveBoardYpReportDate：空周末往前跳；有内容的周末保留", () => {
+	const empty = new Set<string>();
+	// 周一 → 周日空、周六空 → 落到周五
+	assert.deepEqual(
+		resolveBoardYpReportDate("2026-10-12", (d) => empty.has(d)),
+		{ reportDate: "2026-10-09", planDay: "2026-10-10" },
+	);
+	// 周六加班写了计划 → 周一仍用周六日报
+	assert.deepEqual(
+		resolveBoardYpReportDate("2026-10-12", (d) => d === "2026-10-10"),
+		{ reportDate: "2026-10-10", planDay: "2026-10-11" },
+	);
+	// 周日加班 → 直接用周日
+	assert.deepEqual(
+		resolveBoardYpReportDate("2026-10-12", (d) => d === "2026-10-11"),
+		{ reportDate: "2026-10-11", planDay: "2026-10-12" },
+	);
+	// 普通周二 → 用周一（即使无内容）
+	assert.deepEqual(
+		resolveBoardYpReportDate("2026-10-13", () => false),
+		{ reportDate: "2026-10-12", planDay: "2026-10-13" },
+	);
 });
 
 test("serializeDailyReportNote 写出 frontmatter 与三段", () => {
@@ -107,9 +143,9 @@ test("yesterdayPlanListHtml：只读模式无勾选、无删除、不可编辑",
 	assert.doesNotMatch(html, /ztk-task-del/);
 });
 
-test("yesterdayPlanBlockHtml：标题为昨日计划，不展示日期控件", () => {
+test("yesterdayPlanBlockHtml：标题带计划所属日，不展示日期控件", () => {
 	const html = yesterdayPlanBlockHtml({ items: [], planDay: "2026-09-20" });
-	assert.match(html, /<h2>昨日计划<\/h2>/);
+	assert.match(html, /<h2>昨日计划 · 9月20日<\/h2>/);
 	assert.doesNotMatch(html, /ztk-yp-plan-day/);
 	assert.match(html, /data-yp-report="2026-09-19"/);
 });
@@ -121,6 +157,8 @@ test("yesterdayPlanBlockHtml：可编辑列表 + 新增/重置/批量新增，�
 	assert.match(withItems, /昨日计划/);
 	assert.match(withItems, /写单测/);
 	assert.match(withItems, /ztk-yp-task/);
+	assert.match(withItems, /ztk-yp-title-inner/);
+	assert.match(withItems, /data-act="copy-yp-title"/);
 	assert.match(withItems, /ztk-project-badge/);
 	assert.match(withItems, />KVAD</);
 	assert.match(withItems, />终端</);

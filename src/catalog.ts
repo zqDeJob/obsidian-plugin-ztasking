@@ -1,6 +1,6 @@
 import type { Task, TaskStatus, TaskType } from "./model.ts";
 
-export type CatalogSortKey = "project" | "type" | "status" | "hours";
+export type CatalogSortKey = "project" | "branch" | "type" | "status" | "hours";
 export type CatalogSortDir = "asc" | "desc";
 export type CatalogSort = { key: CatalogSortKey; dir: CatalogSortDir } | null;
 
@@ -13,6 +13,10 @@ function taskHours(task: Task): number {
 
 function projectKey(task: Task): string {
 	return (task.project ?? "").trim();
+}
+
+function branchKey(task: Task): string {
+	return (task.branch ?? "").trim();
 }
 
 /** 任务周期与日期区间是否有交集；起/止为空表示该端不限制 */
@@ -43,6 +47,8 @@ export function applyCatalogSort(tasks: Task[], sort: CatalogSort): Task[] {
 		let d = 0;
 		if (sort.key === "project") {
 			d = projectKey(a).localeCompare(projectKey(b), "zh") * dir;
+		} else if (sort.key === "branch") {
+			d = branchKey(a).localeCompare(branchKey(b), "zh") * dir;
 		} else if (sort.key === "type") {
 			d = (TYPE_RANK[a.type] - TYPE_RANK[b.type]) * dir;
 		} else if (sort.key === "status") {

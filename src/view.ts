@@ -53,14 +53,25 @@ import {
 	type PeriodRange,
 } from "./period";
 import {
+	DEFAULT_BRANCH,
 	DEFAULT_PROJECT,
+	filterByBranch,
 	filterByProject,
 	materialNotePath,
 	materialsDir,
+	mergeBranchOrder,
 	mergeProjectOrder,
+	normalizeBranchName,
 	normalizeProjectName,
+	formatNoticeHistoryStamp,
+	legacyNoticePath,
+	noticeHistoryDir,
+	noticeHistoryFilePath,
 	noticePath,
+	remapPathsAfterBranchRename,
 	remapPathsAfterProjectRename,
+	resolveBranchSelectValue,
+	resolveNewTaskBranch,
 	resolveNewTaskProject,
 	resolveProjectSelectValue,
 } from "./project";
@@ -69,8 +80,10 @@ import {
 	noticeSlotHtml,
 	projectDetailHtml,
 	projectListHtml,
+	type NoticeHistoryItem,
 } from "./project-page";
 import {
+	branchBadgeHtml,
 	formatReportLogsCopyText,
 	groupReportLogsByProject,
 	highlightElementText,
@@ -490,11 +503,13 @@ export class ZTaskingView extends ItemView {
 	reportQuery = "";
 	/** 业务项目筛选：all = 全部 */
 	projectFilter = "all";
+	/** 分支筛选：all = 全部 */
+	branchFilter = "all";
 	private mdRoot = new Component();
 	private mdGen = 0;
 	private webPanel: WebPanel;
 	/** 工作台两列：左侧三卡 / 右侧任务表 的相对宽度 */
-	private leftPaneRatio = 0.38;
+	private leftPaneRatio = 0.30;
 	private boardSplittersBound = false;
 	/** 拖拽排序结束后抑制一次 click，避免误选中 */
 	private suppressTaskClick = false;
@@ -502,14 +517,22 @@ export class ZTaskingView extends ItemView {
 	private boardCollapsed = { yesterday: false, today: false, plan: false };
 	/** 任务详情抽屉是否打开（默认关闭） */
 	private detailOpen = false;
-	/** 项目管理抽屉（与任务/昨日计划抽屉互斥；顶栏「项目」页已替代入口） */
+	/** 项目管理抽屉（与任务/昨日计划抽屉互斥；顶栏「项目管理」页已替代入口） */
 	private projectMgrOpen = false;
 	/** 项目管理：正在行内重命名的项目名 */
 	private projectMgrRenameFrom: string | null = null;
 	/** 项目页：正在行内重命名的项目名 */
 	private projectPageRenameFrom: string | null = null;
+	/** 项目页：正在行内重命名的分支名 */
+	private projectPageBranchRenameFrom: string | null = null;
 	/** 项目页拖拽源 */
 	private projectDragFrom: string | null = null;
+	/** 材料抽屉：正在编辑的笔记路径 */
+	private materialDrawerPath: string | null = null;
+	/** 新建任务时锁定项目（项目页内新建，隐藏项目选择） */
+	private newTaskProjectLock: string | null = null;
+	/** 新建任务时锁定分支（项目页选中具体分支时） */
+	private newTaskBranchLock: string | null = null;
 	/** 计划抽屉：null 关闭；条目 id（昨日/明日共用） */
 	private ypDrawerId: string | null = null;
 	/** 计划抽屉来源：昨日计划(yp) / 明日计划(tp) */
@@ -572,14 +595,17 @@ export class ZTaskingView extends ItemView {
 				<div class="ztk-tabs">
 					<button data-tab="report" class="on" type="button">汇总</button>
 					<button data-tab="work" type="button">工作台</button>
+					<button data-tab="projects" type="button">项目管理</button>
 					<button data-tab="schedule" type="button">日历</button>
-					<button data-tab="projects" type="button">项目</button>
 					${Platform.isDesktopApp ? `<button data-tab="web" type="button">网页</button>` : ""}
 					<button data-tab="help" type="button">帮助中心</button>
 				</div>
 				<div class="ztk-spacer"></div>
 				<select class="ztk-project-filter" aria-label="业务项目">
 					<option value="all" selected>全部项目</option>
+				</select>
+				<select class="ztk-branch-filter" aria-label="分支">
+					<option value="all" selected>全部分支</option>
 				</select>
 				<div class="ztk-period">
 					<div class="ztk-period-presets" role="group" aria-label="周期快捷">
@@ -596,6 +622,7 @@ export class ZTaskingView extends ItemView {
 					</div>
 				</div>
 				<button class="ztk-btn is-hidden" data-act="new" type="button">新建任务</button>
+				<button class="ztk-btn is-hidden" data-act="add-project" type="button">新建项目</button>
 			</header>
 			<main class="ztk-main">
 				<div class="ztk-page" id="ztk-view-board">
@@ -659,9 +686,13 @@ export class ZTaskingView extends ItemView {
 					<div class="ztk-form">
 						<input name="title" required placeholder="任务标题" />
 						<textarea name="desc" placeholder="说明：这件事项要达成什么"></textarea>
-						<label class="ztk-field">
+						<label class="ztk-field ztk-field-project">
 							<span>业务项目</span>
 							<select name="project" required aria-label="业务项目"></select>
+						</label>
+						<label class="ztk-field ztk-field-branch">
+							<span>分支</span>
+							<select name="branch" required aria-label="分支"></select>
 						</label>
 						<div class="ztk-two">
 							<select name="type">
@@ -691,7 +722,8 @@ export class ZTaskingView extends ItemView {
 		this.bindBoardSplitters();
 		this.applyPeriodShortcut("week");
 		try {
-			await this.plugin.store.reload();
+			const { settingsDirty } = await this.plugin.store.reload();
+			if (settingsDirty) await this.plugin.saveSettings();
 		} catch (err) {
 			console.error("Z-Tasking reload", err);
 			new Notice("Z-Tasking 加载失败，请查看控制台");
@@ -706,7 +738,8 @@ export class ZTaskingView extends ItemView {
 	}
 
 	async refresh(): Promise<void> {
-		await this.plugin.store.reload();
+		const { settingsDirty } = await this.plugin.store.reload();
+		if (settingsDirty) await this.plugin.saveSettings();
 		if (this.selectedId && !this.plugin.store.tasks.some((t) => t.id === this.selectedId)) {
 			this.selectedId = "";
 			this.detailOpen = false;
@@ -719,7 +752,28 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private projectTasks(): Task[] {
-		return filterByProject(this.tasks(), this.projectFilter);
+		return filterByBranch(
+			filterByProject(this.tasks(), this.projectFilter),
+			this.branchFilter,
+		);
+	}
+
+	private branchesForFilter(): string[] {
+		const pf = this.projectFilter.trim();
+		if (pf && pf !== "all") {
+			const disk = this.plugin.store.branchesOf(pf);
+			const saved = this.plugin.settings.branchOrderByProject?.[pf] ?? [];
+			return mergeBranchOrder(saved, disk);
+		}
+		const names = new Set<string>();
+		for (const p of this.plugin.store.projects) {
+			for (const b of this.plugin.store.branchesOf(p)) names.add(b);
+		}
+		for (const t of this.tasks()) {
+			if (t.branch?.trim()) names.add(t.branch.trim());
+		}
+		if (!names.size) names.add(DEFAULT_BRANCH);
+		return [...names].sort((a, b) => a.localeCompare(b, "zh"));
 	}
 
 	private syncProjectFilterOptions(): void {
@@ -732,6 +786,19 @@ export class ZTaskingView extends ItemView {
 		}`;
 		sel.value = cur === "all" || projects.includes(cur) ? cur : "all";
 		if (sel.value !== this.projectFilter) this.projectFilter = sel.value;
+		this.syncBranchFilterOptions();
+	}
+
+	private syncBranchFilterOptions(): void {
+		const sel = this.contentEl.querySelector(".ztk-branch-filter") as HTMLSelectElement | null;
+		if (!sel) return;
+		const branches = this.branchesForFilter();
+		const cur = this.branchFilter;
+		sel.innerHTML = `<option value="all">全部分支</option>${
+			branches.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join("")
+		}`;
+		sel.value = cur === "all" || branches.includes(cur) ? cur : "all";
+		if (sel.value !== this.branchFilter) this.branchFilter = sel.value;
 	}
 
 	private $(sel: string): HTMLElement {
@@ -891,40 +958,8 @@ export class ZTaskingView extends ItemView {
 
 	private bind(): void {
 		const root = this.contentEl;
-		root.addEventListener("dragstart", (e) => {
-			const row = (e.target as HTMLElement).closest<HTMLElement>("#ztk-view-projects .ztk-proj-row[draggable=\"true\"]");
-			if (!row?.dataset.project) return;
-			this.projectDragFrom = row.dataset.project;
-			row.classList.add("is-dragging");
-			e.dataTransfer?.setData("text/plain", row.dataset.project);
-			if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-		});
-		root.addEventListener("dragend", () => {
-			this.projectDragFrom = null;
-			root.querySelectorAll(".ztk-proj-row.is-dragging, .ztk-proj-row.is-drag-over").forEach((el) => {
-				el.classList.remove("is-dragging", "is-drag-over");
-			});
-		});
-		root.addEventListener("dragover", (e) => {
-			const row = (e.target as HTMLElement).closest<HTMLElement>("#ztk-view-projects .ztk-proj-row[data-project]");
-			if (!row || !this.projectDragFrom) return;
-			e.preventDefault();
-			root.querySelectorAll(".ztk-proj-row.is-drag-over").forEach((el) => el.classList.remove("is-drag-over"));
-			if (row.dataset.project !== this.projectDragFrom) row.classList.add("is-drag-over");
-		});
-		root.addEventListener("drop", (e) => {
-			const row = (e.target as HTMLElement).closest<HTMLElement>("#ztk-view-projects .ztk-proj-row[data-project]");
-			const from = this.projectDragFrom;
-			const to = row?.dataset.project;
-			this.projectDragFrom = null;
-			root.querySelectorAll(".ztk-proj-row.is-dragging, .ztk-proj-row.is-drag-over").forEach((el) => {
-				el.classList.remove("is-dragging", "is-drag-over");
-			});
-			if (!from || !to) return;
-			e.preventDefault();
-			void this.projectsReorder(from, to);
-		});
 		root.addEventListener("contextmenu", (e) => {
+			if (this.openBranchContextMenu(e)) return;
 			this.openCopyMenu(e);
 		});
 		root.addEventListener("click", (e) => {
@@ -981,8 +1016,27 @@ export class ZTaskingView extends ItemView {
 			const act = target.closest<HTMLElement>("[data-act]");
 			if (act?.dataset.act) {
 				const a = act.dataset.act;
-				if (a === "new") void this.openModal();
+				if (a === "new") {
+					if (this.view === "projects") {
+						const project = this.projectsSelected();
+						const branch = this.projectsBranchSelected(project);
+						void this.openModal({
+							lockProject: project,
+							lockBranch: branch !== "all" ? branch : undefined,
+						});
+					} else {
+						void this.openModal();
+					}
+				}
 				if (a === "cancel") this.closeModal();
+				if (a === "save-material") {
+					void this.saveMaterialDrawer();
+					return;
+				}
+				if (a === "copy-material") {
+					void this.copyMaterialDrawer();
+					return;
+				}
 				if (a === "pm-add") {
 					void this.pmAddProject();
 					return;
@@ -1010,6 +1064,7 @@ export class ZTaskingView extends ItemView {
 					return;
 				}
 				if (a === "select-project" && act.dataset.project) {
+					if (target.closest(".ztk-drag-handle, .ztk-catalog-actions")) return;
 					void this.projectsSelect(act.dataset.project);
 					return;
 				}
@@ -1031,16 +1086,74 @@ export class ZTaskingView extends ItemView {
 					void this.projectsDelete(act.dataset.project);
 					return;
 				}
+				if (a === "select-branch" && act.dataset.branch) {
+					void this.projectsSelectBranch(act.dataset.branch);
+					return;
+				}
+				if (a === "add-branch") {
+					void this.projectsAddBranch();
+					return;
+				}
+				if (a === "rename-branch" && act.dataset.branch) {
+					this.projectPageBranchRenameFrom = act.dataset.branch;
+					void this.renderProjects();
+					return;
+				}
+				if (a === "rename-branch-cancel") {
+					this.projectPageBranchRenameFrom = null;
+					void this.renderProjects();
+					return;
+				}
+				if (a === "rename-branch-save" && act.dataset.branch) {
+					void this.projectsRenameBranch(act.dataset.branch);
+					return;
+				}
+				if (a === "delete-branch" && act.dataset.branch) {
+					void this.projectsDeleteBranch(act.dataset.branch);
+					return;
+				}
 				if (a === "create-notice") {
 					void this.projectsCreateNotice();
+					return;
+				}
+				if (a === "archive-notice" && act.dataset.path) {
+					void this.projectsArchiveNotice(act.dataset.path);
+					return;
+				}
+				if (a === "edit-notice" && act.dataset.path) {
+					void this.projectsEditNotice(act.dataset.path);
+					return;
+				}
+				if (a === "open-notice-history" && act.dataset.path) {
+					void this.openMaterialDrawer(act.dataset.path);
+					return;
+				}
+				if (a === "restore-notice-history" && act.dataset.path) {
+					void this.projectsRestoreNoticeHistory(act.dataset.path);
+					return;
+				}
+				if (a === "delete-notice-history" && act.dataset.path) {
+					void this.projectsDeleteNoticeHistory(act.dataset.path);
 					return;
 				}
 				if (a === "new-material") {
 					void this.projectsNewMaterial();
 					return;
 				}
+				if (a === "move-material" && act.dataset.path) {
+					this.openMoveMaterialMenu(act.dataset.path, e);
+					return;
+				}
+				if (a === "rename-material" && act.dataset.path) {
+					void this.projectsRenameMaterial(act.dataset.path);
+					return;
+				}
+				if (a === "delete-material" && act.dataset.path) {
+					void this.projectsDeleteMaterial(act.dataset.path);
+					return;
+				}
 				if (a === "open-material" && act.dataset.path) {
-					void this.app.workspace.openLinkText(act.dataset.path, "");
+					void this.openMaterialDrawer(act.dataset.path);
 					return;
 				}
 				if (a === "open-project-task") {
@@ -1202,7 +1315,13 @@ export class ZTaskingView extends ItemView {
 				}
 				if (a === "catalog-sort") {
 					const key = act.dataset.key as CatalogSortKey | undefined;
-					if (key === "project" || key === "type" || key === "status" || key === "hours") {
+					if (
+						key === "project"
+						|| key === "branch"
+						|| key === "type"
+						|| key === "status"
+						|| key === "hours"
+					) {
 						this.catalogSort = nextCatalogSort(this.catalogSort, key);
 						this.renderCatalog();
 					}
@@ -1360,14 +1479,11 @@ export class ZTaskingView extends ItemView {
 				if (a === "goto-task" && act.dataset.id) {
 					if (this.suppressTaskClick || target.closest(".ztk-drag-handle")) return;
 					this.openTaskDetail(act.dataset.id);
-					if (this.view === "board") {
-						this.syncWorkShell();
-						this.syncDetailDrawer();
-						this.rerenderDetail();
-					} else {
-						this.switchView("board");
-						this.renderAll();
-					}
+					this.syncDetailDrawer();
+					this.rerenderDetail();
+					if (this.view === "board") this.syncWorkShell();
+					this.mdGen += 1;
+					void this.paintMarkdown(this.mdGen);
 					return;
 				}
 				if (a === "pin-task" && act.dataset.id) {
@@ -1417,6 +1533,30 @@ export class ZTaskingView extends ItemView {
 			const el = e.target as HTMLElement;
 			if (el.classList.contains("ztk-project-filter")) {
 				this.projectFilter = (el as HTMLSelectElement).value || "all";
+				const pf = this.projectFilter;
+				if (pf && pf !== "all") {
+					const last = this.plugin.settings.lastBranchByProject?.[pf];
+					this.branchFilter = last && last !== "all" ? last : "all";
+				} else {
+					this.branchFilter = "all";
+				}
+				this.syncBranchFilterOptions();
+				this.mdGen += 1;
+				const gen = this.mdGen;
+				this.renderAll();
+				void this.paintMarkdown(gen);
+				return;
+			}
+			if (el.classList.contains("ztk-branch-filter")) {
+				this.branchFilter = (el as HTMLSelectElement).value || "all";
+				const pf = this.projectFilter;
+				if (pf && pf !== "all") {
+					if (!this.plugin.settings.lastBranchByProject) {
+						this.plugin.settings.lastBranchByProject = {};
+					}
+					this.plugin.settings.lastBranchByProject[pf] = this.branchFilter;
+					void this.plugin.saveSettings();
+				}
 				this.mdGen += 1;
 				const gen = this.mdGen;
 				this.renderAll();
@@ -1458,6 +1598,9 @@ export class ZTaskingView extends ItemView {
 			}
 			if (el.classList.contains("ztk-task-project")) {
 				void this.changeProject((el as HTMLInputElement | HTMLSelectElement).value);
+			}
+			if (el.classList.contains("ztk-task-branch")) {
+				void this.changeBranch((el as HTMLSelectElement).value);
 			}
 			if (el.classList.contains("ztk-yp-project")) {
 				void this.ypDrawerSaveFields();
@@ -1553,13 +1696,26 @@ export class ZTaskingView extends ItemView {
 	private bindListReorder(): void {
 		const root = this.contentEl;
 		let dragId = "";
-		let dragKind: "" | "sidebar" | "today" = "";
+		let dragKind: "" | "sidebar" | "today" | "project" = "";
+		const eventEl = (t: EventTarget | null): HTMLElement | null => {
+			if (t instanceof HTMLElement) return t;
+			if (t instanceof Node) return t.parentElement;
+			return null;
+		};
 		const sidebarRowOf = (el: HTMLElement | null) =>
 			el?.closest<HTMLElement>("tr[data-id], .ztk-task[data-id]") ?? null;
 		const todayRowOf = (el: HTMLElement | null) =>
 			el?.closest<HTMLElement>(".ztk-today-item[data-id]") ?? null;
-		const rowOf = (el: HTMLElement | null) =>
-			dragKind === "today" ? todayRowOf(el) : sidebarRowOf(el);
+		const projectRowOf = (el: HTMLElement | null) => {
+			const row = el?.closest<HTMLElement>(".ztk-proj-row[data-project]") ?? null;
+			if (!row || !row.closest("#ztk-view-projects")) return null;
+			return row;
+		};
+		const rowOf = (el: HTMLElement | null) => {
+			if (dragKind === "today") return todayRowOf(el);
+			if (dragKind === "project") return projectRowOf(el);
+			return sidebarRowOf(el);
+		};
 		const clearMarks = () => {
 			root.querySelectorAll(".is-dragging, .is-drag-over").forEach((el) => {
 				el.classList.remove("is-dragging", "is-drag-over");
@@ -1574,7 +1730,17 @@ export class ZTaskingView extends ItemView {
 			);
 		};
 		root.addEventListener("dragstart", (e) => {
-			const handle = (e.target as HTMLElement).closest(".ztk-drag-handle") as HTMLElement | null;
+			const handle = eventEl(e.target)?.closest(".ztk-drag-handle") as HTMLElement | null;
+			const projRow = handle ? projectRowOf(handle) : null;
+			if (handle && projRow?.dataset.project) {
+				dragKind = "project";
+				dragId = projRow.dataset.project;
+				this.projectDragFrom = dragId;
+				projRow.classList.add("is-dragging");
+				e.dataTransfer?.setData("text/plain", dragId);
+				if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+				return;
+			}
 			const todayRow = todayRowOf(handle);
 			const sideRow = sidebarRowOf(handle);
 			const row = todayRow ?? sideRow;
@@ -1591,12 +1757,25 @@ export class ZTaskingView extends ItemView {
 		root.addEventListener("dragend", () => {
 			dragId = "";
 			dragKind = "";
+			this.projectDragFrom = null;
 			clearMarks();
 			this.suppressTaskClick = true;
 			window.setTimeout(() => { this.suppressTaskClick = false; }, 0);
 		});
 		root.addEventListener("dragover", (e) => {
-			const row = rowOf(e.target as HTMLElement);
+			if (dragKind === "project") {
+				const row = projectRowOf(eventEl(e.target));
+				const from = dragId || this.projectDragFrom || "";
+				if (!row?.dataset.project || !from || row.dataset.project === from) return;
+				e.preventDefault();
+				if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+				root.querySelectorAll(".ztk-proj-row.is-drag-over").forEach((el) => {
+					if (el !== row) el.classList.remove("is-drag-over");
+				});
+				row.classList.add("is-drag-over");
+				return;
+			}
+			const row = rowOf(eventEl(e.target));
 			if (!row?.dataset.id || !dragId || row.dataset.id === dragId) return;
 			if (dragKind === "today") {
 				const fromRow = root.querySelector<HTMLElement>(".ztk-today-item.is-dragging");
@@ -1610,21 +1789,34 @@ export class ZTaskingView extends ItemView {
 			row.classList.add("is-drag-over");
 		});
 		root.addEventListener("dragleave", (e) => {
-			const row = rowOf(e.target as HTMLElement);
+			const row = rowOf(eventEl(e.target));
 			const related = e.relatedTarget as HTMLElement | null;
 			if (row && related && row.contains(related)) return;
 			row?.classList.remove("is-drag-over");
 		});
 		root.addEventListener("drop", (e) => {
 			const kind = dragKind;
-			const row = rowOf(e.target as HTMLElement);
+			const fromId = dragId || this.projectDragFrom || e.dataTransfer?.getData("text/plain") || "";
+			if (kind === "project") {
+				const row = projectRowOf(eventEl(e.target));
+				const toId = row?.dataset.project ?? "";
+				clearMarks();
+				dragKind = "";
+				dragId = "";
+				this.projectDragFrom = null;
+				if (!fromId || !toId || fromId === toId) return;
+				e.preventDefault();
+				void this.projectsReorder(fromId, toId);
+				return;
+			}
+			const row = rowOf(eventEl(e.target));
 			const toId = row?.dataset.id ?? "";
-			const fromId = dragId || e.dataTransfer?.getData("text/plain") || "";
 			const fromRow = kind === "today"
 				? root.querySelector<HTMLElement>(".ztk-today-item.is-dragging")
 				: null;
 			clearMarks();
 			dragKind = "";
+			dragId = "";
 			if (!fromId || !toId || fromId === toId) return;
 			if (kind === "today" && !todayDropOk(fromRow, row)) return;
 			e.preventDefault();
@@ -1736,12 +1928,12 @@ export class ZTaskingView extends ItemView {
 		const splitter = board.querySelector<HTMLElement>(".ztk-splitter");
 		if (splitter) splitter.style.display = "";
 		if (w <= 0) {
-			board.style.gridTemplateColumns = `minmax(${minLeft}px, 0.38fr) ${split}px minmax(${minList}px, 1fr)`;
+			board.style.gridTemplateColumns = `minmax(${minLeft}px, 0.30fr) ${split}px minmax(${minList}px, 1fr)`;
 			return;
 		}
 		const avail = Math.max(1, w - split);
 		let leftW = Math.round(avail * this.leftPaneRatio);
-		leftW = Math.max(minLeft, Math.min(Math.floor(avail * 0.55), leftW));
+		leftW = Math.max(minLeft, Math.min(Math.floor(avail * 0.48), leftW));
 		let listW = avail - leftW;
 		if (listW < minList) {
 			leftW = Math.max(minLeft, avail - minList);
@@ -1767,7 +1959,7 @@ export class ZTaskingView extends ItemView {
 				const onMove = (e: PointerEvent) => {
 					const avail = Math.max(1, board.clientWidth - 6);
 					const dRatio = (e.clientX - startX) / avail;
-					this.leftPaneRatio = Math.min(0.55, Math.max(0.28, startLeft + dRatio));
+					this.leftPaneRatio = Math.min(0.48, Math.max(0.24, startLeft + dRatio));
 					this.applyBoardLayout();
 				};
 				const onUp = () => {
@@ -1792,6 +1984,7 @@ export class ZTaskingView extends ItemView {
 		this.editingYpNoteIdx = null;
 		this.projectMgrOpen = false;
 		this.projectMgrRenameFrom = null;
+		this.materialDrawerPath = null;
 		this.selectedId = id;
 		this.detailOpen = true;
 	}
@@ -1804,6 +1997,7 @@ export class ZTaskingView extends ItemView {
 		this.editingYpNoteIdx = null;
 		this.projectMgrOpen = false;
 		this.projectMgrRenameFrom = null;
+		this.materialDrawerPath = null;
 		this.editingDesc = false;
 		this.editingTitle = false;
 		this.syncDetailDrawer();
@@ -1817,7 +2011,9 @@ export class ZTaskingView extends ItemView {
 	private syncDetailDrawer(): void {
 		const main = this.contentEl.querySelector(".ztk-main") as HTMLElement | null;
 		if (!main) return;
-		const open = this.detailOpen && (!!this.selectedId || !!this.ypDrawerId || this.projectMgrOpen);
+		const open = this.detailOpen && (
+			!!this.selectedId || !!this.ypDrawerId || this.projectMgrOpen || !!this.materialDrawerPath
+		);
 		main.dataset.detailOpen = open ? "1" : "0";
 		main.classList.toggle("is-detail-open", open);
 		const drawer = main.querySelector(".ztk-detail-drawer");
@@ -1841,13 +2037,24 @@ export class ZTaskingView extends ItemView {
 				this.view === "web" || this.view === "help" || this.view === "projects",
 			);
 		}
+		const branchFilter = this.contentEl.querySelector<HTMLElement>(".ztk-branch-filter");
+		if (branchFilter) {
+			branchFilter.classList.toggle(
+				"is-hidden",
+				this.view === "web" || this.view === "help" || this.view === "projects",
+			);
+		}
 		const newBtn = this.contentEl.querySelector<HTMLElement>("[data-act=\"new\"]");
 		if (newBtn) {
-			newBtn.classList.toggle("is-hidden", this.view !== "board");
+			newBtn.classList.toggle("is-hidden", this.view !== "board" && this.view !== "projects");
+		}
+		const addProjBtn = this.contentEl.querySelector<HTMLElement>("[data-act=\"add-project\"]");
+		if (addProjBtn) {
+			addProjBtn.classList.toggle("is-hidden", this.view !== "board" && this.view !== "projects");
 		}
 	}
 
-	private async openModal(): Promise<void> {
+	private async openModal(opts?: { lockProject?: string; lockBranch?: string }): Promise<void> {
 		await this.plugin.store.refreshProjectList();
 		this.syncProjectFilterOptions();
 		const form = this.$(".ztk-modal-card") as HTMLFormElement;
@@ -1856,20 +2063,72 @@ export class ZTaskingView extends ItemView {
 		start.value = todayStr();
 		end.value = fmt(addDays(new Date(), 14));
 		const projectSelect = form.elements.namedItem("project") as HTMLSelectElement;
+		const branchSelect = form.elements.namedItem("branch") as HTMLSelectElement;
+		const projectField = form.querySelector<HTMLElement>(".ztk-field-project");
+		const branchField = form.querySelector<HTMLElement>(".ztk-field-branch");
 		const projects = this.plugin.store.projects;
 		if (!projects.length) {
-			new Notice("请先在「项目」页新增项目");
+			new Notice("请先在「项目管理」中新增项目");
 			return;
 		}
-		const preferred = resolveNewTaskProject(this.projectFilter, projects);
-		projectSelect.innerHTML = projects
-			.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`)
-			.join("");
-		projectSelect.value = resolveProjectSelectValue(preferred, projects);
+		const lock = (opts?.lockProject ?? "").trim();
+		let projectValue: string;
+		if (lock) {
+			if (!projects.includes(lock)) {
+				new Notice("请先选择一个有效项目");
+				return;
+			}
+			this.newTaskProjectLock = lock;
+			projectSelect.innerHTML = `<option value="${esc(lock)}">${esc(lock)}</option>`;
+			projectSelect.value = lock;
+			projectField?.classList.add("is-hidden");
+			projectValue = lock;
+		} else {
+			this.newTaskProjectLock = null;
+			projectField?.classList.remove("is-hidden");
+			const preferred = resolveNewTaskProject(this.projectFilter, projects);
+			projectSelect.innerHTML = projects
+				.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`)
+				.join("");
+			projectSelect.value = resolveProjectSelectValue(preferred, projects);
+			projectValue = projectSelect.value;
+		}
+		const branches = this.plugin.store.branchesOf(projectValue);
+		const lockBranch = (opts?.lockBranch ?? "").trim();
+		if (lockBranch && branches.includes(lockBranch)) {
+			this.newTaskBranchLock = lockBranch;
+			branchSelect.innerHTML = `<option value="${esc(lockBranch)}">${esc(lockBranch)}</option>`;
+			branchSelect.value = lockBranch;
+			branchField?.classList.add("is-hidden");
+		} else {
+			this.newTaskBranchLock = null;
+			branchField?.classList.remove("is-hidden");
+			const preferredBranch = resolveNewTaskBranch(this.branchFilter, branches);
+			branchSelect.innerHTML = branches
+				.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`)
+				.join("");
+			branchSelect.value = resolveBranchSelectValue(preferredBranch, branches);
+		}
+		projectSelect.onchange = () => {
+			const p = projectSelect.value;
+			const nextBranches = this.plugin.store.branchesOf(p);
+			const preferred = resolveNewTaskBranch(this.branchFilter, nextBranches);
+			branchSelect.innerHTML = nextBranches
+				.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`)
+				.join("");
+			branchSelect.value = resolveBranchSelectValue(preferred, nextBranches);
+		};
 		this.$(".ztk-modal").classList.add("on");
 	}
 
 	private closeModal(): void {
+		this.newTaskProjectLock = null;
+		this.newTaskBranchLock = null;
+		const form = this.contentEl.querySelector(".ztk-modal-card") as HTMLFormElement | null;
+		form?.querySelector<HTMLElement>(".ztk-field-project")?.classList.remove("is-hidden");
+		form?.querySelector<HTMLElement>(".ztk-field-branch")?.classList.remove("is-hidden");
+		const projectSelect = form?.elements.namedItem("project") as HTMLSelectElement | null;
+		if (projectSelect) projectSelect.onchange = null;
 		this.$(".ztk-modal").classList.remove("on");
 	}
 
@@ -1880,6 +2139,7 @@ export class ZTaskingView extends ItemView {
 		this.ypDrawerId = null;
 		this.editingYpNoteIdx = null;
 		this.projectMgrRenameFrom = null;
+		this.materialDrawerPath = null;
 		this.projectMgrOpen = true;
 		this.detailOpen = true;
 		this.syncDetailDrawer();
@@ -1986,6 +2246,18 @@ export class ZTaskingView extends ItemView {
 		return order[0] ?? "";
 	}
 
+	private projectsBranchSelected(project: string): string {
+		if (!project) return "all";
+		const branches = mergeBranchOrder(
+			this.plugin.settings.branchOrderByProject?.[project] ?? [],
+			this.plugin.store.branchesOf(project),
+		);
+		const last = this.plugin.settings.lastBranchByProject?.[project] ?? "all";
+		if (last === "all") return "all";
+		if (last && branches.includes(last)) return last;
+		return "all";
+	}
+
 	private listProjectMaterials(project: string): { name: string; path: string }[] {
 		const dir = materialsDir(this.plugin.store.root(), project);
 		const folder = this.app.vault.getAbstractFileByPath(dir);
@@ -2015,54 +2287,245 @@ export class ZTaskingView extends ItemView {
 			this.plugin.settings.lastProjectId = selected;
 			void this.plugin.saveSettings();
 		}
+		const branchSelected = this.projectsBranchSelected(selected);
+		const branches = selected
+			? mergeBranchOrder(
+				this.plugin.settings.branchOrderByProject?.[selected] ?? [],
+				this.plugin.store.branchesOf(selected),
+			)
+			: [];
 		const taskCounts: Record<string, number> = {};
+		const hoursByProject: Record<string, number> = {};
 		for (const p of projects) {
-			taskCounts[p] = this.plugin.store.tasks.filter((t) => t.project === p).length;
+			const mine = this.plugin.store.tasks.filter((t) => t.project === p);
+			taskCounts[p] = mine.length;
+			hoursByProject[p] = sumHours(mine.flatMap((t) => t.logs));
 		}
 		const activity = selected
-			? computeProjectActivity(this.plugin.store.tasks, selected, todayStr())
+			? computeProjectActivity(this.plugin.store.tasks, selected, todayStr(), branchSelected)
 			: { todo: 0, doing: 0, done: 0, d7Count: 0, d7Hours: 0, d30Count: 0, d30Hours: 0 };
-		const noticeFilePath = selected ? noticePath(this.plugin.store.root(), selected) : "";
-		const noticeExists = !!(selected && this.app.vault.getAbstractFileByPath(noticeFilePath));
+		const needBranchForNotice = !branchSelected || branchSelected === "all";
+		let noticeFilePath = "";
+		let noticeExists = false;
+		let noticeHistory: NoticeHistoryItem[] = [];
+		if (selected && !needBranchForNotice) {
+			noticeFilePath = await this.resolveBranchNoticePath(selected, branchSelected);
+			noticeExists = !!this.app.vault.getAbstractFileByPath(noticeFilePath);
+			noticeHistory = this.listNoticeHistory(selected, branchSelected);
+		}
 		const materials = selected ? this.listProjectMaterials(selected) : [];
 		const tasks = selected
 			? this.plugin.store.tasks
-				.filter((t) => t.project === selected)
-				.map((t) => ({ id: t.id, title: t.title, status: t.status, type: t.type }))
+				.filter((t) => {
+					if (t.project !== selected) return false;
+					if (branchSelected === "all") return true;
+					return t.branch === branchSelected;
+				})
+				.map((t) => ({
+					id: t.id,
+					title: t.title,
+					status: t.status,
+					type: t.type,
+					branch: t.branch,
+				}))
 			: [];
 		page.innerHTML =
 			projectListHtml({
 				projects,
 				selected,
 				taskCounts,
+				hoursByProject,
 				renameFrom: this.projectPageRenameFrom,
 			}) +
 			projectDetailHtml({
 				project: selected,
 				activity,
 				noticeHtmlSlot: selected
-					? noticeSlotHtml({ exists: noticeExists, path: noticeFilePath })
+					? noticeSlotHtml({
+						exists: noticeExists,
+						path: noticeFilePath,
+						needBranch: needBranchForNotice,
+						history: noticeHistory,
+					})
 					: "",
+				showCreateNotice: !!selected && !needBranchForNotice && !noticeExists,
 				materials,
 				tasks,
+				branches,
+				branchSelected,
+				branchRenameFrom: this.projectPageBranchRenameFrom,
 			});
 		this.mdGen += 1;
 		void this.paintMarkdown(this.mdGen);
 	}
 
+	private listNoticeHistory(project: string, branch: string): NoticeHistoryItem[] {
+		const dir = noticeHistoryDir(this.plugin.store.root(), project, branch);
+		const folder = this.app.vault.getAbstractFileByPath(dir);
+		if (!(folder instanceof TFolder)) return [];
+		return folder.children
+			.filter((f): f is TFile => f instanceof TFile && f.extension === "md")
+			.map((f) => {
+				const stamp = f.basename;
+				const label = stamp.includes("_")
+					? stamp.replace("_", " ").replace(/(\d{2})(\d{2})(\d{2})$/, "$1:$2:$3")
+					: stamp;
+				return { stamp, path: f.path, label };
+			})
+			.sort((a, b) => b.stamp.localeCompare(a.stamp));
+	}
+
+	/** 分支公告路径；main 若仅有旧版 _资料/公告.md 则迁入分支目录 */
+	private async resolveBranchNoticePath(project: string, branch: string): Promise<string> {
+		const root = this.plugin.store.root();
+		const path = noticePath(root, project, branch);
+		if (this.app.vault.getAbstractFileByPath(path)) return path;
+		if (branch.trim() !== DEFAULT_BRANCH) return path;
+		const legacy = legacyNoticePath(root, project);
+		const legacyFile = this.app.vault.getAbstractFileByPath(legacy);
+		if (!(legacyFile instanceof TFile)) return path;
+		await this.ensureVaultFolder(`${root}/${project}/${DEFAULT_BRANCH}`);
+		try {
+			await this.app.fileManager.renameFile(legacyFile, path);
+		} catch (err) {
+			console.error("Z-Tasking migrate legacy notice", legacy, err);
+			return legacy;
+		}
+		return path;
+	}
+
 	private async projectsSelect(name: string): Promise<void> {
 		this.projectPageRenameFrom = null;
+		this.projectPageBranchRenameFrom = null;
 		this.plugin.settings.lastProjectId = name;
 		await this.plugin.saveSettings();
 		await this.renderProjects();
 	}
 
-	private async projectsAdd(): Promise<void> {
-		const input = this.contentEl.querySelector<HTMLInputElement>(".ztk-proj-add-input");
+	private async projectsSelectBranch(branch: string): Promise<void> {
+		const project = this.projectsSelected();
+		if (!project) return;
+		this.projectPageBranchRenameFrom = null;
+		if (!this.plugin.settings.lastBranchByProject) {
+			this.plugin.settings.lastBranchByProject = {};
+		}
+		this.plugin.settings.lastBranchByProject[project] = branch;
+		await this.plugin.saveSettings();
+		await this.renderProjects();
+	}
+
+	private async projectsAddBranch(): Promise<void> {
+		const project = this.projectsSelected();
+		if (!project) {
+			new Notice("请先选择项目");
+			return;
+		}
+		const raw = await askText(this.app, "新建分支", "分支名", "例如 V7R023");
+		if (raw === null) return;
+		const result = await this.plugin.store.createBranch(project, raw);
+		if (!result.ok) {
+			new Notice(result.reason);
+			return;
+		}
+		if (!this.plugin.settings.branchOrderByProject) {
+			this.plugin.settings.branchOrderByProject = {};
+		}
+		const order = this.plugin.settings.branchOrderByProject[project] ?? [];
+		this.plugin.settings.branchOrderByProject[project] = [
+			result.name,
+			...order.filter((b) => b !== result.name),
+		];
+		if (!this.plugin.settings.lastBranchByProject) {
+			this.plugin.settings.lastBranchByProject = {};
+		}
+		this.plugin.settings.lastBranchByProject[project] = result.name;
+		await this.plugin.saveSettings();
+		this.syncBranchFilterOptions();
+		await this.renderProjects();
+		new Notice(`已创建分支「${result.name}」`);
+	}
+
+	private async projectsRenameBranch(from: string): Promise<void> {
+		const project = this.projectsSelected();
+		if (!project) return;
+		const input = Array.from(
+			this.contentEl.querySelectorAll<HTMLInputElement>(".ztk-proj-branch-rename-input"),
+		).find((el) => el.dataset.branch === from);
 		const raw = input?.value ?? "";
+		const result = await this.plugin.store.renameBranch(project, from, raw);
+		if (!result.ok) {
+			new Notice(result.reason);
+			return;
+		}
+		const root = this.plugin.store.root();
+		const order = this.plugin.settings.sidebarOrder;
+		if (order) {
+			order.long = remapPathsAfterBranchRename(order.long ?? [], root, project, result.from, result.to);
+			order.temp = remapPathsAfterBranchRename(order.temp ?? [], root, project, result.from, result.to);
+			order.bug = remapPathsAfterBranchRename(order.bug ?? [], root, project, result.from, result.to);
+		}
+		const todayOrder = this.plugin.settings.todayDigestOrder;
+		if (todayOrder?.ids?.length) {
+			todayOrder.ids = remapPathsAfterBranchRename(
+				todayOrder.ids, root, project, result.from, result.to,
+			);
+		}
+		if (this.plugin.settings.pinnedTaskIds?.length) {
+			this.plugin.settings.pinnedTaskIds = remapPathsAfterBranchRename(
+				this.plugin.settings.pinnedTaskIds, root, project, result.from, result.to,
+			);
+		}
+		const bo = this.plugin.settings.branchOrderByProject?.[project];
+		if (bo) {
+			this.plugin.settings.branchOrderByProject![project] = bo.map((b) =>
+				b === result.from ? result.to : b
+			);
+		}
+		if (this.plugin.settings.lastBranchByProject?.[project] === result.from) {
+			this.plugin.settings.lastBranchByProject[project] = result.to;
+		}
+		if (this.branchFilter === result.from) this.branchFilter = result.to;
+		this.projectPageBranchRenameFrom = null;
+		await this.plugin.saveSettings();
+		this.syncBranchFilterOptions();
+		await this.renderProjects();
+		new Notice(`已重命名为「${result.to}」`);
+	}
+
+	private async projectsDeleteBranch(branch: string): Promise<void> {
+		const project = this.projectsSelected();
+		if (!project) return;
+		const ok = await askConfirm(
+			this.app,
+			"删除分支",
+			`确定删除空分支「${branch}」？将删除其目录，此操作不可恢复。`,
+			"删除",
+		);
+		if (!ok) return;
+		const check = await this.plugin.store.deleteBranch(project, branch);
+		if (!check.ok) {
+			new Notice(check.reason);
+			return;
+		}
+		const bo = this.plugin.settings.branchOrderByProject?.[project];
+		if (bo) {
+			this.plugin.settings.branchOrderByProject![project] = bo.filter((b) => b !== branch);
+		}
+		if (this.plugin.settings.lastBranchByProject?.[project] === branch) {
+			this.plugin.settings.lastBranchByProject[project] = "all";
+		}
+		if (this.branchFilter === branch) this.branchFilter = "all";
+		await this.plugin.saveSettings();
+		this.syncBranchFilterOptions();
+		await this.renderProjects();
+		new Notice(`已删除分支「${branch}」`);
+	}
+
+	private async projectsAdd(): Promise<void> {
+		const raw = await askText(this.app, "新增项目", "项目名", "例如 KVAD");
+		if (raw === null) return;
 		if (!normalizeProjectName(raw)) {
 			new Notice("请填写有效项目名（不能是日报/长期/临时/缺陷/_资料）");
-			input?.focus();
 			return;
 		}
 		const result = await this.plugin.store.createProject(raw);
@@ -2074,7 +2537,6 @@ export class ZTaskingView extends ItemView {
 		this.plugin.settings.projectOrder = order;
 		this.plugin.settings.lastProjectId = result.name;
 		await this.plugin.saveSettings();
-		if (input) input.value = "";
 		this.syncProjectFilterOptions();
 		await this.renderProjects();
 		new Notice(`已创建项目「${result.name}」`);
@@ -2146,16 +2608,140 @@ export class ZTaskingView extends ItemView {
 	private async projectsCreateNotice(): Promise<void> {
 		const project = this.projectsSelected();
 		if (!project) return;
-		const dir = materialsDir(this.plugin.store.root(), project);
-		const path = noticePath(this.plugin.store.root(), project);
-		await this.ensureVaultFolder(dir);
+		const branch = this.projectsBranchSelected(project);
+		if (!branch || branch === "all") {
+			new Notice("请先选择具体分支再创建公告");
+			return;
+		}
+		const root = this.plugin.store.root();
+		const path = await this.resolveBranchNoticePath(project, branch);
+		await this.ensureVaultFolder(`${root}/${project}/${branch}`);
 		if (this.app.vault.getAbstractFileByPath(path)) {
 			await this.renderProjects();
 			return;
 		}
-		await this.app.vault.create(path, `# ${project} 公告\n\n`);
+		await this.app.vault.create(path, `# ${project} · ${branch} 公告\n\n`);
 		await this.renderProjects();
-		new Notice("已创建公告");
+		new Notice(`已创建「${branch}」分支公告`);
+	}
+
+	/** 编辑公告前自动存档（内容未变则跳过），再打开抽屉 */
+	private async projectsEditNotice(path: string): Promise<void> {
+		const archived = await this.projectsArchiveNotice(path, {
+			silent: true,
+			skipIfUnchanged: true,
+		});
+		if (archived) await this.renderProjects();
+		await this.openMaterialDrawer(path);
+	}
+
+	private async projectsArchiveNotice(
+		path: string,
+		opts?: { silent?: boolean; skipIfUnchanged?: boolean },
+	): Promise<boolean> {
+		const silent = opts?.silent === true;
+		const project = this.projectsSelected();
+		const branch = this.projectsBranchSelected(project);
+		if (!project || !branch || branch === "all") {
+			if (!silent) new Notice("请先选择具体分支");
+			return false;
+		}
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			if (!silent) new Notice("找不到公告");
+			return false;
+		}
+		const content = await this.app.vault.read(file);
+		if (!content.trim()) {
+			if (!silent) new Notice("公告为空，无需存档");
+			return false;
+		}
+		if (opts?.skipIfUnchanged) {
+			const hist = this.listNoticeHistory(project, branch);
+			const latest = hist[0];
+			if (latest) {
+				const latestFile = this.app.vault.getAbstractFileByPath(latest.path);
+				if (latestFile instanceof TFile) {
+					let prev = await this.app.vault.read(latestFile);
+					prev = prev.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n\r?\n?/, "");
+					if (prev === content) return false;
+				}
+			}
+		}
+		const stamp = formatNoticeHistoryStamp();
+		const dest = noticeHistoryFilePath(this.plugin.store.root(), project, branch, stamp);
+		await this.ensureVaultFolder(noticeHistoryDir(this.plugin.store.root(), project, branch));
+		if (this.app.vault.getAbstractFileByPath(dest)) {
+			if (!silent) new Notice("同秒存档已存在，请稍后再试");
+			return false;
+		}
+		const header = `---\nsource: ${path}\narchived: ${stamp}\n---\n\n`;
+		await this.app.vault.create(dest, header + content);
+		if (!silent) {
+			await this.renderProjects();
+			new Notice(`已存档 ${stamp.replace("_", " ")}`);
+		} else {
+			// 静默存档不整页重绘，避免打断随后打开抽屉；下次渲染会刷出历史
+		}
+		return true;
+	}
+
+	private async projectsRestoreNoticeHistory(historyPath: string): Promise<void> {
+		const project = this.projectsSelected();
+		const branch = this.projectsBranchSelected(project);
+		if (!project || !branch || branch === "all") {
+			new Notice("请先选择具体分支");
+			return;
+		}
+		const hist = this.app.vault.getAbstractFileByPath(historyPath);
+		if (!(hist instanceof TFile)) {
+			new Notice("找不到历史存档");
+			return;
+		}
+		const ok = await askConfirm(
+			this.app,
+			"恢复公告",
+			"将用该存档覆盖当前公告；建议先「存档当前」。确定恢复？",
+			"恢复",
+		);
+		if (!ok) return;
+		let text = await this.app.vault.read(hist);
+		text = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n\r?\n?/, "");
+		const notice = await this.resolveBranchNoticePath(project, branch);
+		await this.ensureVaultFolder(`${this.plugin.store.root()}/${project}/${branch}`);
+		const file = this.app.vault.getAbstractFileByPath(notice);
+		try {
+			if (file instanceof TFile) await this.app.vault.modify(file, text);
+			else await this.app.vault.create(notice, text);
+			await this.renderProjects();
+			new Notice("已恢复为当前公告");
+		} catch (err) {
+			console.error("Z-Tasking restore notice", historyPath, err);
+			new Notice("恢复失败");
+		}
+	}
+
+	private async projectsDeleteNoticeHistory(historyPath: string): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(historyPath);
+		if (!(file instanceof TFile)) {
+			new Notice("找不到历史存档");
+			return;
+		}
+		const ok = await askConfirm(
+			this.app,
+			"删除存档",
+			`确定删除存档「${file.basename}」？`,
+			"删除",
+		);
+		if (!ok) return;
+		try {
+			await this.app.vault.delete(file);
+			await this.renderProjects();
+			new Notice("已删除存档");
+		} catch (err) {
+			console.error("Z-Tasking delete notice history", historyPath, err);
+			new Notice("删除失败");
+		}
 	}
 
 	private async projectsNewMaterial(): Promise<void> {
@@ -2173,12 +2759,121 @@ export class ZTaskingView extends ItemView {
 		await this.ensureVaultFolder(dir);
 		if (this.app.vault.getAbstractFileByPath(path)) {
 			new Notice("同名材料已存在");
-			void this.app.workspace.openLinkText(path, "");
+			await this.openMaterialDrawer(path);
 			return;
 		}
 		await this.app.vault.create(path, `# ${safe}\n\n`);
 		await this.renderProjects();
-		void this.app.workspace.openLinkText(path, "");
+		await this.openMaterialDrawer(path);
+	}
+
+	/** 材料迁移：弹出目标项目菜单 */
+	private openMoveMaterialMenu(path: string, e: MouseEvent): void {
+		const current = this.projectsSelected();
+		const targets = this.plugin.store.projects.filter((p) => p && p !== current);
+		if (!targets.length) {
+			new Notice("没有其他可迁入的项目");
+			return;
+		}
+		e.preventDefault();
+		e.stopPropagation();
+		const menu = new Menu();
+		for (const project of targets) {
+			menu.addItem((item) => {
+				item.setTitle(`迁移到「${project}」`).onClick(() => {
+					void this.projectsMoveMaterial(path, project);
+				});
+			});
+		}
+		menu.showAtMouseEvent(e);
+	}
+
+	private async projectsMoveMaterial(path: string, targetProject: string): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			new Notice("找不到材料笔记");
+			return;
+		}
+		const to = targetProject.trim();
+		if (!to || !this.plugin.store.projects.includes(to)) {
+			new Notice("目标项目无效");
+			return;
+		}
+		const dest = materialNotePath(this.plugin.store.root(), to, file.basename);
+		if (dest === file.path) {
+			new Notice("已在该项目下");
+			return;
+		}
+		if (this.app.vault.getAbstractFileByPath(dest)) {
+			new Notice(`「${to}」下已有同名材料「${file.basename}」`);
+			return;
+		}
+		const dir = materialsDir(this.plugin.store.root(), to);
+		await this.ensureVaultFolder(dir);
+		try {
+			if (this.materialDrawerPath === path) {
+				this.closeDetailDrawer({ skipShellRefresh: true });
+			}
+			await this.app.fileManager.renameFile(file, dest);
+			await this.renderProjects();
+			new Notice(`已迁移到「${to}」`);
+		} catch (err) {
+			console.error("Z-Tasking move material", path, to, err);
+			new Notice("迁移失败");
+		}
+	}
+
+	private async projectsRenameMaterial(path: string): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			new Notice("找不到材料笔记");
+			return;
+		}
+		const cur = file.basename;
+		const next = await askText(this.app, "重命名材料", "新标题", cur);
+		if (next === null) return;
+		const safe = next.trim().replace(/[\\/]/g, "").replace(/\s+/g, " ");
+		if (!safe) {
+			new Notice("请填写标题");
+			return;
+		}
+		if (safe === cur) return;
+		const dest = `${file.parent?.path ?? materialsDir(this.plugin.store.root(), this.projectsSelected())}/${safe}.md`;
+		if (this.app.vault.getAbstractFileByPath(dest)) {
+			new Notice("同名材料已存在");
+			return;
+		}
+		try {
+			await this.app.fileManager.renameFile(file, dest);
+			await this.renderProjects();
+			new Notice(`已重命名为「${safe}」`);
+		} catch (err) {
+			console.error("Z-Tasking rename material", path, err);
+			new Notice("重命名失败");
+		}
+	}
+
+	private async projectsDeleteMaterial(path: string): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			new Notice("找不到材料笔记");
+			return;
+		}
+		const ok = await askConfirm(
+			this.app,
+			"删除材料",
+			`确定删除「${file.basename}」？此操作不可恢复。`,
+			"删除",
+		);
+		if (!ok) return;
+		try {
+			await this.app.vault.delete(file);
+			await this.renderProjects();
+			new Notice("已删除材料");
+		} catch (err) {
+			console.error("Z-Tasking delete material", path, err);
+			new Notice("删除失败");
+		}
 	}
 
 	private async projectsReorder(from: string, to: string): Promise<void> {
@@ -2194,24 +2889,143 @@ export class ZTaskingView extends ItemView {
 		await this.renderProjects();
 	}
 
+	private async openMaterialDrawer(path: string): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			new Notice("找不到材料笔记");
+			return;
+		}
+		this.selectedId = "";
+		this.ypDrawerId = null;
+		this.editingYpNoteIdx = null;
+		this.projectMgrOpen = false;
+		this.projectMgrRenameFrom = null;
+		this.materialDrawerPath = path;
+		this.detailOpen = true;
+		this.syncDetailDrawer();
+		await this.renderMaterialDetail(this.activeDetail());
+	}
+
+	private async renderMaterialDetail(el: HTMLElement): Promise<void> {
+		const path = this.materialDrawerPath;
+		if (!path) return;
+		el.classList.remove("is-yp-drawer", "is-pm-drawer");
+		el.classList.add("is-mat-drawer");
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			el.innerHTML = `
+				<div class="ztk-detail-head">
+					<div class="ztk-detail-head-top">
+						<div class="ztk-title-block"><h1 class="ztk-detail-title">材料</h1></div>
+						<button type="button" class="ztk-ghost ztk-detail-close" data-act="close-detail" title="关闭">×</button>
+					</div>
+				</div>
+				<div class="ztk-empty">找不到材料笔记</div>`;
+			return;
+		}
+		let body = "";
+		try {
+			body = await this.app.vault.read(file);
+		} catch (err) {
+			console.error("Z-Tasking read material", path, err);
+			new Notice("读取材料失败");
+		}
+		el.innerHTML = `
+			<div class="ztk-detail-head">
+				<div class="ztk-detail-head-top">
+					<div class="ztk-title-block">
+						<h1 class="ztk-detail-title">${esc(file.basename)}</h1>
+						<div class="ztk-kicker">${esc(path)}</div>
+					</div>
+					<div class="ztk-detail-head-actions">
+						${iconBtn("copy-material", "copy", "复制正文")}
+						<button type="button" class="ztk-ghost ztk-detail-close" data-act="close-detail" title="关闭">×</button>
+					</div>
+				</div>
+			</div>
+			<label class="ztk-mat-editor-label" for="ztk-mat-body">正文（Markdown）</label>
+			<textarea id="ztk-mat-body" class="ztk-mat-editor" spellcheck="true">${esc(body)}</textarea>
+			<div class="ztk-mat-editor-actions">
+				<button type="button" class="ztk-ghost" data-act="close-detail">取消</button>
+				<button type="button" class="ztk-btn" data-act="save-material">保存</button>
+			</div>`;
+		requestAnimationFrame(() => {
+			el.querySelector<HTMLTextAreaElement>("#ztk-mat-body")?.focus();
+		});
+	}
+
+	private async copyMaterialDrawer(): Promise<void> {
+		const ta = this.contentEl.querySelector<HTMLTextAreaElement>("#ztk-mat-body");
+		const text = ta?.value ?? "";
+		if (!text.trim()) {
+			new Notice("正文为空");
+			return;
+		}
+		await this.copyToClipboard(text, "已复制正文");
+	}
+
+	private async saveMaterialDrawer(): Promise<void> {
+		const path = this.materialDrawerPath;
+		if (!path) return;
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			new Notice("找不到材料笔记");
+			return;
+		}
+		const ta = this.contentEl.querySelector<HTMLTextAreaElement>("#ztk-mat-body");
+		const text = ta?.value ?? "";
+		try {
+			await this.app.vault.modify(file, text);
+			new Notice("已保存材料");
+			this.closeDetailDrawer({ skipShellRefresh: true });
+			if (this.view === "projects") await this.renderProjects();
+		} catch (err) {
+			console.error("Z-Tasking save material", path, err);
+			new Notice("保存失败");
+		}
+	}
+
 	private async createTask(form: HTMLFormElement): Promise<void> {
 		const title = (form.elements.namedItem("title") as HTMLInputElement).value.trim();
 		const desc = (form.elements.namedItem("desc") as HTMLTextAreaElement).value.trim();
-		const project = (form.elements.namedItem("project") as HTMLSelectElement).value.trim();
+		const locked = this.newTaskProjectLock;
+		const project = (locked
+			|| (form.elements.namedItem("project") as HTMLSelectElement).value
+		).trim();
 		if (!project || !this.plugin.store.projects.includes(project)) {
 			new Notice("请选择有效业务项目");
 			return;
 		}
+		const branchLocked = this.newTaskBranchLock;
+		const branch = (branchLocked
+			|| (form.elements.namedItem("branch") as HTMLSelectElement).value
+			|| DEFAULT_BRANCH
+		).trim() || DEFAULT_BRANCH;
 		const type = (form.elements.namedItem("type") as HTMLSelectElement).value as TaskType;
 		const status = (form.elements.namedItem("status") as HTMLSelectElement).value as TaskStatus;
 		const start = (form.elements.namedItem("start") as HTMLInputElement).value;
 		const end = (form.elements.namedItem("end") as HTMLInputElement).value;
-		const task = await this.plugin.store.create({ title, desc, project, type, status, start, end });
+		const stayProjects = this.view === "projects" && !!locked;
+		const task = await this.plugin.store.create({
+			title, desc, project, branch, type, status, start, end,
+		});
 		this.openTaskDetail(task.id);
-		this.switchView("board");
 		this.closeModal();
 		form.reset();
-		this.renderAll();
+		if (stayProjects) {
+			this.plugin.settings.lastProjectId = project;
+			if (!this.plugin.settings.lastBranchByProject) {
+				this.plugin.settings.lastBranchByProject = {};
+			}
+			this.plugin.settings.lastBranchByProject[project] = branch;
+			await this.plugin.saveSettings();
+			this.syncDetailDrawer();
+			await this.renderProjects();
+			this.rerenderDetail();
+		} else {
+			this.switchView("board");
+			this.renderAll();
+		}
 		new Notice(`已创建笔记 ${task.path}`);
 	}
 
@@ -2271,6 +3085,16 @@ export class ZTaskingView extends ItemView {
 		this.selectedId = await this.plugin.store.setProject(t, next);
 		this.renderAll();
 		new Notice(`项目已改为「${next}」`);
+		this.restoreInputFocus(this.contentEl.querySelector("#ztk-log-text") as HTMLTextAreaElement | null);
+	}
+
+	private async changeBranch(raw: string): Promise<void> {
+		const t = this.tasks().find((x) => x.id === this.selectedId);
+		const next = normalizeBranchName(raw) || DEFAULT_BRANCH;
+		if (!t || t.branch === next) return;
+		this.selectedId = await this.plugin.store.setBranch(t, next);
+		this.renderAll();
+		new Notice(`分支已改为「${next}」`);
 		this.restoreInputFocus(this.contentEl.querySelector("#ztk-log-text") as HTMLTextAreaElement | null);
 	}
 
@@ -2433,6 +3257,39 @@ export class ZTaskingView extends ItemView {
 			}
 		}
 		return "";
+	}
+
+	/** 项目管理 · 分支 tag 右键：重命名 / 删除（「全部」与默认 main 受限） */
+	private openBranchContextMenu(e: MouseEvent): boolean {
+		if (this.view !== "projects") return false;
+		const chip = (e.target as HTMLElement).closest<HTMLElement>(
+			".ztk-proj-branch-chip[data-branch]",
+		);
+		if (!chip) return false;
+		const branch = (chip.dataset.branch ?? "").trim();
+		if (!branch || branch === "all") return false;
+		e.preventDefault();
+		e.stopPropagation();
+		const menu = new Menu();
+		menu.addItem((item) => {
+			item.setTitle("重命名")
+				.setIcon("pencil")
+				.onClick(() => {
+					this.projectPageBranchRenameFrom = branch;
+					void this.renderProjects();
+				});
+		});
+		if (branch !== DEFAULT_BRANCH) {
+			menu.addItem((item) => {
+				item.setTitle("删除")
+					.setIcon("trash")
+					.onClick(() => {
+						void this.projectsDeleteBranch(branch);
+					});
+			});
+		}
+		menu.showAtMouseEvent(e);
+		return true;
 	}
 
 	private openCopyMenu(e: MouseEvent): void {
@@ -2739,7 +3596,9 @@ export class ZTaskingView extends ItemView {
 		this.mdRoot = new Component();
 		this.mdRoot.load();
 		const boxes: HTMLElement[] = [];
-		const detailOpen = this.detailOpen && (!!this.selectedId || !!this.ypDrawerId || this.projectMgrOpen);
+		const detailOpen = this.detailOpen && (
+			!!this.selectedId || !!this.ypDrawerId || this.projectMgrOpen || !!this.materialDrawerPath
+		);
 		for (const sel of markdownPaintRootSelectors(this.view, detailOpen)) {
 			const root = this.contentEl.querySelector(sel);
 			if (!root) continue;
@@ -3665,6 +4524,7 @@ export class ZTaskingView extends ItemView {
 				open: this.advFilterOpen,
 				root: this.advFilterRoot,
 				projects: this.plugin.store.projects,
+				branches: this.branchesForFilter(),
 			});
 		}
 	}
@@ -3700,13 +4560,13 @@ export class ZTaskingView extends ItemView {
 					</div>
 				</td>
 				<td class="ztk-col-project">${projectBadgeHtml(t.project)}</td>
+				<td class="ztk-col-branch">${branchBadgeHtml(t.branch)}</td>
 				<td class="ztk-col-type">${TYPE_LABEL[t.type]}</td>
 				<td class="ztk-col-status"><span class="ztk-st ${t.status}">${STATUS_LABEL[t.status]}</span></td>
 				<td class="ztk-col-period">${esc(t.start)} → ${esc(t.end)}</td>
-				<td class="ztk-col-count">${t.logs.length} 笔</td>
 				<td class="ztk-catalog-hours ztk-col-hours">${hoursLabel}</td>
 				<td class="ztk-catalog-actions">
-					<button type="button" class="ztk-task-pin${isPinned ? " is-on" : ""}" data-act="pin-task" data-id="${esc(t.id)}" title="${isPinned ? "取消置顶" : "置顶"}"取消置顶" : "置顶"}" aria-pressed="${isPinned ? "true" : "false"}">📌</button>
+					<button type="button" class="ztk-task-pin${isPinned ? " is-on" : ""}" data-act="pin-task" data-id="${esc(t.id)}" title="${isPinned ? "取消置顶" : "置顶"}" aria-pressed="${isPinned ? "true" : "false"}">📌</button>
 					<button type="button" class="ztk-task-del" data-act="del-task" data-id="${esc(t.id)}" title="删除任务">×</button>
 				</td>
 			</tr>`;
@@ -3720,6 +4580,9 @@ export class ZTaskingView extends ItemView {
 						<th class="ztk-col-project">
 							<button type="button" class="ztk-th-sort${sortClass("project")}" data-act="catalog-sort" data-key="project" title="按项目排序">项目${sortMark("project")}</button>
 						</th>
+						<th class="ztk-col-branch">
+							<button type="button" class="ztk-th-sort${sortClass("branch")}" data-act="catalog-sort" data-key="branch" title="按分支排序">分支${sortMark("branch")}</button>
+						</th>
 						<th class="ztk-col-type">
 							<button type="button" class="ztk-th-sort${sortClass("type")}" data-act="catalog-sort" data-key="type" title="按类型排序">类型${sortMark("type")}</button>
 						</th>
@@ -3727,7 +4590,6 @@ export class ZTaskingView extends ItemView {
 							<button type="button" class="ztk-th-sort${sortClass("status")}" data-act="catalog-sort" data-key="status" title="按状态排序">状态${sortMark("status")}</button>
 						</th>
 						<th class="ztk-col-period">周期</th>
-						<th class="ztk-col-count">进展</th>
 						<th class="ztk-col-hours">
 							<button type="button" class="ztk-th-sort${sortClass("hours")}" data-act="catalog-sort" data-key="hours" title="按工时排序">工时${sortMark("hours")}</button>
 						</th>
@@ -3877,9 +4739,16 @@ export class ZTaskingView extends ItemView {
 
 	private renderDetail(): void {
 		const el = this.activeDetail();
-		if (!this.detailOpen || (!this.selectedId && !this.ypDrawerId && !this.projectMgrOpen)) {
+		if (
+			!this.detailOpen
+			|| (!this.selectedId && !this.ypDrawerId && !this.projectMgrOpen && !this.materialDrawerPath)
+		) {
 			el.innerHTML = "";
-			el.classList.remove("is-yp-drawer", "is-pm-drawer");
+			el.classList.remove("is-yp-drawer", "is-pm-drawer", "is-mat-drawer");
+			return;
+		}
+		if (this.materialDrawerPath) {
+			void this.renderMaterialDetail(el);
 			return;
 		}
 		if (this.projectMgrOpen) {
@@ -3890,7 +4759,7 @@ export class ZTaskingView extends ItemView {
 			this.renderYpDetail(el);
 			return;
 		}
-		el.classList.remove("is-yp-drawer", "is-pm-drawer");
+		el.classList.remove("is-yp-drawer", "is-pm-drawer", "is-mat-drawer");
 		const t = this.tasks().find((x) => x.id === this.selectedId);
 		if (!t) {
 			el.innerHTML = `
@@ -3930,6 +4799,12 @@ export class ZTaskingView extends ItemView {
 							${this.plugin.store.projects.includes(t.project) ? "" : `<option value="${esc(t.project)}">${esc(t.project)}</option>`}
 						</select>
 					</label>
+					<label>分支
+						<select class="ztk-task-branch">
+							${this.plugin.store.branchesOf(t.project).map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join("")}
+							${this.plugin.store.branchesOf(t.project).includes(t.branch) ? "" : `<option value="${esc(t.branch)}">${esc(t.branch)}</option>`}
+						</select>
+					</label>
 					<label>类型
 						<select class="ztk-task-type">
 							<option value="long">长期</option>
@@ -3963,9 +4838,11 @@ export class ZTaskingView extends ItemView {
 			</div>
 		`;
 		const projectEl = el.querySelector(".ztk-task-project") as HTMLSelectElement | null;
+		const branchEl = el.querySelector(".ztk-task-branch") as HTMLSelectElement | null;
 		const typeEl = el.querySelector(".ztk-task-type") as HTMLSelectElement | null;
 		const statusEl = el.querySelector(".ztk-task-status") as HTMLSelectElement | null;
 		if (projectEl) projectEl.value = t.project;
+		if (branchEl) branchEl.value = t.branch || DEFAULT_BRANCH;
 		if (typeEl) typeEl.value = t.type;
 		if (statusEl) statusEl.value = t.status;
 	}

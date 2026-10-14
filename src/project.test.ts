@@ -1,17 +1,25 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+	DEFAULT_BRANCH,
 	DEFAULT_PROJECT,
+	branchFromPath,
 	canDeleteProject,
+	filterByBranch,
 	filterByProject,
 	isLegacyRootTypeFolder,
+	isMidLegacyTaskPath,
 	isTaskPath,
+	listBranchNames,
 	listProjectNames,
 	materialNotePath,
 	materialsDir,
 	mergeProjectOrder,
 	needsLegacyMigration,
 	normalizeProjectName,
+	formatNoticeHistoryStamp,
+	noticeHistoryDir,
+	noticeHistoryFilePath,
 	noticePath,
 	prepareRenameProject,
 	projectFromPath,
@@ -19,6 +27,7 @@ import {
 	resolveNewTaskProject,
 	resolveProjectSelectValue,
 	rootFolderNamesFromListing,
+	suggestSplitProjectName,
 	taskDir,
 } from "./project.ts";
 
@@ -28,32 +37,58 @@ test("mergeProjectOrder：新项目置前，已删剔除，相对序保留", () 
 
 test("materialsDir / noticePath / materialNotePath", () => {
 	assert.equal(materialsDir("Z-Tasking", "KVAD"), "Z-Tasking/KVAD/_资料");
-	assert.equal(noticePath("Z-Tasking", "KVAD"), "Z-Tasking/KVAD/_资料/公告.md");
+	assert.equal(noticePath("Z-Tasking", "KVAD", "main"), "Z-Tasking/KVAD/main/公告.md");
+	assert.equal(noticePath("Z-Tasking", "KVAD", "V7"), "Z-Tasking/KVAD/V7/公告.md");
+	assert.equal(noticeHistoryDir("Z-Tasking", "KVAD", "main"), "Z-Tasking/KVAD/main/_公告历史");
+	assert.equal(
+		noticeHistoryFilePath("Z-Tasking", "KVAD", "main", "2026-10-14_161205"),
+		"Z-Tasking/KVAD/main/_公告历史/2026-10-14_161205.md",
+	);
+	assert.equal(formatNoticeHistoryStamp(new Date(2026, 9, 14, 16, 12, 5)), "2026-10-14_161205");
 	assert.equal(materialNotePath("Z-Tasking", "KVAD", "片段"), "Z-Tasking/KVAD/_资料/片段.md");
 	assert.equal(materialNotePath("Z-Tasking", "KVAD", "a/b.md"), "Z-Tasking/KVAD/_资料/ab.md");
 });
 
 test("isTaskPath：_资料 下笔记不是任务", () => {
 	assert.equal(isTaskPath("Z-Tasking", "Z-Tasking/KVAD/_资料/片段.md"), false);
+	assert.equal(isTaskPath("Z-Tasking", "Z-Tasking/KVAD/main/_资料/片段.md"), false);
 });
 
-test("taskDir：项目/类型分层", () => {
-	assert.equal(taskDir("Z-Tasking", "KVAD", "long"), "Z-Tasking/KVAD/长期");
-	assert.equal(taskDir("Z-Tasking/", "桌面", "bug"), "Z-Tasking/桌面/缺陷");
+test("taskDir：项目/分支/类型分层", () => {
+	assert.equal(taskDir("Z-Tasking", "KVAD", "main", "long"), "Z-Tasking/KVAD/main/长期");
+	assert.equal(taskDir("Z-Tasking/", "桌面", "V7", "bug"), "Z-Tasking/桌面/V7/缺陷");
 });
 
-test("isTaskPath：仅认 根/项目/类型/笔记", () => {
-	assert.equal(isTaskPath("Z-Tasking", "Z-Tasking/KVAD/长期/a.md"), true);
-	assert.equal(isTaskPath("Z-Tasking", "Z-Tasking/KVAD/临时/b.md"), true);
+test("isTaskPath：仅认 根/项目/分支/类型/笔记", () => {
+	assert.equal(isTaskPath("Z-Tasking", "Z-Tasking/KVAD/main/长期/a.md"), true);
+	assert.equal(isTaskPath("Z-Tasking", "Z-Tasking/KVAD/V7/临时/b.md"), true);
+	assert.equal(isTaskPath("Z-Tasking", "Z-Tasking/KVAD/长期/a.md"), false);
 	assert.equal(isTaskPath("Z-Tasking", "Z-Tasking/日报/2026-09-22.md"), false);
 	assert.equal(isTaskPath("Z-Tasking", "Z-Tasking/长期/a.md"), false);
-	assert.equal(isTaskPath("Z-Tasking", "其他/KVAD/长期/a.md"), false);
+	assert.equal(isTaskPath("Z-Tasking", "其他/KVAD/main/长期/a.md"), false);
 });
 
-test("projectFromPath：从路径取项目；旧扁平回落默认项目", () => {
-	assert.equal(projectFromPath("Z-Tasking", "Z-Tasking/KVAD/长期/a.md"), "KVAD");
+test("isMidLegacyTaskPath：根/项目/类型 仍可识别", () => {
+	assert.equal(isMidLegacyTaskPath("Z-Tasking", "Z-Tasking/KVAD/长期/a.md"), true);
+	assert.equal(isMidLegacyTaskPath("Z-Tasking", "Z-Tasking/KVAD/main/长期/a.md"), false);
+});
+
+test("projectFromPath / branchFromPath", () => {
+	assert.equal(projectFromPath("Z-Tasking", "Z-Tasking/KVAD/main/长期/a.md"), "KVAD");
+	assert.equal(branchFromPath("Z-Tasking", "Z-Tasking/KVAD/main/长期/a.md"), "main");
 	assert.equal(projectFromPath("Z-Tasking", "Z-Tasking/终端/缺陷/x.md"), "终端");
+	assert.equal(branchFromPath("Z-Tasking", "Z-Tasking/终端/缺陷/x.md"), DEFAULT_BRANCH);
 	assert.equal(projectFromPath("Z-Tasking", "Z-Tasking/长期/a.md"), DEFAULT_PROJECT);
+	assert.equal(branchFromPath("Z-Tasking", "Z-Tasking/长期/a.md"), DEFAULT_BRANCH);
+});
+
+test("suggestSplitProjectName / listBranchNames", () => {
+	assert.deepEqual(suggestSplitProjectName("mc - V7R023F33C01"), {
+		project: "mc",
+		branch: "V7R023F33C01",
+	});
+	assert.equal(suggestSplitProjectName("KVAD"), null);
+	assert.deepEqual(listBranchNames(["main", "_资料", "长期", "V7"]), ["V7", "main"].sort((a, b) => a.localeCompare(b, "zh")));
 });
 
 test("needsLegacyMigration：根下仍有类型目录则要迁", () => {
@@ -102,6 +137,15 @@ test("filterByProject：全部不过滤，指定项目只留同名", () => {
 	];
 	assert.deepEqual(filterByProject(items, "all"), items);
 	assert.deepEqual(filterByProject(items, "终端"), [{ project: "终端", title: "b" }]);
+});
+
+test("filterByBranch：全部不过滤，指定分支只留同名", () => {
+	const items = [
+		{ branch: "main", title: "a" },
+		{ branch: "V7", title: "b" },
+	];
+	assert.deepEqual(filterByBranch(items, "all"), items);
+	assert.deepEqual(filterByBranch(items, "V7"), [{ branch: "V7", title: "b" }]);
 });
 
 test("resolveNewTaskProject：筛选非全部时用筛选值，否则用列表首项", () => {

@@ -149,50 +149,69 @@ export function logTextToBullets(text: string): string[] {
 	return bullets;
 }
 
-/** 从含 GitLab MR 链接的一行拆出项目名与 MR 单号 */
+/** 从一行拆出全部 GitLab MR（项目名 + 单号）；一行可含多条链接 */
+export function parseMergeRequestRefs(line: string): { project: string; iid: number }[] {
+	const out: { project: string; iid: number }[] = [];
+	const re = /([\w.-]+)\/-\/merge_requests\/(\d+)\b/gi;
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(line)) !== null) {
+		const project = m[1];
+		const iid = Number(m[2]);
+		if (!project || !Number.isFinite(iid) || iid <= 0) continue;
+		out.push({ project, iid });
+	}
+	return out;
+}
+
+/** 兼容：取一行里第一条 MR */
 export function parseMergeRequestRef(line: string): { project: string; iid: number } | null {
-	const m = line.match(/([\w.-]+)\/-\/merge_requests\/(\d+)\b/i);
-	if (!m?.[1] || !m[2]) return null;
-	const iid = Number(m[2]);
-	if (!Number.isFinite(iid) || iid <= 0) return null;
-	return { project: m[1], iid };
+	return parseMergeRequestRefs(line)[0] ?? null;
+}
+
+/** 「代码评审：」「代码审核：」这类仅作小节标题、无实质内容的行 */
+function isCodeReviewLabelOnly(text: string): boolean {
+	return /^(代码评审|代码审核|代码\s*review)\s*[:：]?\s*$/i.test(text.trim());
 }
 
 /**
- * 将多条代码审核/评审 MR 链接按项目汇总：
- * `代码审核：MR kvad 477、481、483`
- * 非 MR 行保持原序；汇总行插在首条 MR 的位置。
+ * 将多条代码审核/评审 MR 链接按项目汇总成一行：
+ * `代码审核：MR kvad 488、491、MR mc-vue 769、MR mc 1074`
+ * 非 MR 行保持原序；空标题行丢弃；汇总行插在首条 MR 的位置。
  */
 export function mergeCodeReviewBullets(bullets: string[]): string[] {
 	const byProject = new Map<string, number[]>();
+	const projectOrder: string[] = [];
 	for (const b of bullets) {
-		const ref = parseMergeRequestRef(b);
-		if (!ref) continue;
-		const list = byProject.get(ref.project) ?? [];
-		if (!list.includes(ref.iid)) list.push(ref.iid);
-		byProject.set(ref.project, list);
+		for (const ref of parseMergeRequestRefs(b)) {
+			if (!byProject.has(ref.project)) {
+				byProject.set(ref.project, []);
+				projectOrder.push(ref.project);
+			}
+			const list = byProject.get(ref.project)!;
+			if (!list.includes(ref.iid)) list.push(ref.iid);
+		}
 	}
 	if (!byProject.size) return bullets;
 
-	const merged = [...byProject.entries()]
-		.sort((a, b) => a[0].localeCompare(b[0], "en"))
-		.map(([project, iids]) => {
-			const nums = [...iids].sort((a, b) => a - b).join("、");
-			return `- 代码审核：MR ${project} ${nums}`;
-		});
+	const parts = projectOrder.map((project) => {
+		const nums = [...(byProject.get(project) ?? [])].sort((a, b) => a - b).join("、");
+		return `MR ${project} ${nums}`;
+	});
+	const mergedLine = `- 代码审核：${parts.join("、")}`;
 
 	const out: string[] = [];
 	let emitted = false;
 	for (const b of bullets) {
-		if (parseMergeRequestRef(b)) {
+		if (parseMergeRequestRefs(b).length) {
 			if (!emitted) {
-				out.push(...merged);
+				out.push(mergedLine);
 				emitted = true;
 			}
 			continue;
 		}
 		const text = b.replace(/^[-*•]\s+/, "").trim();
-		if (text) out.push(`- ${text}`);
+		if (!text || isCodeReviewLabelOnly(text)) continue;
+		out.push(`- ${text}`);
 	}
 	return out;
 }
@@ -320,7 +339,7 @@ export function tomorrowPlanListHtml(
 		<div class="ztk-yesterday-plan-list${opts?.compact ? " is-compact" : ""}">${list}</div>
 		<div class="ztk-plan-add">
 			<input type="text" class="ztk-plan-add-input" placeholder="新建明日计划，回车添加" />
-			<button type="button" class="ztk-ghost ztk-plan-add-btn" data-act="add-plan-item" title="添加" aria-label="添加">+</button>
+			<button type="button" class="ztk-ghost ztk-plan-add-btn" data-act="add-plan-item" title="添加">+</button>
 		</div>
 	`;
 }

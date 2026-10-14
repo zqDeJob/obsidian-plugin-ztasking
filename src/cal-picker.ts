@@ -38,9 +38,9 @@ export function calPickerPanelHtml(opts: {
 	}
 	return `<div class="ztk-cal-picker" role="dialog" aria-label="选择日期">
 		<div class="ztk-cal-picker-head">
-			<button type="button" class="ztk-ghost ztk-cal-picker-nav" data-act="cal-picker-prev" title="上一月" aria-label="上一月">‹</button>
+			<button type="button" class="ztk-ghost ztk-cal-picker-nav" data-act="cal-picker-prev" title="上一月">‹</button>
 			<strong class="ztk-cal-picker-title">${y} 年 ${m + 1} 月</strong>
-			<button type="button" class="ztk-ghost ztk-cal-picker-nav" data-act="cal-picker-next" title="下一月" aria-label="下一月">›</button>
+			<button type="button" class="ztk-ghost ztk-cal-picker-nav" data-act="cal-picker-next" title="下一月">›</button>
 		</div>
 		<div class="ztk-cal-picker-weekdays">${weekHead}</div>
 		<div class="ztk-cal-picker-days">${days}</div>

@@ -51,6 +51,41 @@ export function prevDateStr(date: string): string {
 	return fmt(addDays(parseDate(date), -1));
 }
 
+export function nextDateStr(date: string): string {
+	return fmt(addDays(parseDate(date), 1));
+}
+
+/** 周六 / 周日 */
+export function isWeekendDate(dateStr: string): boolean {
+	const day = parseDate(dateStr).getDay();
+	return day === 0 || day === 6;
+}
+
+/** 计划所属日展示：2026-10-11 → 10月11日 */
+export function formatPlanDayLabel(planDay: string): string {
+	const d = parseDate(planDay);
+	return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+/**
+ * 工作台「昨日计划」取哪天日报：
+ * 从昨天起；空的周末往前跳；周末若有明日计划内容（加班）则保留。
+ */
+export function resolveBoardYpReportDate(
+	today: string,
+	hasPlanContent: (reportDate: string) => boolean,
+	maxLookback = 14,
+): { reportDate: string; planDay: string } {
+	let reportDate = prevDateStr(today);
+	for (let i = 0; i < maxLookback; i++) {
+		if (!isWeekendDate(reportDate) || hasPlanContent(reportDate)) {
+			return { reportDate, planDay: nextDateStr(reportDate) };
+		}
+		reportDate = prevDateStr(reportDate);
+	}
+	return { reportDate, planDay: nextDateStr(reportDate) };
+}
+
 /** 某日「计划」写在哪份日报：D 的计划来自 日报/(D-1).md 的「明日计划」段 */
 export function planReportDateForDay(planDay: string): string {
 	return prevDateStr(planDay);
@@ -429,7 +464,10 @@ export function yesterdayPlanListHtml(opts: {
 					<input type="checkbox" class="ztk-yp-check"${it.done ? " checked" : ""} tabindex="-1" />
 				</label>
 				<div class="ztk-task-main">
-					<h3>${esc(it.title)}</h3>
+					<div class="ztk-yp-title-inner">
+						<h3 class="ztk-yp-title-text">${esc(it.title)}</h3>
+						${iconBtn("copy-yp-title", "copy", "复制标题", `data-yp-id="${esc(it.id)}"`)}
+					</div>
 					${meta}
 				</div>
 				<div class="ztk-task-trail">
@@ -460,8 +498,8 @@ export function yesterdayPlanBlockHtml(opts: {
 		<div class="ztk-card ztk-yesterday-plan${collapsed ? " is-collapsed" : ""}"${planDay ? ` data-yp-report="${esc(planReportDateForDay(planDay))}"` : ""}>
 			<div class="ztk-yesterday-plan-head">
 				<div class="ztk-section-title">
-					<button type="button" class="ztk-ghost ztk-section-collapse" data-act="toggle-board-section" data-section="yesterday" title="${collapsed ? "展开" : "折叠"}" aria-expanded="${collapsed ? "false" : "true"}" aria-label="${collapsed ? "展开" : "折叠"}">${collapsed ? "▸" : "▾"}</button>
-					<h2>昨日计划</h2>
+					<button type="button" class="ztk-ghost ztk-section-collapse" data-act="toggle-board-section" data-section="yesterday" title="${collapsed ? "展开" : "折叠"}" aria-expanded="${collapsed ? "false" : "true"}"展开" : "折叠"}">${collapsed ? "▸" : "▾"}</button>
+					<h2>昨日计划${planDay ? ` · ${esc(formatPlanDayLabel(planDay))}` : ""}</h2>
 				</div>
 				<div class="ztk-yesterday-plan-actions">
 					<button type="button" class="ztk-ghost" data-act="yp-quick-add" title="按行批量新增">批量新增</button>
@@ -472,7 +510,7 @@ export function yesterdayPlanBlockHtml(opts: {
 				${list}
 				<div class="ztk-plan-add">
 					<input type="text" class="ztk-plan-add-input" placeholder="新建昨日计划，回车添加" />
-					<button type="button" class="ztk-ghost ztk-plan-add-btn" data-act="add-yp-plan-item" title="添加" aria-label="添加">+</button>
+					<button type="button" class="ztk-ghost ztk-plan-add-btn" data-act="add-yp-plan-item" title="添加">+</button>
 				</div>
 			</div>
 		</div>

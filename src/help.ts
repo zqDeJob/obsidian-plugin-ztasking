@@ -98,21 +98,23 @@ export function helpCenterHtml(): string {
 				id: "help-project",
 				title: "项目与知识库",
 				body: `<ol>
-					<li>打开顶栏 <strong>项目</strong> Tab（位于「日历」之后）。</li>
+					<li>打开顶栏 <strong>项目管理</strong> Tab（位于「工作台」之后）。</li>
 					<li>左侧新增 / 重命名 / 拖拽排序 / 删除项目；有任务的项目不能删除。</li>
-					<li>右侧详情：活跃概览、公告、材料知识库、项目任务列表。</li>
-					<li>材料与公告保存在 <code>根目录/项目名/_资料/</code>；公告固定为 <code>公告.md</code>。</li>
-					<li>任务目录仍为：<code>根目录/项目名/长期|临时|缺陷/</code>。</li>
+					<li>右侧详情：活跃概览、分支公告、分支列表、材料（项目共用）与任务。</li>
+					<li>公告按分支：<code>根目录/项目名/分支名/公告.md</code>；点「编辑」会先自动存档（内容未变则跳过），也可手动「存档当前」。历史在 <code>_公告历史/</code>，可查看 / 恢复 / 删除。选「全部」时需先点具体分支。</li>
+					<li>材料项目共用：<code>根目录/项目名/_资料/</code>，可迁移到其他项目。</li>
+					<li>任务目录：<code>根目录/项目名/分支名/长期|临时|缺陷/</code>（默认分支 <code>main</code>）。</li>
+					<li>旧布局（无分支段、或项目名含「 - 」）会在首次加载时自动迁入新路径。</li>
 				</ol>
-				<p class="ztk-help-note">顶栏「全部项目 / 某项目」仍用于汇总/工作台筛选；新建任务前请先至少有一个项目。</p>`,
+				<p class="ztk-help-note">顶栏「项目 / 分支」筛选用于汇总与工作台；项目管理页可按分支过滤活跃与任务。</p>`,
 			}),
 			helpCard({
 				id: "help-task",
 				title: "新增任务",
 				body: `<ol>
 					<li>在 <strong>工作台</strong> 点右上角 <strong>新建任务</strong>。</li>
-					<li>填写标题、说明，选择<strong>业务项目</strong>与类型（长期 / 临时 / 缺陷），可设起止日期。</li>
-					<li>确认后会在对应项目目录生成一篇 Markdown 笔记，并出现在右侧任务表。</li>
+					<li>填写标题、说明，选择<strong>业务项目</strong>、<strong>分支</strong>与类型（长期 / 临时 / 缺陷），可设起止日期。</li>
+					<li>确认后会在对应「项目/分支」目录生成一篇 Markdown 笔记，并出现在右侧任务表。</li>
 				</ol>
 				<p>类型对应文件夹：<code>长期</code>、<code>临时</code>、<code>缺陷</code>。状态一般为未开始 / 进行中 / 已完结。</p>`,
 			}),
@@ -130,7 +132,7 @@ export function helpCenterHtml(): string {
 				id: "help-edit-task",
 				title: "编辑任务与进展",
 				body: `<ul>
-					<li>打开任务详情抽屉后，可改标题、说明、状态、类型、所属项目。</li>
+					<li>打开任务详情抽屉后，可改标题、说明、状态、类型、所属项目与<strong>分支</strong>。</li>
 					<li>在抽屉里为某日<strong>记一笔进展</strong>（可填工时），支持 Markdown。</li>
 					<li>汇总页进展明细悬停行上的<strong>编辑</strong>图标，同样打开该任务抽屉并进入对应日期编辑。</li>
 				</ul>`,
@@ -192,7 +194,7 @@ export function helpCenterHtml(): string {
 			helpCard({
 				id: "help-report-recent",
 				title: "最近编辑",
-				body: `<p>按最近更新时间列出任务，点开可跳到对应任务。放在活跃分布下方。</p>`,
+				body: `<p>按最近更新时间列出任务，点开在当前页打开任务详情抽屉（不切换 Tab）。放在活跃分布下方。</p>`,
 			}),
 		].join("\n"),
 	});
@@ -231,9 +233,9 @@ export function helpCenterHtml(): string {
 			helpCard({
 				id: "help-work-catalog",
 				title: "右侧任务表",
-				body: `<p>当前顶栏项目筛选下的任务目录。</p>
+				body: `<p>当前顶栏项目与分支筛选下的任务目录。</p>
 				<ul>
-					<li>类型 Chip、状态筛选、日期范围、搜索。</li>
+					<li>类型 Chip、状态筛选、日期范围、搜索；表含项目 / 分支列。</li>
 					<li>列排序或拖拽手动排序；hover 可<strong>置顶</strong>（左侧色条变明黄）或删除。</li>
 					<li>点任务 → 打开详情抽屉。</li>
 				</ul>`,
@@ -243,7 +245,7 @@ export function helpCenterHtml(): string {
 				title: "任务详情抽屉",
 				body: `<p>记事与改任务的主入口。</p>
 				<ul>
-					<li>改标题 / 说明 / 状态 / 类型 / 所属项目。</li>
+					<li>改标题 / 说明 / 状态 / 类型 / 所属项目 / 分支。</li>
 					<li>按日进展列表：新增今日进展、编辑历史进展、填写工时。</li>
 				</ul>`,
 			}),

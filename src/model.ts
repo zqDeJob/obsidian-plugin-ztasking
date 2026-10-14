@@ -32,8 +32,10 @@ export interface Task {
 	id: string;
 	path: string;
 	title: string;
-	/** 业务项目（路径 根/项目/类型/ 中的项目段） */
+	/** 业务项目（路径 根/项目/分支/类型/ 中的项目段） */
 	project: string;
+	/** Git/发布分支（路径中的分支段；旧数据回落 main） */
+	branch: string;
 	type: TaskType;
 	status: TaskStatus;
 	start: string;
@@ -97,6 +99,12 @@ export interface ZTaskingSettings {
 	projectOrder: string[];
 	/** 项目页上次选中的项目名 */
 	lastProjectId: string;
+	/** 各项目下分支拖拽序 */
+	branchOrderByProject: Record<string, string[]>;
+	/** 各项目上次选中的分支 */
+	lastBranchByProject: Record<string, string>;
+	/** 是否已跑过项目→分支路径迁移 */
+	branchPathMigrated: boolean;
 	/** 汇总「今日日报」草稿（含明日计划待办） */
 	dailyReportDraft: DailyReportDraftSettings;
 }
@@ -115,6 +123,9 @@ export const DEFAULT_SETTINGS: ZTaskingSettings = {
 	pinnedTaskIds: [],
 	projectOrder: [],
 	lastProjectId: "",
+	branchOrderByProject: {},
+	lastBranchByProject: {},
+	branchPathMigrated: false,
 	dailyReportDraft: {
 		date: "",
 		work: "",

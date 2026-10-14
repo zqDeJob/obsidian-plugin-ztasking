@@ -8,6 +8,7 @@ const SVG = {
 	del: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`,
 	save: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`,
 	cancel: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
+	move: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12h11"/><path d="m15 8 4 4-4 4"/><path d="M4 6v12a2 2 0 0 0 2 2h4"/><path d="M4 6a2 2 0 0 1 2-2h3"/></svg>`,
 } as const;
 
 const SEARCH_SVG = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>`;
@@ -20,13 +21,15 @@ const STYLE: Record<IconKind, string> = {
 	del: "background:#d32f2f;background-color:#d32f2f;color:#ffffff",
 	save: "background:#2f6f68;background-color:#2f6f68;color:#ffffff",
 	cancel: "background:#ececec;background-color:#ececec;color:#5c5c5c",
+	move: "background:#e8eef5;background-color:#e8eef5;color:#3d5a80",
 };
 
 export type IconKind = keyof typeof SVG;
 
 export function iconBtn(act: string, kind: IconKind, label: string, extraAttrs = ""): string {
 	const attrs = extraAttrs.trim();
-	return `<button type="button" class="ztk-icon-btn ztk-icon-btn--${kind}" data-act="${act}"${attrs ? ` ${attrs}` : ""} title="${label}" aria-label="${label}" style="${STYLE[kind]}">${SVG[kind]}</button>`;
+	// 只用原生 title，避免与 Obsidian 基于 aria-label 的 tooltip 叠两层
+	return `<button type="button" class="ztk-icon-btn ztk-icon-btn--${kind}" data-act="${act}"${attrs ? ` ${attrs}` : ""} title="${esc(label)}" style="${STYLE[kind]}">${SVG[kind]}</button>`;
 }
 
 /** 带左侧搜索图标、右侧清除按钮的 input[type=search] */
@@ -41,6 +44,6 @@ export function searchFieldHtml(opts: {
 	return `<div class="ztk-search-field${hasValue ? " has-value" : ""}">
 		<span class="ztk-search-field-icon" aria-hidden="true">${SEARCH_SVG}</span>
 		<input class="${esc(opts.inputClass)}" type="search" placeholder="${esc(opts.placeholder)}" value="${esc(opts.value ?? "")}"${aria} />
-		<button type="button" class="ztk-search-clear" data-act="clear-search" title="清除搜索" aria-label="清除搜索"${hasValue ? "" : " hidden"}>${CLEAR_SVG}</button>
+		<button type="button" class="ztk-search-clear" data-act="clear-search" title="清除搜索"${hasValue ? "" : " hidden"}>${CLEAR_SVG}</button>
 	</div>`;
 }

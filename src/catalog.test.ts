@@ -13,6 +13,7 @@ function task(partial: Partial<Task> & Pick<Task, "id" | "title" | "type" | "sta
 	return {
 		path: `${partial.id}.md`,
 		project: "KVAD",
+		branch: "main",
 		desc: "",
 		start: "2026-01-01",
 		end: "2026-12-31",

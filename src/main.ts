@@ -90,6 +90,27 @@ export default class ZTaskingPlugin extends Plugin {
 			pinnedTaskIds: Array.isArray(raw?.pinnedTaskIds)
 				? raw!.pinnedTaskIds.filter((x): x is string => typeof x === "string" && !!x.trim())
 				: [],
+			projectOrder: Array.isArray(raw?.projectOrder)
+				? raw!.projectOrder.filter((x): x is string => typeof x === "string" && !!x.trim())
+				: [],
+			lastProjectId: typeof raw?.lastProjectId === "string" ? raw.lastProjectId : "",
+			branchOrderByProject: raw?.branchOrderByProject && typeof raw.branchOrderByProject === "object"
+				? Object.fromEntries(
+					Object.entries(raw.branchOrderByProject).map(([k, v]) => [
+						k,
+						Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [],
+					]),
+				)
+				: {},
+			lastBranchByProject: raw?.lastBranchByProject && typeof raw.lastBranchByProject === "object"
+				? Object.fromEntries(
+					Object.entries(raw.lastBranchByProject).map(([k, v]) => [
+						k,
+						typeof v === "string" ? v : "",
+					]),
+				)
+				: {},
+			branchPathMigrated: raw?.branchPathMigrated === true,
 			dailyReportDraft: {
 				date: typeof draft?.date === "string" ? draft.date : "",
 				work: typeof draft?.work === "string" ? draft.work : "",
@@ -157,7 +178,7 @@ class ZTaskingSettingTab extends PluginSettingTab {
 		containerEl.createEl("h2", { text: "Z-Tasking" });
 		new Setting(containerEl)
 			.setName("任务根目录")
-			.setDesc("任务笔记写到 根目录/项目/长期|临时|缺陷；日报在 根目录/日报。")
+			.setDesc("任务笔记写到 根目录/项目/分支/长期|临时|缺陷；日报在 根目录/日报。")
 			.addText((text) => {
 				text.setPlaceholder("Z-Tasking")
 					.setValue(this.plugin.settings.rootFolder)
@@ -165,8 +186,9 @@ class ZTaskingSettingTab extends PluginSettingTab {
 						const next = value.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "") || "Z-Tasking";
 						this.plugin.settings.rootFolder = next;
 						await this.plugin.saveSettings();
-						await this.plugin.store.reload();
-						new Notice(`任务目录：${next}/项目/长期|临时|缺陷`);
+						const { settingsDirty } = await this.plugin.store.reload();
+						if (settingsDirty) await this.plugin.saveSettings();
+						new Notice(`任务目录：${next}/项目/分支/长期|临时|缺陷`);
 					});
 			});
 

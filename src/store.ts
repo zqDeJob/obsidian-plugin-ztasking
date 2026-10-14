@@ -23,17 +23,26 @@ import {
 	type ZTaskingSettings,
 } from "./model";
 import {
+	DEFAULT_BRANCH,
 	DEFAULT_PROJECT,
+	branchFromPath,
+	canDeleteBranch,
 	canDeleteProject,
 	isLegacyTaskPath,
+	isMidLegacyTaskPath,
 	isReservedRootName,
 	isTaskPath,
+	isTypeDirName,
+	listBranchNames,
 	listProjectNames,
 	needsLegacyMigration,
+	normalizeBranchName,
 	normalizeProjectName,
+	prepareRenameBranch,
 	prepareRenameProject,
 	projectFromPath,
 	rootFolderNamesFromListing,
+	suggestSplitProjectName,
 	taskDir,
 } from "./project";
 
@@ -41,6 +50,8 @@ export class TaskStore {
 	tasks: Task[] = [];
 	/** 根下已知业务项目（含默认 KVAD） */
 	projects: string[] = [DEFAULT_PROJECT];
+	/** 当前选中项目下的分支名缓存（刷新任务后更新） */
+	branchesByProject: Record<string, string[]> = {};
 	/** >0 时忽略 vault 监听刷新，避免迁移/建目录时重入 */
 	private muteDepth = 0;
 
@@ -62,8 +73,8 @@ export class TaskStore {
 		return this.getSettings().rootFolder.replace(/\/+$/, "");
 	}
 
-	dir(project: string, type: TaskType): string {
-		return taskDir(this.root(), project, type);
+	dir(project: string, branch: string, type: TaskType): string {
+		return taskDir(this.root(), project, branch, type);
 	}
 
 	dailyDir(): string {
@@ -79,12 +90,18 @@ export class TaskStore {
 		}
 	}
 
-	async ensureProjectFolders(project: string): Promise<void> {
+	async ensureBranchFolders(project: string, branch: string): Promise<void> {
+		const b = branch.trim() || DEFAULT_BRANCH;
 		await this.ensureFolder(this.root());
 		await this.ensureFolder(`${this.root()}/${project}`);
+		await this.ensureFolder(`${this.root()}/${project}/${b}`);
 		for (const type of Object.keys(TYPE_DIR) as TaskType[]) {
-			await this.ensureFolder(this.dir(project, type));
+			await this.ensureFolder(this.dir(project, b, type));
 		}
+	}
+
+	async ensureProjectFolders(project: string): Promise<void> {
+		await this.ensureBranchFolders(project, DEFAULT_BRANCH);
 	}
 
 	async ensureFolders(): Promise<void> {
@@ -103,7 +120,12 @@ export class TaskStore {
 	isTaskFile(path: string): boolean {
 		const dailyPrefix = `${this.dailyDir()}/`;
 		if (path.startsWith(dailyPrefix)) return false;
-		return isTaskPath(this.root(), path) || isLegacyTaskPath(this.root(), path);
+		const root = this.root();
+		return (
+			isTaskPath(root, path)
+			|| isMidLegacyTaskPath(root, path)
+			|| isLegacyTaskPath(root, path)
+		);
 	}
 
 	private rootChildNamesFromIndex(): string[] {
@@ -140,7 +162,7 @@ export class TaskStore {
 			const oldPath = `${this.root()}/${typeName}`;
 			const oldFolder = this.app.vault.getAbstractFileByPath(oldPath);
 			if (!(oldFolder instanceof TFolder)) continue;
-			const destDir = this.dir(DEFAULT_PROJECT, type);
+			const destDir = this.dir(DEFAULT_PROJECT, DEFAULT_BRANCH, type);
 			const destExisting = this.app.vault.getAbstractFileByPath(destDir);
 			try {
 				if (!destExisting) {
@@ -167,10 +189,200 @@ export class TaskStore {
 		return moved;
 	}
 
+	/**
+	 * 将 根/项目/类型 迁入 根/项目/分支/类型。
+	 * 项目名含「 - 」时拆成 项目+分支；否则迁入 main。
+	 */
+	async migrateBranchLayout(): Promise<{ ran: boolean; moved: boolean }> {
+		const settings = this.getSettings();
+		if (settings.branchPathMigrated) return { ran: false, moved: false };
+		const projects = await this.listRootChildNames();
+		let moved = false;
+		for (const rawName of projects) {
+			if (isReservedRootName(rawName)) continue;
+			const children = await this.listProjectChildNames(rawName);
+			const typeChildren = children.filter((c) => isTypeDirName(c));
+			if (!typeChildren.length) continue;
+
+			const split = suggestSplitProjectName(rawName);
+			const targetProject = split?.project ?? rawName;
+			const targetBranch = split?.branch ?? DEFAULT_BRANCH;
+			await this.ensureBranchFolders(targetProject, targetBranch);
+
+			for (const typeName of typeChildren) {
+				const type = (Object.keys(TYPE_DIR) as TaskType[]).find((k) => TYPE_DIR[k] === typeName);
+				if (!type) continue;
+				const oldPath = `${this.root()}/${rawName}/${typeName}`;
+				const oldFolder = this.app.vault.getAbstractFileByPath(oldPath);
+				if (!(oldFolder instanceof TFolder)) continue;
+				const destDir = this.dir(targetProject, targetBranch, type);
+				try {
+					for (const child of [...oldFolder.children]) {
+						if (!(child instanceof TFile)) continue;
+						const dest = `${destDir}/${child.name}`;
+						if (this.app.vault.getAbstractFileByPath(dest)) continue;
+						await this.app.fileManager.renameFile(child, dest);
+						moved = true;
+					}
+					const refreshed = this.app.vault.getAbstractFileByPath(oldPath);
+					if (refreshed instanceof TFolder && refreshed.children.length === 0) {
+						await this.app.vault.delete(refreshed);
+					}
+				} catch (err) {
+					console.error("Z-Tasking migrateBranchLayout", oldPath, err);
+				}
+			}
+
+			if (split && rawName !== targetProject) {
+				const oldProjectPath = `${this.root()}/${rawName}`;
+				const oldFolder = this.app.vault.getAbstractFileByPath(oldProjectPath);
+				if (oldFolder instanceof TFolder) {
+					// 迁材料目录
+					const mat = oldFolder.children.find((c) => c.name === "_资料");
+					if (mat) {
+						const destMat = `${this.root()}/${targetProject}/_资料`;
+						if (!this.app.vault.getAbstractFileByPath(destMat)) {
+							try {
+								await this.app.fileManager.renameFile(mat, destMat);
+								moved = true;
+							} catch (err) {
+								console.error("Z-Tasking migrate materials", err);
+							}
+						}
+					}
+					const refreshed = this.app.vault.getAbstractFileByPath(oldProjectPath);
+					if (refreshed instanceof TFolder) {
+						const leftover = refreshed.children.filter(
+							(c) => !(c instanceof TFile && c.name === "_ztasking-project.md"),
+						);
+						if (leftover.length === 0) {
+							try {
+								await this.app.vault.delete(refreshed, true);
+							} catch (err) {
+								console.error("Z-Tasking remove split project", rawName, err);
+							}
+						}
+					}
+				}
+			}
+		}
+		settings.branchPathMigrated = true;
+		return { ran: true, moved };
+	}
+
+	async createBranch(
+		project: string,
+		rawName: string,
+	): Promise<{ ok: true; name: string } | { ok: false; reason: string }> {
+		const p = project.trim();
+		const name = normalizeBranchName(rawName);
+		if (!p || isReservedRootName(p)) {
+			return { ok: false, reason: "项目无效" };
+		}
+		if (!name) {
+			return { ok: false, reason: "分支名无效（不能是日报/类型/_资料）" };
+		}
+		const existing = this.branchesOf(p);
+		if (existing.includes(name)) {
+			await this.ensureBranchFolders(p, name);
+			return { ok: true, name };
+		}
+		this.beginMute();
+		try {
+			await this.ensureBranchFolders(p, name);
+			await this.refreshBranchesByProject();
+			return { ok: true, name };
+		} finally {
+			this.endMute();
+		}
+	}
+
+	async renameBranch(
+		project: string,
+		from: string,
+		rawTo: string,
+	): Promise<{ ok: true; from: string; to: string } | { ok: false; reason: string }> {
+		const p = project.trim();
+		const prepared = prepareRenameBranch(from, rawTo, this.branchesOf(p));
+		if (!prepared.ok) return prepared;
+		const oldPath = `${this.root()}/${p}/${prepared.from}`;
+		const newPath = `${this.root()}/${p}/${prepared.to}`;
+		const folder = this.app.vault.getAbstractFileByPath(oldPath);
+		if (!(folder instanceof TFolder)) {
+			return { ok: false, reason: `找不到分支目录「${prepared.from}」` };
+		}
+		if (this.app.vault.getAbstractFileByPath(newPath)) {
+			return { ok: false, reason: `已存在分支「${prepared.to}」` };
+		}
+		this.beginMute();
+		try {
+			await this.app.fileManager.renameFile(folder, newPath);
+			await this.reload();
+			return { ok: true, from: prepared.from, to: prepared.to };
+		} catch (err) {
+			console.error("Z-Tasking renameBranch", oldPath, err);
+			return { ok: false, reason: "重命名失败" };
+		} finally {
+			this.endMute();
+		}
+	}
+
+	async deleteBranch(
+		project: string,
+		branch: string,
+	): Promise<{ ok: true } | { ok: false; reason: string }> {
+		const check = canDeleteBranch(project, branch, this.tasks);
+		if (!check.ok) return check;
+		const folder = this.app.vault.getAbstractFileByPath(`${this.root()}/${project.trim()}/${branch.trim()}`);
+		if (!(folder instanceof TFolder)) {
+			await this.refreshBranchesByProject();
+			return { ok: false, reason: `找不到分支「${branch.trim()}」` };
+		}
+		this.beginMute();
+		try {
+			await this.app.vault.delete(folder, true);
+			await this.refreshBranchesByProject();
+			return { ok: true };
+		} catch (err) {
+			console.error("Z-Tasking deleteBranch", branch, err);
+			return { ok: false, reason: "删除失败" };
+		} finally {
+			this.endMute();
+		}
+	}
+
 	async refreshProjectList(): Promise<void> {
 		const fromFolders = await this.listRootChildNames();
 		const fromTasks = this.tasks.map((t) => t.project).filter(Boolean);
 		this.projects = listProjectNames([...fromFolders, ...fromTasks]);
+		await this.refreshBranchesByProject();
+	}
+
+	async listProjectChildNames(project: string): Promise<string[]> {
+		const path = `${this.root()}/${project.trim()}`;
+		try {
+			const listed = await this.app.vault.adapter.list(path);
+			return rootFolderNamesFromListing(path, listed.folders ?? []);
+		} catch {
+			const folder = this.app.vault.getAbstractFileByPath(path);
+			if (!(folder instanceof TFolder)) return [];
+			return folder.children.filter((c) => c instanceof TFolder).map((c) => c.name);
+		}
+	}
+
+	async refreshBranchesByProject(): Promise<void> {
+		const map: Record<string, string[]> = {};
+		for (const project of this.projects) {
+			const children = await this.listProjectChildNames(project);
+			const fromDisk = listBranchNames(children);
+			const fromTasks = this.tasks.filter((t) => t.project === project).map((t) => t.branch);
+			map[project] = listBranchNames([...fromDisk, ...fromTasks]);
+		}
+		this.branchesByProject = map;
+	}
+
+	branchesOf(project: string): string[] {
+		return this.branchesByProject[project.trim()] ?? [DEFAULT_BRANCH];
 	}
 
 	/** 将日报草稿写入 vault：根目录/日报/YYYY-MM-DD.md（有内容才写） */
@@ -231,11 +443,15 @@ export class TaskStore {
 		return path;
 	}
 
-	async reload(): Promise<void> {
+	/** @returns settingsDirty — 调用方应 saveSettings（如首次分支路径迁移打标） */
+	async reload(): Promise<{ settingsDirty: boolean }> {
 		this.beginMute();
+		let settingsDirty = false;
 		try {
 			await this.ensureFolder(this.root());
-			const migrated = await this.migrateLegacyLayout();
+			const migratedFlat = await this.migrateLegacyLayout();
+			const branchMig = await this.migrateBranchLayout();
+			settingsDirty = branchMig.ran;
 			const files = this.app.vault.getMarkdownFiles().filter((f) => this.isTaskFile(f.path));
 			const tasks: Task[] = [];
 			for (const file of files) {
@@ -249,12 +465,16 @@ export class TaskStore {
 			await this.pruneOrphanScaffoldProjects();
 			await this.refreshProjectList();
 			await this.ensureFolders();
-			if (migrated) {
+			if (migratedFlat) {
 				new Notice(`已将旧任务目录迁入 ${DEFAULT_PROJECT}/`);
+			}
+			if (branchMig.moved) {
+				new Notice("已将任务迁入「项目/分支」目录结构");
 			}
 		} finally {
 			this.endMute();
 		}
+		return { settingsDirty };
 	}
 
 	/**
@@ -278,25 +498,34 @@ export class TaskStore {
 		}
 	}
 
-	private async uniquePath(project: string, type: TaskType, title: string, exclude?: string): Promise<string> {
-		await this.ensureProjectFolders(project);
+	private async uniquePath(
+		project: string,
+		branch: string,
+		type: TaskType,
+		title: string,
+		exclude?: string,
+	): Promise<string> {
+		const b = branch.trim() || DEFAULT_BRANCH;
+		await this.ensureBranchFolders(project, b);
 		const base = sanitizeFileName(title);
-		let path = `${this.dir(project, type)}/${base}.md`;
+		let path = `${this.dir(project, b, type)}/${base}.md`;
 		let i = 2;
 		while (true) {
 			const existing = this.app.vault.getAbstractFileByPath(path);
 			if (!existing || existing.path === exclude) return path;
-			path = `${this.dir(project, type)}/${base}-${i}.md`;
+			path = `${this.dir(project, b, type)}/${base}-${i}.md`;
 			i += 1;
 		}
 	}
 
 	async create(input: Omit<Task, "id" | "path" | "logs" | "updatedAt"> & { logs?: Task["logs"] }): Promise<Task> {
 		const project = input.project?.trim() || DEFAULT_PROJECT;
-		const path = await this.uniquePath(project, input.type, input.title);
+		const branch = input.branch?.trim() || DEFAULT_BRANCH;
+		const path = await this.uniquePath(project, branch, input.type, input.title);
 		const task: Task = {
 			...input,
 			project,
+			branch,
 			id: path,
 			path,
 			logs: input.logs ?? [],
@@ -311,8 +540,12 @@ export class TaskStore {
 		const file = this.app.vault.getAbstractFileByPath(task.path);
 		if (!(file instanceof TFile)) return task.path;
 		const project = task.project?.trim() || projectFromPath(this.root(), task.path);
-		const nextPath = await this.uniquePath(project, task.type, task.title, task.path);
-		await this.app.vault.modify(file, serializeTaskMarkdown({ ...task, project, path: nextPath, id: nextPath }));
+		const branch = task.branch?.trim() || branchFromPath(this.root(), task.path);
+		const nextPath = await this.uniquePath(project, branch, task.type, task.title, task.path);
+		await this.app.vault.modify(
+			file,
+			serializeTaskMarkdown({ ...task, project, branch, path: nextPath, id: nextPath }),
+		);
 		if (nextPath !== task.path) {
 			await this.app.fileManager.renameFile(file, nextPath);
 		}
@@ -331,12 +564,18 @@ export class TaskStore {
 	async setProject(task: Task, project: string): Promise<string> {
 		const oldProject = (task.project?.trim() || projectFromPath(this.root(), task.path)).trim();
 		const next = project.trim() || DEFAULT_PROJECT;
-		const path = await this.save({ ...task, project: next });
+		const branch = task.branch?.trim() || branchFromPath(this.root(), task.path);
+		const path = await this.save({ ...task, project: next, branch });
 		if (oldProject && oldProject !== next) {
 			await this.pruneProjectIfNoTasks(oldProject);
 			await this.refreshProjectList();
 		}
 		return path;
+	}
+
+	async setBranch(task: Task, branch: string): Promise<string> {
+		const next = normalizeBranchName(branch) || DEFAULT_BRANCH;
+		return this.save({ ...task, branch: next });
 	}
 
 	/** 项目下已无任务笔记时删掉空项目夹（含占位文件与空类型目录），避免改名后残留旧项目 */
@@ -504,9 +743,10 @@ export class TaskStore {
 				const file = this.app.vault.getAbstractFileByPath(task.path);
 				if (!(file instanceof TFile)) return;
 				const project = task.project?.trim() || projectFromPath(this.root(), task.path);
+				const branch = task.branch?.trim() || branchFromPath(this.root(), task.path);
 				await this.app.vault.modify(
 					file,
-					serializeTaskMarkdown({ ...task, project, logs, path: task.path, id: task.path }),
+					serializeTaskMarkdown({ ...task, project, branch, logs, path: task.path, id: task.path }),
 				);
 			};
 			if (same) {

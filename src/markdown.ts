@@ -8,7 +8,7 @@ import {
 	type TaskStatus,
 	type TaskType,
 } from "./model.ts";
-import { projectFromPath } from "./project.ts";
+import { branchFromPath, projectFromPath } from "./project.ts";
 
 /** 解析 frontmatter 标量：支持 "…" / '…' 引号 */
 export function parseYamlScalar(raw: string): string {
@@ -99,6 +99,7 @@ export function parseTaskMarkdown(path: string, content: string, root = "Z-Taski
 		path,
 		title,
 		project: projectFromPath(root, path),
+		branch: branchFromPath(root, path),
 		type,
 		status,
 		start: fields.start || "",

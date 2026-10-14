@@ -48,7 +48,7 @@ export function isTypeDirName(name: string): boolean {
 }
 
 export function isReservedRootName(name: string): boolean {
-	return name === DAILY_REPORT_DIR || isTypeDirName(name);
+	return name === DAILY_REPORT_DIR || name === PROJECT_MATERIALS_DIR || isTypeDirName(name);
 }
 
 export function isLegacyRootTypeFolder(name: string): boolean {

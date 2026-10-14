@@ -16,7 +16,7 @@ export function helpNavGroups(): HelpNavGroup[] {
 			id: "basics",
 			label: "基础",
 			items: [
-				{ id: "help-project", title: "新增项目" },
+				{ id: "help-project", title: "项目与知识库" },
 				{ id: "help-task", title: "新增任务" },
 				{ id: "help-view", title: "查看任务与进展" },
 				{ id: "help-edit-task", title: "编辑任务与进展" },
@@ -96,14 +96,15 @@ export function helpCenterHtml(): string {
 		cards: [
 			helpCard({
 				id: "help-project",
-				title: "新增项目",
+				title: "项目与知识库",
 				body: `<ol>
-					<li>打开顶栏 <strong>工作台</strong> Tab（只有工作台会显示「项目管理」「新建任务」）。</li>
-					<li>点右上角 <strong>项目管理</strong>，右侧打开项目管理抽屉。</li>
-					<li>填写项目名并新增。目录为：<code>根目录/项目名/长期|临时|缺陷/</code>。</li>
-					<li>可在列表里重命名；仍有任务的项目不能删除。</li>
+					<li>打开顶栏 <strong>项目</strong> Tab（位于「日历」之后）。</li>
+					<li>左侧新增 / 重命名 / 拖拽排序 / 删除项目；有任务的项目不能删除。</li>
+					<li>右侧详情：活跃概览、公告、材料知识库、项目任务列表。</li>
+					<li>材料与公告保存在 <code>根目录/项目名/_资料/</code>；公告固定为 <code>公告.md</code>。</li>
+					<li>任务目录仍为：<code>根目录/项目名/长期|临时|缺陷/</code>。</li>
 				</ol>
-				<p class="ztk-help-note">顶栏「全部项目 / 某项目」用于筛选任务与进展；新建任务前请先至少有一个项目。</p>`,
+				<p class="ztk-help-note">顶栏「全部项目 / 某项目」仍用于汇总/工作台筛选；新建任务前请先至少有一个项目。</p>`,
 			}),
 			helpCard({
 				id: "help-task",
@@ -138,8 +139,9 @@ export function helpCenterHtml(): string {
 				id: "help-edit-plan",
 				title: "编辑昨日 / 明日计划",
 				body: `<ul>
+					<li>右侧任务表标题行 hover 可复制标题；「筛选」可折叠展开，支持句式多条件（当/且/或 · 列 · 包含/不包含 · 取值）与一层条件组。</li>
 					<li>工作台「昨日计划 / 明日计划」可新增、编辑、删除条目（抽屉编辑）。</li>
-					<li>昨日计划来自「昨天日报」里的明日计划段，可批量新增或重置回日报原文。</li>
+					<li>昨日计划来自最近有效日报的「明日计划」；空的周末会往前跳过，周末加班写过计划则保留；标题旁显示计划所属日。</li>
 					<li>明日计划与汇总「今日日报」中的明日计划同步。</li>
 				</ul>`,
 			}),

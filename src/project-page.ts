@@ -67,17 +67,24 @@ export function projectListHtml(opts: {
 	projects: string[];
 	selected: string;
 	taskCounts: Record<string, number>;
+	renameFrom?: string | null;
 }): string {
 	const rows = opts.projects
 		.map((name) => {
 			const count = opts.taskCounts[name] ?? 0;
 			const on = name === opts.selected ? " on" : "";
-			return `<li class="ztk-proj-row${on}" data-project="${esc(name)}" draggable="true">
+			const renaming = opts.renameFrom === name;
+			const nameCell = renaming
+				? `<input class="ztk-proj-rename-input" type="text" value="${esc(name)}" data-project="${esc(name)}" aria-label="重命名" />
+					${iconBtn("rename-project-save", "save", "保存", `data-project="${esc(name)}"`)}
+					${iconBtn("rename-project-cancel", "cancel", "取消")}`
+				: `<button type="button" class="ztk-proj-row-name" data-act="select-project" data-project="${esc(name)}">${esc(name)}</button>
+					<span class="ztk-proj-row-count">${count}</span>
+					${iconBtn("rename-project", "edit", "重命名", `data-project="${esc(name)}"`)}
+					${iconBtn("delete-project", "del", "删除", `data-project="${esc(name)}"`)}`;
+			return `<li class="ztk-proj-row${on}${renaming ? " is-renaming" : ""}" data-project="${esc(name)}" draggable="${renaming ? "false" : "true"}">
 				<span class="ztk-proj-row-drag" aria-hidden="true">⋮⋮</span>
-				<button type="button" class="ztk-proj-row-name" data-act="select-project" data-project="${esc(name)}">${esc(name)}</button>
-				<span class="ztk-proj-row-count">${count}</span>
-				${iconBtn("rename-project", "edit", "重命名", `data-project="${esc(name)}"`)}
-				${iconBtn("delete-project", "del", "删除", `data-project="${esc(name)}"`)}
+				${nameCell}
 			</li>`;
 		})
 		.join("");

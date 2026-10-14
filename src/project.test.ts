@@ -159,7 +159,8 @@ test("remapPathsAfterProjectRename：只改该项目前缀路径", () => {
 	);
 });
 
-test("normalizeProjectName：去空白与非法名", () => {
+test("normalizeProjectName：去空白与非法名；_资料 保留", () => {
+	assert.equal(normalizeProjectName("_资料"), null);
 	assert.equal(normalizeProjectName("  终端安全  "), "终端安全");
 	assert.equal(normalizeProjectName(""), null);
 	assert.equal(normalizeProjectName("日报"), null);

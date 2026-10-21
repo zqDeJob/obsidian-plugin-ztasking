@@ -202,7 +202,8 @@ function materialsHtml(opts: {
 	</section>`;
 }
 
-function tasksTableHtml(
+/** 任务表（卡片预览与放大 Modal 共用） */
+export function projectTasksTableInnerHtml(
 	tasks: { id: string; title: string; status: TaskStatus }[],
 ): string {
 	const rows = tasks
@@ -219,16 +220,23 @@ function tasksTableHtml(
 				</tr>`,
 		)
 		.join("");
-	return `<section class="ztk-card ztk-proj-tasks">
-		<header class="ztk-proj-sec-head">
-			<div class="ztk-section-title"><h2>任务</h2></div>
-		</header>
-		<div class="ztk-catalog-body ztk-proj-task-scroll">
+	return `<div class="ztk-catalog-body ztk-proj-task-scroll">
 			<table class="ztk-proj-task-table">
 				<thead><tr><th>标题</th><th class="ztk-col-status">状态</th></tr></thead>
 				<tbody>${rows || `<tr><td colspan="2" class="ztk-proj-empty">暂无任务</td></tr>`}</tbody>
 			</table>
-		</div>
+		</div>`;
+}
+
+function tasksTableHtml(
+	tasks: { id: string; title: string; status: TaskStatus }[],
+): string {
+	return `<section class="ztk-card ztk-proj-tasks">
+		<header class="ztk-proj-sec-head">
+			<div class="ztk-section-title"><h2>任务</h2></div>
+			${iconBtn("expand-project-tasks", "expand", "放大任务列表")}
+		</header>
+		${projectTasksTableInnerHtml(tasks)}
 	</section>`;
 }
 
@@ -268,6 +276,11 @@ export function projectDetailHtml(opts: {
 	noticeHtmlSlot: string;
 	/** 尚未有公告且已选具体分支时，在卡片右上角显示「创建公告」 */
 	showCreateNotice?: boolean;
+	/** 公告是否展开；默认 false（折叠） */
+	noticeExpanded?: boolean;
+	noticeHistory?: NoticeHistoryItem[];
+	/** 历史 popover 是否打开 */
+	noticeHistoryOpen?: boolean;
 	materials: { name: string; path: string }[];
 	pinnedMaterialNames?: string[];
 	tasks: { id: string; title: string; status: TaskStatus }[];
@@ -282,14 +295,28 @@ export function projectDetailHtml(opts: {
 	const branchSelected = opts.branchSelected ?? "all";
 	const showNotice = branchSelected !== "all";
 	const noticeTitle = showNotice ? `公告 · ${branchSelected}` : "公告";
-	const noticeHeadAction = opts.showCreateNotice
+	const noticeExpanded = opts.noticeExpanded === true;
+	const history = opts.noticeHistory ?? [];
+	const histOpen = opts.noticeHistoryOpen === true;
+	const createBtn = opts.showCreateNotice
 		? `<button type="button" class="ztk-btn" data-act="create-notice">创建公告</button>`
 		: "";
+	const histBtn = `<span class="ztk-proj-notice-hist-wrap">
+			<button type="button" class="ztk-icon-btn ztk-icon-btn--history ztk-proj-notice-hist-btn${histOpen ? " is-on" : ""}" data-act="toggle-notice-history" title="历史记录 (${history.length})" aria-expanded="${histOpen ? "true" : "false"}" style="background:#f3ebe3;background-color:#f3ebe3;color:#a85a2a">
+				<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+				<span class="ztk-proj-notice-hist-badge">${history.length}</span>
+			</button>
+			${histOpen ? `<div class="ztk-proj-notice-hist-pop" role="dialog" aria-label="公告历史">${noticeHistoryHtml(history)}</div>` : ""}
+		</span>`;
 	const noticeCard = showNotice
-		? `<section class="ztk-card ztk-proj-notice">
+		? `<section class="ztk-card ztk-proj-notice${noticeExpanded ? "" : " is-collapsed"}">
 			<header class="ztk-proj-sec-head">
+				<button type="button" class="ztk-ghost ztk-section-collapse" data-act="toggle-notice" title="${noticeExpanded ? "折叠" : "展开"}" aria-expanded="${noticeExpanded ? "true" : "false"}">${noticeExpanded ? "▾" : "▸"}</button>
 				<div class="ztk-section-title"><h2>${esc(noticeTitle)}</h2></div>
-				${noticeHeadAction}
+				<div class="ztk-proj-notice-head-actions">
+					${histBtn}
+					${createBtn}
+				</div>
 			</header>
 			<div class="ztk-proj-notice-body">${opts.noticeHtmlSlot}</div>
 		</section>`
@@ -316,7 +343,7 @@ export function projectDetailHtml(opts: {
 	</main>`;
 }
 
-function noticeHistoryHtml(items: NoticeHistoryItem[]): string {
+export function noticeHistoryHtml(items: NoticeHistoryItem[]): string {
 	if (!items.length) {
 		return `<p class="ztk-muted ztk-proj-notice-hist-empty">暂无历史存档；编辑前会自动存档，也可手动「存档当前」</p>`;
 	}
@@ -335,31 +362,21 @@ function noticeHistoryHtml(items: NoticeHistoryItem[]): string {
 	return `<ul class="ztk-proj-notice-hist-list">${rows}</ul>`;
 }
 
-function noticeHistoryBlock(history: NoticeHistoryItem[]): string {
-	return `<details class="ztk-proj-notice-hist"${history.length ? " open" : ""}>
-			<summary>历史记录 <span class="ztk-muted">(${history.length})</span></summary>
-			${noticeHistoryHtml(history)}
-		</details>`;
-}
-
 /** 公告空态 / 有文件时的 md 槽；needBranch=true 表示当前为「全部」未选具体分支 */
 export function noticeSlotHtml(opts: {
 	exists: boolean;
 	path: string;
 	needBranch?: boolean;
-	history?: NoticeHistoryItem[];
 }): string {
 	if (opts.needBranch) {
 		return `<div class="ztk-proj-notice-empty">
 			<p class="ztk-muted">请先选择具体分支，查看或编辑该分支公告（材料仍为项目共用）</p>
 		</div>`;
 	}
-	const history = opts.history ?? [];
 	if (!opts.exists) {
 		return `<div class="ztk-proj-notice-empty">
 			<p class="ztk-muted">尚未创建本分支公告</p>
-		</div>
-		${noticeHistoryBlock(history)}`;
+		</div>`;
 	}
 	return `<div class="ztk-proj-notice-current">
 			<div class="ztk-md markdown-rendered" data-src="${esc(opts.path)}" data-kind="notice"></div>
@@ -367,6 +384,5 @@ export function noticeSlotHtml(opts: {
 				<button type="button" class="ztk-ghost" data-act="edit-notice" data-path="${esc(opts.path)}">编辑</button>
 				<button type="button" class="ztk-btn" data-act="archive-notice" data-path="${esc(opts.path)}">存档当前</button>
 			</div>
-		</div>
-		${noticeHistoryBlock(history)}`;
+		</div>`;
 }

@@ -78,16 +78,15 @@ test("projectListHtml：选中态与任务数、工时；无内联新增", () =>
 	assert.match(html, /ztk-drag-handle/);
 });
 
-test("noticeSlotHtml：有公告时展示历史区与存档按钮", () => {
+test("noticeSlotHtml：有公告时展示编辑与存档，不含历史列表", () => {
 	const html = noticeSlotHtml({
 		exists: true,
 		path: "Z-Tasking/KVAD/main/公告.md",
-		history: [{ stamp: "2026-10-14_161205", path: "Z-Tasking/KVAD/main/_公告历史/2026-10-14_161205.md", label: "2026-10-14 16:12:05" }],
 	});
-	assert.match(html, /历史记录/);
 	assert.match(html, /data-act="archive-notice"/);
-	assert.match(html, /data-act="restore-notice-history"/);
-	assert.match(html, /2026-10-14 16:12:05/);
+	assert.match(html, /data-act="edit-notice"/);
+	assert.doesNotMatch(html, /历史记录/);
+	assert.doesNotMatch(html, /data-act="restore-notice-history"/);
 });
 
 test("projectDetailHtml：材料任务左右分栏；材料可删改", () => {
@@ -105,6 +104,13 @@ test("projectDetailHtml：材料任务左右分栏；材料可删改", () => {
 		activity: { todo: 1, doing: 0, done: 0, d7Count: 1, d7Hours: 2, d30Count: 1, d30Hours: 2 },
 		noticeHtmlSlot: noticeSlotHtml({ exists: false, path: "x" }),
 		showCreateNotice: true,
+		noticeHistory: [
+			{
+				stamp: "2026-10-14_161205",
+				path: "Z-Tasking/KVAD/main/_公告历史/2026-10-14_161205.md",
+				label: "2026-10-14 16:12:05",
+			},
+		],
 		materials: [
 			{ name: "公告.md", path: "Z-Tasking/KVAD/_资料/公告.md" },
 			{ name: "片段.md", path: "Z-Tasking/KVAD/_资料/片段.md" },
@@ -116,7 +122,12 @@ test("projectDetailHtml：材料任务左右分栏；材料可删改", () => {
 	assert.match(html, /class="ztk-proj-split"/);
 	assert.match(html, /ztk-card ztk-proj-materials/);
 	assert.match(html, /ztk-card ztk-proj-tasks/);
-	assert.match(html, /ztk-card ztk-proj-notice/);
+	assert.match(html, /ztk-card ztk-proj-notice is-collapsed/);
+	assert.match(html, /data-act="toggle-notice"/);
+	assert.match(html, /data-act="toggle-notice-history"/);
+	assert.match(html, /data-act="expand-project-tasks"/);
+	assert.doesNotMatch(html, /<details class="ztk-proj-notice-hist"/);
+	assert.doesNotMatch(html, /ztk-proj-notice-hist-pop/);
 	assert.match(html, /公告 · main/);
 	assert.match(html, /ztk-card ztk-proj-branches/);
 	assert.match(html, /data-act="add-branch"/);
@@ -138,7 +149,6 @@ test("projectDetailHtml：材料任务左右分栏；材料可删改", () => {
 	// 创建公告在卡片头右上角，不在空态正文里
 	assert.match(html, /ztk-proj-sec-head[\s\S]*data-act="create-notice"/);
 	assert.doesNotMatch(html, /ztk-proj-notice-empty[\s\S]*data-act="create-notice"/);
-	assert.match(html, /历史记录/);
 	assert.match(html, /任务甲/);
 	// 任务表只保留标题 + 状态，不展示分支/类型列
 	assert.match(html, /ztk-proj-task-table[\s\S]*<th>标题<\/th><th class="ztk-col-status">状态<\/th>/);
@@ -146,6 +156,29 @@ test("projectDetailHtml：材料任务左右分栏；材料可删改", () => {
 	assert.doesNotMatch(html, /ztk-proj-task-table[\s\S]*ztk-col-type/);
 	assert.match(html, /近7天 1笔 · 2h/);
 	assert.match(html, /ztk-proj-sec-icon/);
+
+	const expanded = projectDetailHtml({
+		project: "KVAD",
+		activity: { todo: 0, doing: 0, done: 0, d7Count: 0, d7Hours: 0, d30Count: 0, d30Hours: 0 },
+		noticeHtmlSlot: noticeSlotHtml({ exists: true, path: "x" }),
+		noticeExpanded: true,
+		noticeHistoryOpen: true,
+		noticeHistory: [
+			{
+				stamp: "2026-10-14_161205",
+				path: "Z-Tasking/KVAD/main/_公告历史/2026-10-14_161205.md",
+				label: "2026-10-14 16:12:05",
+			},
+		],
+		materials: [],
+		tasks: [],
+		branches: ["main"],
+		branchSelected: "main",
+	});
+	assert.doesNotMatch(expanded, /ztk-proj-notice is-collapsed/);
+	assert.match(expanded, /ztk-proj-notice-hist-pop/);
+	assert.match(expanded, /data-act="restore-notice-history"/);
+	assert.match(expanded, /2026-10-14 16:12:05/);
 
 	const allBranch = projectDetailHtml({
 		project: "KVAD",

@@ -9,6 +9,8 @@ const SVG = {
 	save: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`,
 	cancel: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
 	move: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12h11"/><path d="m15 8 4 4-4 4"/><path d="M4 6v12a2 2 0 0 0 2 2h4"/><path d="M4 6a2 2 0 0 1 2-2h3"/></svg>`,
+	history: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
+	expand: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>`,
 } as const;
 
 const SEARCH_SVG = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>`;
@@ -22,6 +24,8 @@ const STYLE: Record<IconKind, string> = {
 	save: "background:#2f6f68;background-color:#2f6f68;color:#ffffff",
 	cancel: "background:#ececec;background-color:#ececec;color:#5c5c5c",
 	move: "background:#e8eef5;background-color:#e8eef5;color:#3d5a80",
+	history: "background:#f3ebe3;background-color:#f3ebe3;color:#a85a2a",
+	expand: "background:#e8eef5;background-color:#e8eef5;color:#3d5a80",
 };
 
 export type IconKind = keyof typeof SVG;

@@ -82,6 +82,7 @@ import {
 	noticeSlotHtml,
 	projectDetailHtml,
 	projectListHtml,
+	projectTasksTableInnerHtml,
 	type NoticeHistoryItem,
 } from "./project-page";
 import {
@@ -530,6 +531,10 @@ export class ZTaskingView extends ItemView {
 	private projectPageRenameFrom: string | null = null;
 	/** 项目页：正在行内重命名的分支名 */
 	private projectPageBranchRenameFrom: string | null = null;
+	/** 项目页公告展开态（会话内，按 项目/分支） */
+	private noticeExpandedByKey: Record<string, boolean> = {};
+	/** 当前打开历史 popover 的 key；null 表示关闭 */
+	private noticeHistoryOpenKey: string | null = null;
 	/** 项目页拖拽源 */
 	private projectDragFrom: string | null = null;
 	/** 材料列表拖拽源（文件名） */
@@ -979,6 +984,13 @@ export class ZTaskingView extends ItemView {
 				this.calPickerOpen = false;
 				this.renderCalendar();
 			}
+			if (
+				this.noticeHistoryOpenKey
+				&& !target.closest(".ztk-proj-notice-hist-wrap")
+			) {
+				this.noticeHistoryOpenKey = null;
+				void this.renderProjects();
+			}
 			const selected = window.getSelection()?.toString() ?? "";
 			if (selected && !target.closest("button, a, textarea, input, select, [data-act]")) {
 				return;
@@ -1120,6 +1132,30 @@ export class ZTaskingView extends ItemView {
 					void this.projectsDeleteBranch(act.dataset.branch);
 					return;
 				}
+				if (a === "toggle-notice") {
+					const selected = this.projectsSelected();
+					const branch = this.projectsBranchSelected(selected);
+					if (selected && branch && branch !== "all") {
+						const key = this.noticeSessionKey(selected, branch);
+						this.noticeExpandedByKey[key] = !this.noticeExpandedByKey[key];
+						void this.renderProjects();
+					}
+					return;
+				}
+				if (a === "toggle-notice-history") {
+					const selected = this.projectsSelected();
+					const branch = this.projectsBranchSelected(selected);
+					if (selected && branch && branch !== "all") {
+						const key = this.noticeSessionKey(selected, branch);
+						this.noticeHistoryOpenKey = this.noticeHistoryOpenKey === key ? null : key;
+						void this.renderProjects();
+					}
+					return;
+				}
+				if (a === "expand-project-tasks") {
+					this.openProjectTasksModal();
+					return;
+				}
 				if (a === "create-notice") {
 					void this.projectsCreateNotice();
 					return;
@@ -1133,7 +1169,9 @@ export class ZTaskingView extends ItemView {
 					return;
 				}
 				if (a === "open-notice-history" && act.dataset.path) {
-					void this.openMaterialDrawer(act.dataset.path);
+					const histPath = act.dataset.path;
+					this.noticeHistoryOpenKey = null;
+					void this.renderProjects().then(() => this.openMaterialDrawer(histPath));
 					return;
 				}
 				if (a === "restore-notice-history" && act.dataset.path) {
@@ -2439,6 +2477,8 @@ export class ZTaskingView extends ItemView {
 		let noticeFilePath = "";
 		let noticeExists = false;
 		let noticeHistory: NoticeHistoryItem[] = [];
+		const noticeKey =
+			selected && !needBranchForNotice ? this.noticeSessionKey(selected, branchSelected) : "";
 		if (selected && !needBranchForNotice) {
 			noticeFilePath = await this.resolveBranchNoticePath(selected, branchSelected);
 			noticeExists = !!this.app.vault.getAbstractFileByPath(noticeFilePath);
@@ -2482,10 +2522,12 @@ export class ZTaskingView extends ItemView {
 						exists: noticeExists,
 						path: noticeFilePath,
 						needBranch: needBranchForNotice,
-						history: noticeHistory,
 					})
 					: "",
 				showCreateNotice: !!selected && !needBranchForNotice && !noticeExists,
+				noticeExpanded: noticeKey ? !!this.noticeExpandedByKey[noticeKey] : false,
+				noticeHistory,
+				noticeHistoryOpen: !!(noticeKey && this.noticeHistoryOpenKey === noticeKey),
 				materials,
 				pinnedMaterialNames,
 				tasks,
@@ -2496,6 +2538,52 @@ export class ZTaskingView extends ItemView {
 		this.mdGen += 1;
 		void this.paintMarkdown(this.mdGen);
 		requestAnimationFrame(() => this.applyProjectsLayout());
+	}
+
+	private noticeSessionKey(project: string, branch: string): string {
+		return `${project}/${branch}`;
+	}
+
+	private openProjectTasksModal(): void {
+		const selected = this.projectsSelected();
+		if (!selected) return;
+		const branchSelected = this.projectsBranchSelected(selected);
+		const tasks = this.plugin.store.tasks
+			.filter((t) => {
+				if (t.project !== selected) return false;
+				if (branchSelected === "all") return true;
+				return t.branch === branchSelected;
+			})
+			.map((t) => ({ id: t.id, title: t.title, status: t.status }));
+		const onPick = (id: string) => {
+			this.openTaskDetail(id);
+			this.syncDetailDrawer();
+			this.rerenderDetail();
+			this.mdGen += 1;
+			void this.paintMarkdown(this.mdGen);
+		};
+		const modal = new (class extends Modal {
+			onOpen(): void {
+				this.modalEl.addClass("ztk-bm-modal");
+				this.modalEl.addClass("ztk-proj-tasks-modal");
+				this.contentEl.empty();
+				this.contentEl.addClass("ztk-bm-modal-body");
+				this.contentEl.createDiv({ cls: "ztk-bm-modal-eyebrow", text: "Z-Tasking" });
+				this.contentEl.createEl("h2", { text: `任务 · ${selected}` });
+				const body = this.contentEl.createDiv({ cls: "ztk-proj-tasks-modal-body" });
+				body.innerHTML = projectTasksTableInnerHtml(tasks);
+				body.addEventListener("click", (ev) => {
+					const act = (ev.target as HTMLElement).closest<HTMLElement>("[data-act]");
+					if (act?.dataset.act !== "open-project-task") return;
+					const row = act.closest<HTMLElement>("[data-id]") ?? act;
+					const id = row.dataset.id;
+					if (!id) return;
+					this.close();
+					onPick(id);
+				});
+			}
+		})(this.app);
+		modal.open();
 	}
 
 	private listNoticeHistory(project: string, branch: string): NoticeHistoryItem[] {

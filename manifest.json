@@ -1,9 +1,9 @@
 {
 	"id": "z-tasking",
 	"name": "Z-Tasking",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"minAppVersion": "1.5.0",
-	"description": "多项目任务台：长期 / 临时 / 缺陷，支持每日进展、日历、甘特图与周期汇总。每个任务是一篇 Markdown 笔记。",
+	"description": "多项目任务台：长期 / 临时 / 缺陷，支持每日进展、日历、甘特图与周期汇总。每个任务是一篇 Markdown 笔记.",
 	"author": "kylin",
 	"isDesktopOnly": false
 }

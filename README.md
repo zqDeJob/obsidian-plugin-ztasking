@@ -8,11 +8,13 @@ Obsidian 插件：按**业务项目**管理长期 / 临时 / 缺陷任务。每�
 
 | 模块 | 说明 |
 | --- | --- |
-| **多项目** | 目录 `根/项目/类型/`；顶栏筛选；新建项目；详情里可改所属项目 |
-| **工作台** | 昨日计划 / 我的今天 / 明日计划 + 侧栏任务；详情抽屉记进展与工时 |
-| **列表** | 全量表格（含项目列），搜索与类型/状态筛选 |
-| **日历 / 甘特** | 周期内进展一览；顶栏项目筛选生效 |
-| **汇总** | 我的今天、今日日报、进展明细（搜索高亮）、活跃分布、按任务计数 |
+| **多项目 / 分支** | 目录 `根/项目/分支/类型/`；顶栏按项目、分支筛选；项目管理页可新建、重命名、排序、删除 |
+| **项目管理** | 分支公告（可存档 / 恢复）、项目共用材料（置顶、拖拽排序、迁移） |
+| **工作台** | 昨日计划 / 我的今天 / 明日计划 + 侧栏任务；详情记进展与工时 |
+| **列表** | 全量表格（含项目、工时），搜索与类型/状态筛选 |
+| **日历 / 甘特** | 周期内进展一览；右侧日详情可折叠；顶栏项目 / 分支筛选生效 |
+| **汇总** | 我的今天、今日日报、进展明细、活跃分布、按任务计数 |
+| **帮助中心** | 插件内使用说明 |
 | **网页** | 桌面端内嵌网页书签（独立 Chromium 分区） |
 
 顶栏「全部项目 / 某项目」会影响：工作台与列表任务、进展明细与复制、日历、甘特、活跃分布、按任务计数。  
@@ -23,21 +25,25 @@ Obsidian 插件：按**业务项目**管理长期 / 临时 / 缺陷任务。每�
 ```text
 Z-Tasking/
   KVAD/
-    长期/
-      某长期事项.md
-    临时/
-      某临时任务.md
-    缺陷/
-      某缺陷.md
-  其他项目/
-    长期/
-    临时/
-    缺陷/
+    _资料/
+      某材料.md
+    main/
+      公告.md
+      _公告历史/
+      长期/
+        某长期事项.md
+      临时/
+        某临时任务.md
+      缺陷/
+        某缺陷.md
+    V7/
+      公告.md
+      长期/
   日报/
     2026-09-20.md
 ```
 
-旧版扁平目录（`根/长期|临时|缺陷/`）在首次打开时会自动迁入默认项目 `KVAD/`。
+默认分支名为 `main`。旧版无分支段、或项目名含「 - 」的目录，会在首次打开时自动迁入新路径。
 
 ```markdown
 ---
@@ -83,26 +89,6 @@ npm test         # 单元测试
 
 然后在 Obsidian：设置 → 第三方插件 → 启用 **Z-Tasking**。命令面板：`Z-Tasking: 打开任务台`。
 
-## 界面预览
-
-**[在线预览](https://obsidian-plugin-ztasking.vercel.app/)** · 截图来自交互原型（Mock 数据），点击可跳转体验。
-
-| 工作台 | 列表 |
-| --- | --- |
-| [![工作台](docs/previews/workbench.png)](https://obsidian-plugin-ztasking.vercel.app/) | [![列表](docs/previews/list.png)](https://obsidian-plugin-ztasking.vercel.app/) |
-
-| 日历 | 甘特图 |
-| --- | --- |
-| [![日历](docs/previews/calendar.png)](https://obsidian-plugin-ztasking.vercel.app/) | [![甘特图](docs/previews/gantt.png)](https://obsidian-plugin-ztasking.vercel.app/) |
-
-[![汇总](docs/previews/report.png)](https://obsidian-plugin-ztasking.vercel.app/)
-
-### 原型里能看什么
-
-工作台 / 列表 / 日历 / 甘特图 / 汇总；周月季年 + 自定时间范围；说明与进展的编辑/复制等。原型数据为虚构示例，且**未必同步**仓库最新的多项目能力；以本 README 与插件实机为准。
-
----
-
 ## 发布到社区插件
 
 按 [官方流程](https://docs.obsidian.md/Plugins/Releasing/Submit+your+plugin)。
@@ -121,8 +107,11 @@ git push origin 0.2.0
 
 ### 首次提交社区目录
 
-1. 仓库保持 public，且已有与 `manifest.json` version 匹配的 GitHub Release
-2. 在 [community.obsidian.md](https://community.obsidian.md) 登录，绑定 GitHub，**Plugins → New plugin** 提交本仓库
-3. 按自动审阅反馈修改；通过后约 24 小时内可在 Obsidian 社区插件里搜到
+仓库 public、且已有匹配版本的 GitHub Release，**还不会**出现在 Obsidian 插件库。目录来自 [community-plugins.json](https://github.com/obsidianmd/obsidian-releases/blob/master/community-plugins.json)，必须单独提交：
+
+1. 在 [community.obsidian.md](https://community.obsidian.md) 登录，绑定 GitHub，**Plugins → New plugin** 提交本仓库
+2. 按自动审阅反馈修改；通过后约 24 小时内可在 Obsidian 社区插件里搜到
+
+截至 2026-11，本仓库**尚未**进入该目录（同作者已上架的是 `obsidian-plugin-ztranslate`）。所以在插件库搜 `Z-Tasking` / `z-tasking` 不会有结果。
 
 后续版本只需打 tag 发 Release，无需再向 `obsidianmd/obsidian-releases` 提 PR。

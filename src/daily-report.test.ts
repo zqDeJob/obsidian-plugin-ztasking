@@ -44,8 +44,8 @@ test("buildTodayWorkBody：1～2 条子项收成一行括号", () => {
 	assert.equal(
 		body,
 		[
-			"任务 #170199 V2R010 优化总单-后端支持配置时区-vue （验证）",
-			"任务 #169252 需求A （写接口；联调）",
+			"- 任务 #170199 V2R010 优化总单-后端支持配置时区-vue （验证）",
+			"- 任务 #169252 需求A （写接口；联调）",
 		].join("\n"),
 	);
 });
@@ -56,7 +56,7 @@ test("buildTodayWorkBody：3 条及以上保持多行列表", () => {
 	]);
 	assert.equal(
 		body,
-		["任务 临时杂事", "- a", "- b", "- c"].join("\n"),
+		["- 任务 临时杂事", "- a", "- b", "- c"].join("\n"),
 	);
 });
 
@@ -66,7 +66,7 @@ test("buildTodayWorkBody 仅工时只写任务行、无子内容", () => {
 		{ title: "评审", text: "", hours: 1 },
 		{ title: "无正文无工时", text: "" },
 	]);
-	assert.equal(body, ["任务 联调支持", "任务 评审"].join("\n"));
+	assert.equal(body, ["- 任务 联调支持", "- 任务 评审"].join("\n"));
 });
 
 test("parseMergeRequestRef 从 URL 拆出项目与单号", () => {
@@ -122,7 +122,7 @@ test("buildTodayWorkBody：代码审核 MR 合并后可收成一行", () => {
 			"- 代码评审：http://192.168.120.13/module_server/kvad/-/merge_requests/483",
 		].join("\n"),
 	}]);
-	assert.equal(body, "任务 代码评审 （代码审核：MR kvad 477、481、483）");
+	assert.equal(body, "- 任务 代码评审 （代码审核：MR kvad 477、481、483）");
 });
 
 test("assembleDailyReportText 紧凑三段且待讨论独立", () => {
@@ -135,7 +135,7 @@ test("assembleDailyReportText 紧凑三段且待讨论独立", () => {
 		text,
 		[
 			"今日工作",
-			"任务 #161794 公共",
+			"- 任务 #161794 公共",
 			"- 做了一件事",
 			"明日计划",
 			"- 明天继续",
@@ -233,4 +233,23 @@ test("refreshDailyDraft：换日清空明日计划；未定制保持空", () => 
 		tasks,
 	);
 	assert.equal(normalizePlanItems(kept)[0]?.title, "兼容旧字段");
+});
+
+test("refreshDailyDraft：已有今日工作补成 - 列表", () => {
+	const draft = refreshDailyDraft(
+		{
+			date: "2026-09-18",
+			work: "任务 #1 示例\n- 做了 A",
+			plan: "",
+			planItems: [],
+			discuss: "- 无",
+			workCustom: true,
+			planCustom: false,
+		},
+		"2026-09-18",
+		[],
+		[],
+	);
+	assert.equal(draft.work, "- 任务 #1 示例\n- 做了 A");
+	assert.equal(draft.workCustom, true);
 });

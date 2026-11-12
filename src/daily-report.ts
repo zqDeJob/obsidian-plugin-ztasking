@@ -225,7 +225,7 @@ export function buildTodayWorkBody(logs: DailyReportSourceLog[]): string {
 		if (!bullets.length && !hoursOnly) continue;
 		const id = extractIssueId(log.title);
 		const name = cleanTaskDisplayName(log.title);
-		const head = id ? `任务 #${id} ${name}` : `任务 ${name}`;
+		const head = id ? `- 任务 #${id} ${name}` : `- 任务 ${name}`;
 		if (!bullets.length) {
 			blocks.push(head);
 			continue;
@@ -241,7 +241,8 @@ export function buildTodayWorkBody(logs: DailyReportSourceLog[]): string {
 	return blocks.join("\n");
 }
 
-function ensureBulletBlock(text: string, fallback: string): string {
+/** 每行补成 `- ` 列表；已是 `- ` 的保持不变 */
+export function ensureBulletBlock(text: string, fallback: string): string {
 	const lines = text
 		.split(/\r?\n/)
 		.map((s) => s.trim())
@@ -255,7 +256,7 @@ function ensureBulletBlock(text: string, fallback: string): string {
  * 今日工作 / 任务行 / 明日计划 / 待讨论\\n- 无
  */
 export function assembleDailyReportText(work: string, plan: string, discuss: string): string {
-	const workBody = work.trim();
+	const workBody = work.trim() ? ensureBulletBlock(work, "") : "";
 	const planBody = plan.trim() ? ensureBulletBlock(plan, "") : "";
 	const discussBody = ensureBulletBlock(discuss, DEFAULT_DAILY_DISCUSS);
 	const parts = ["今日工作"];
@@ -305,6 +306,7 @@ export function refreshDailyDraft(
 		next.plan = planItemsToText(next.planItems);
 	}
 	if (!next.workCustom) next.work = buildTodayWorkBody(logs);
+	if (next.work.trim()) next.work = ensureBulletBlock(next.work, "");
 	if (!next.discuss.trim()) next.discuss = DEFAULT_DAILY_DISCUSS;
 	return next;
 }

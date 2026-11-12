@@ -9,6 +9,7 @@ import {
 import {
 	DEFAULT_DAILY_DISCUSS,
 	coercePlanItem,
+	ensureBulletBlock,
 	type DailyReportDraft,
 	type TomorrowPlanItem,
 } from "./daily-report.ts";
@@ -417,9 +418,10 @@ export function draftToArchivePayload(draft: DailyReportDraft | DailyReportDraft
 			done: it.done,
 		})))
 		: (draft.plan?.trim() ?? "");
+	const workRaw = draft.work ?? "";
 	return {
 		date: draft.date,
-		work: draft.work ?? "",
+		work: workRaw.trim() ? ensureBulletBlock(workRaw, "") : "",
 		plan,
 		discuss: draft.discuss ?? DEFAULT_DAILY_DISCUSS,
 	};

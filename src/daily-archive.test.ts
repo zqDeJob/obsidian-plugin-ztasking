@@ -14,6 +14,7 @@ import {
 	replaceTomorrowPlanSection,
 	resolveBoardYpReportDate,
 	resolveYpDefaultProject,
+	draftToArchivePayload,
 	serializeDailyReportNote,
 	serializeYesterdayPlanItems,
 	withYpNoProjectOption,
@@ -86,6 +87,22 @@ test("serializeDailyReportNote 写出 frontmatter 与三段", () => {
 	assert.match(md, /## 今日工作\n任务 #1 示例\n- 做了 A\n/);
 	assert.match(md, /## 明日计划\n- 明天写测试\n- 明天改 UI\n/);
 	assert.match(md, /## 待讨论\n- 无\n?$/);
+});
+
+test("draftToArchivePayload：今日工作补成与明日计划一致的 - 列表", () => {
+	const payload = draftToArchivePayload({
+		date: "2026-11-11",
+		work: "任务 #140087 数字人驾驭研究\n- 已有条目",
+		plan: "",
+		planItems: [{
+			id: "p1", title: "明天继续", project: "无项目", desc: "", notes: [], done: false,
+		}],
+		discuss: "- 无",
+		workCustom: true,
+		planCustom: true,
+	});
+	assert.equal(payload.work, "- 任务 #140087 数字人驾驭研究\n- 已有条目");
+	assert.match(payload.plan, /^- \[ \]/);
 });
 
 test("planReportDateForDay：D 的计划存在 D-1 日报里；昨日计划读昨天日报", () => {

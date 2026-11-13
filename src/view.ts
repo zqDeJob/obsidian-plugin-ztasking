@@ -5278,6 +5278,8 @@ export class ZTaskingView extends ItemView {
 			</section>
 		`;
 		this.syncCalDayPane();
+		this.mdGen += 1;
+		void this.paintMarkdown(this.mdGen);
 	}
 
 	private syncCalDayPane(): void {
@@ -5304,10 +5306,7 @@ export class ZTaskingView extends ItemView {
 	}
 
 	private refreshCalendar(): void {
-		this.mdGen += 1;
-		const gen = this.mdGen;
 		this.renderCalendar();
-		void this.paintMarkdown(gen);
 	}
 
 	private refreshGantt(): void {

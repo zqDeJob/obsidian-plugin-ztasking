@@ -157,6 +157,14 @@ test("yesterdayPlanListHtml：只读模式无勾选、无删除、不可编辑",
 	assert.doesNotMatch(html, /data-act="edit-yesterday-plan"/);
 	assert.doesNotMatch(html, /data-act="del-yesterday-plan"/);
 	assert.doesNotMatch(html, /data-act="toggle-yesterday-plan"/);
+	const withChildren = yesterdayPlanListHtml({
+		items: [yp("只看", "补充说明\n- 第二行", "r1", "终端", [{ date: "2026-11-13", text: "记一笔" }], true)],
+		readonly: true,
+	});
+	assert.match(withChildren, /ztk-day-plan-child/);
+	assert.match(withChildren, /补充说明/);
+	assert.match(withChildren, /第二行/);
+	assert.match(withChildren, /2026-11-13 记一笔/);
 	assert.doesNotMatch(html, /ztk-task-del/);
 });
 

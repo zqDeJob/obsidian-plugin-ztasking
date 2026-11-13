@@ -434,6 +434,21 @@ export function parseYesterdayPlanQuickLines(raw: string): string[] {
 		.filter(Boolean);
 }
 
+function yesterdayPlanChildLines(item: YesterdayPlanItem): string[] {
+	const lines: string[] = [];
+	for (const raw of item.desc.split(/\r?\n/)) {
+		const line = raw.trim().replace(/^[-*•]\s+/, "");
+		if (line) lines.push(line);
+	}
+	for (const note of item.notes ?? []) {
+		const text = note.text.trim();
+		if (!text) continue;
+		const date = note.date.trim();
+		lines.push(date ? `${date} ${text}` : text);
+	}
+	return lines;
+}
+
 export function yesterdayPlanListHtml(opts: {
 	items: YesterdayPlanItem[];
 	selectedId?: string | null;
@@ -453,9 +468,16 @@ export function yesterdayPlanListHtml(opts: {
 				? projectBadgeHtml(it.project)
 				: "";
 			if (readonly) {
+				const children = yesterdayPlanChildLines(it);
+				const childHtml = children.length
+					? `<div class="ztk-day-plan-children">${children.map((line) => `<div class="ztk-day-plan-child">${esc(line)}</div>`).join("")}</div>`
+					: "";
 				return `
 			<div class="ztk-day-plan${it.done ? " is-done" : ""}">
-				<span class="ztk-day-plan-title">${esc(it.title)}</span>
+				<div class="ztk-day-plan-main">
+					<span class="ztk-day-plan-title">${esc(it.title)}</span>
+					${childHtml}
+				</div>
 				${projectTag}
 			</div>`;
 			}
